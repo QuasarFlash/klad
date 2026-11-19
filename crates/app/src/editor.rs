@@ -15,6 +15,7 @@ mod export;
 mod first;
 mod history;
 mod keys;
+mod layerops;
 mod layers;
 mod lock;
 mod look;

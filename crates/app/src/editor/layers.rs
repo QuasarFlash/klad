@@ -255,7 +255,7 @@ impl Editor {
         let response = ui.interact(rect, id, Sense::click_and_drag());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &row.name));
         let response = response.hint(format!(
-            "{}: click to draw on it, cmd click to select strokes on it too (S), double-click its name to rename it, drag it to move it",
+            "{}: click to draw on it, cmd click to select strokes on it too (S), double-click its name to rename it, drag it to move it, right-click for its menu",
             row.name
         ));
         let active = self.scene.active == row.path;
@@ -382,6 +382,12 @@ impl Editor {
             }
             if name.clicked() {
                 self.row_click(ui, row);
+            }
+            if name.secondary_clicked() && !row.mask && !active && !also {
+                self.queued_activate = Some(row.path.clone());
+            }
+            if !row.mask {
+                name.context_menu(|ui| self.layer_menu(ui, row));
             }
         }
         child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -514,6 +520,12 @@ impl Editor {
         }
         if response.double_clicked() && !row.mask {
             self.renaming = Some(rename(row.name.clone(), true));
+        }
+        if response.secondary_clicked() && !row.mask && !active && !also {
+            self.queued_activate = Some(row.path.clone());
+        }
+        if !row.mask {
+            response.context_menu(|ui| self.layer_menu(ui, row));
         }
         if !ops.is_empty() {
             self.check(|e| e.apply(ops));

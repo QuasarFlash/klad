@@ -59,6 +59,7 @@ pub mod icon {
     pub const TO_FRONT: &str = "\u{E066}";
     pub const TO_BACK: &str = "\u{E05C}";
     pub const UNITE: &str = "\u{E87E}";
+    pub const MERGE: &str = "\u{ED3E}";
     pub const SUBTRACT: &str = "\u{EBD6}";
     pub const INTERSECT: &str = "\u{E2D2}";
     pub const EXCLUDE: &str = "\u{E882}";

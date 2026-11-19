@@ -77,6 +77,8 @@ klad combine art.klad n3 n4 --unite                            # one path: --uni
 klad path art.klad n12 --convert                               # a text node becomes the paths of its letters
 klad export art.klad --svg [--layer n] [--only n3,n4] [--vectors-only] [--outline-text] [--frames all]   # SVG: a group per layer, paint layers as pictures
 klad import logo.svg [--into art.klad]                         # an SVG's shapes as vector layers, in a new drawing or one you have
+klad merge art.klad --down ink                                 # ink into the layer under it, frame by frame; also `klad merge art.klad a b c` and `--visible`
+klad ungroup art.klad trees                                    # its layers take its place
 klad show art.klad c4:s12
 klad render art.klad --focus c4:s12
 ```

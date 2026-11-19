@@ -238,6 +238,17 @@ impl Editor {
             }
             .or(editing),
             Cmd::BringToFront | Cmd::BringForward | Cmd::SendBackward | Cmd::SendToBack => self.can_arrange(),
+            Cmd::Ungroup => match layer {
+                Some(l) if l.kind() == LayerKind::Group => None,
+                _ => Some("pick a group in the layers panel first".to_string()),
+            },
+            Cmd::MergeDown | Cmd::LayerUp | Cmd::LayerDown | Cmd::ExportLayer => match layer {
+                Some(_) if !self.scene.active_is_mask() => None,
+                Some(_) => Some("this is the layer's mask: pick the layer itself".to_string()),
+                None => pick_layer(),
+            },
+            Cmd::MergeSelected => (self.chosen_layers().len() < 2)
+                .then(|| "select two layers or more: cmd click their rows in the layers panel".to_string()),
             Cmd::CopyLook => match self.selected() {
                 Some(Selected::Shape(_)) => None,
                 _ => Some("select a shape with V first: its fill, outline and opacity are copied".to_string()),
@@ -1178,9 +1189,38 @@ impl Editor {
             Cmd::NewMapLayer => self.new_map_layer()?,
             Cmd::MakeMapLayer => self.make_map_layer()?,
             Cmd::MakeColourLayer => self.make_colour_layer()?,
-            Cmd::GroupLayer => self.new_group(true)?,
-            Cmd::DuplicateLayer => self.duplicate_layer()?,
-            Cmd::DeleteLayer => self.delete_layer()?,
+            Cmd::GroupLayer => {
+                if !self.group_chosen()? {
+                    self.new_group(true)?;
+                }
+            }
+            Cmd::DuplicateLayer => {
+                if !self.duplicate_chosen()? {
+                    self.duplicate_layer()?;
+                }
+            }
+            Cmd::DeleteLayer => {
+                if !self.delete_chosen()? {
+                    self.delete_layer()?;
+                }
+            }
+            Cmd::Ungroup => self.ungroup()?,
+            Cmd::MergeDown => self.merge_down()?,
+            Cmd::MergeSelected => {
+                let ids = self.chosen_layers();
+                self.merge_layers(ids)?;
+            }
+            Cmd::MergeVisible => self.merge_visible()?,
+            Cmd::LayerUp => self.move_layer(true)?,
+            Cmd::LayerDown => self.move_layer(false)?,
+            Cmd::LayerAbove => self.step_layer(true)?,
+            Cmd::LayerBelow => self.step_layer(false)?,
+            Cmd::ExportLayer => {
+                let layer = self.scene.active_id();
+                self.open_export(super::export::What::Image);
+                self.windows.export = true;
+                self.export.layer = layer;
+            }
             Cmd::RenameLayer => {
                 if let Some(l) = self.scene.active_layer() {
                     let place = match self.settings.layout.is_open(crate::layout::Pane::Layers) {
@@ -1233,11 +1273,15 @@ impl Editor {
             Cmd::NewVectorLayer => self.add_layer("vector")?,
             Cmd::ToggleVisible => {
                 let on = self.is_on(cmd) == Some(true);
-                self.set_active("visible", json!(!on))?;
+                if !self.chosen_set("visible", !on)? {
+                    self.set_active("visible", json!(!on))?;
+                }
             }
             Cmd::ToggleLocked => {
                 let on = self.is_on(cmd) == Some(true);
-                self.set_active("locked", json!(!on))?;
+                if !self.chosen_set("locked", !on)? {
+                    self.set_active("locked", json!(!on))?;
+                }
             }
             Cmd::ToggleClip => {
                 let on = self.is_on(cmd) == Some(true);

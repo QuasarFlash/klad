@@ -3183,3 +3183,172 @@ fn shapes_take_a_look_combine_and_go_to_svg_and_back() {
     assert!(letters.iter().all(|n| n["id"] != "t") && letters.iter().any(|n| n["name"] == "Hi"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn layers_merge_frame_by_frame_without_changing_the_picture_and_groups_come_apart() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-merge-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bundle = dir.join("a.klad");
+    let path = bundle.to_str().unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (
+            String::from_utf8_lossy(&out.stdout).to_string(),
+            String::from_utf8_lossy(&out.stderr).to_string(),
+        )
+    };
+    let same = |a: &str, b: &str| {
+        let out = run(&["compare", a, b, "--json"]);
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        v["difference"].as_f64().unwrap()
+    };
+    draw(&["new", path, "--width", "200", "--height", "120", "--layers", "2"]);
+    draw(&["add", path, "layer", "paint", "name=top"]);
+    let ids = |path: &str| -> Vec<(String, String)> {
+        let d: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(std::path::Path::new(path).join("doc.json")).unwrap())
+                .unwrap();
+        d["layers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| {
+                (
+                    l["id"].as_str().unwrap().to_string(),
+                    l["name"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect()
+    };
+    let layers = ids(path);
+    let (bottom, middle, top) = (layers[0].0.clone(), layers[1].0.clone(), layers[2].0.clone());
+    draw(&["timeline", path, "--frames", "3"]);
+    draw(&[
+        "stroke",
+        path,
+        &bottom,
+        "--line",
+        "20,20,180,20",
+        "--size",
+        "8",
+        "--color",
+        "#ff0000",
+    ]);
+    draw(&[
+        "stroke",
+        path,
+        &middle,
+        "--line",
+        "20,60,180,60",
+        "--size",
+        "8",
+        "--color",
+        "#00ff00",
+    ]);
+    draw(&[
+        "stroke",
+        path,
+        &top,
+        "--line",
+        "100,80,100,110",
+        "--size",
+        "8",
+        "--color",
+        "#0000ff",
+    ]);
+    draw(&[
+        "stroke",
+        path,
+        &top,
+        "--line",
+        "40,80,40,110",
+        "--size",
+        "8",
+        "--color",
+        "#0000ff",
+        "--frame",
+        "2",
+    ]);
+    draw(&["set", path, &top, "opacity=0.5"]);
+    let render = |name: &str, frame: &str| {
+        draw(&["export", path, "--frame", frame, "-o", name]);
+        dir.join(name).to_string_lossy().to_string()
+    };
+    let (b0, b2) = (render("b0.png", "0"), render("b2.png", "2"));
+    let (_, said) = draw(&["merge", path, "--down", &top]);
+    assert!(
+        said.contains("merged 2 layers into") && said.contains("opacity of top"),
+        "{said}"
+    );
+    let (a0, a2) = (render("a0.png", "0"), render("a2.png", "2"));
+    assert!(
+        same(&a0, &b0) < 0.5 && same(&a2, &b2) < 0.5,
+        "the picture is the same at every frame"
+    );
+    assert_eq!(ids(path).len(), 2);
+    draw(&["merge", path, &middle, &bottom]);
+    assert_eq!(ids(path).len(), 1);
+    let (c0, c2) = (render("c0.png", "0"), render("c2.png", "2"));
+    assert!(same(&c0, &b0) < 0.5 && same(&c2, &b2) < 0.5);
+
+    draw(&["add", path, "layer", "vector", "name=shapes"]);
+    let shapes = ids(path)[1].0.clone();
+    let ops = dir.join("rect.jsonl");
+    std::fs::write(
+        &ops,
+        format!(r##"{{"op":"add","node":{{"type":"rect","x":10,"y":70,"w":40,"h":40,"fill":"#ffaa00"}},"in":"{shapes}","frame":0}}"##),
+    )
+    .unwrap();
+    draw(&["apply", path, "--file", ops.to_str().unwrap()]);
+    let refused = run(&["merge", path, "--down", &shapes]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("layers merge with their own kind"));
+    let (d0, d2) = (render("d0.png", "0"), render("d2.png", "2"));
+    let (_, said) = draw(&["merge", path, "--visible"]);
+    assert!(said.contains("one picture"), "{said}");
+    let names: Vec<String> = ids(path).into_iter().map(|(_, n)| n).collect();
+    assert_eq!(names, ["merged"]);
+    let (e0, e2) = (render("e0.png", "0"), render("e2.png", "2"));
+    assert!(
+        same(&e0, &d0) < 0.5 && same(&e2, &d2) < 0.5,
+        "merged as a picture, frame by frame"
+    );
+
+    draw(&["add", path, "layer", "group", "name=pair"]);
+    draw(&["add", path, "layer", "paint", "name=one"]);
+    draw(&["add", path, "layer", "paint", "name=two"]);
+    let all = ids(path);
+    let id_of = |name: &str| all.iter().find(|(_, n)| n == name).unwrap().0.clone();
+    draw(&["mv", path, &id_of("one"), "--in", &id_of("pair")]);
+    draw(&["mv", path, &id_of("two"), "--in", &id_of("pair")]);
+    draw(&["set", path, &id_of("pair"), "opacity=0.5"]);
+    draw(&["ungroup", path, "pair"]);
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(bundle.join("doc.json")).unwrap()).unwrap();
+    let names: Vec<&str> = after["layers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|l| l["name"].as_str())
+        .collect();
+    assert_eq!(names, ["merged", "one", "two"]);
+    assert_eq!(
+        after["layers"][1]["opacity"], 0.5,
+        "the group's opacity goes to its layers"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

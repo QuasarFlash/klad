@@ -10,6 +10,7 @@ mod demo;
 mod edit;
 mod export;
 mod fills;
+mod flatten;
 mod fonts;
 mod frames;
 mod history;
@@ -766,6 +767,34 @@ enum Command {
     Detach {
         bundle: PathBuf,
         ids: Vec<String>,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
+        about = "Merge layers into the lowest of them, or every visible layer into one picture",
+        long_about = "Merge layers of one kind into the lowest of them, frame by frame: paint into paint keeps the strokes and fills as they are, pixel into pixel the pixels, vector into vector the shapes (in a group that keeps the layer's opacity). A see-through upper layer's opacity goes onto each of its strokes, so where they overlap they look a little stronger. Layers of different kinds, with masks, clipping, blend modes, effects or animated keys, or in different groups, are refused with the reason. One history step.\n\n  klad merge art.klad lines ink            (ink merges into lines, the lower of the two)\n  klad merge art.klad --down ink           (ink merges into the layer under it)\n  klad merge art.klad --visible            (every visible layer: merged as above when they can be, else one picture on a vector layer named merged)"
+    )]
+    Merge {
+        bundle: PathBuf,
+        layers: Vec<String>,
+        #[arg(long, value_name = "LAYER", conflicts_with_all = ["layers", "visible"], help = "Merge this layer into the one under it")]
+        down: Option<String>,
+        #[arg(
+            long,
+            conflicts_with = "layers",
+            help = "Every visible layer that is not a reference"
+        )]
+        visible: bool,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
+        about = "Take a group apart: its layers go where it was",
+        long_about = "Take a group apart: its layers take its place, in the same order, and the group is gone. A see-through group passes its opacity on to each layer, a hidden one hides them; its blend mode, mask and effects go, and the command says so. One history step.\n\n  klad ungroup art.klad trees"
+    )]
+    Ungroup {
+        bundle: PathBuf,
+        group: String,
         #[command(flatten)]
         flags: EditFlags,
     },
@@ -3494,6 +3523,47 @@ fn run() -> Result<()> {
                 ));
             }
             agent::edit(&bundle, &[Op::Detach { ids }], &output(&flags, 0))?;
+        }
+        Command::Merge {
+            bundle,
+            layers,
+            down,
+            visible,
+            flags,
+        } => {
+            let opened = Bundle::open(&bundle)?;
+            let keys = match (down, visible) {
+                (Some(layer), _) => vec![klad_core::merge::below(&opened, &layer)?, layer],
+                (None, true) => flatten::visible(&opened),
+                (None, false) => layers,
+            };
+            match klad_core::merge::merge(&opened, &keys) {
+                Ok(merged) => {
+                    agent::edit(&bundle, &merged.ops, &output(&flags, 0))?;
+                    eprintln!("merged {} layers into {}", merged.count, merged.into);
+                    if !merged.baked.is_empty() {
+                        eprintln!(
+                            "note: the opacity of {} went onto each of its strokes",
+                            merged.baked.join(", ")
+                        );
+                    }
+                }
+                Err(e) if visible => {
+                    let brushes = klad_brush::BrushSet::for_bundle(&opened)?;
+                    let ops = flatten::picture(&opened, &brushes, &keys)?;
+                    agent::edit(&bundle, &ops, &output(&flags, 0))?;
+                    eprintln!("note: merged as one picture on a vector layer named merged, as {e:#}");
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Command::Ungroup { bundle, group, flags } => {
+            let opened = Bundle::open(&bundle)?;
+            let (ops, lost) = klad_core::merge::ungroup(&opened.doc, &group)?;
+            agent::edit(&bundle, &ops, &output(&flags, 0))?;
+            if !lost.is_empty() {
+                eprintln!("note: the group's {} went with it", lost.join(" and "));
+            }
         }
         Command::Style {
             bundle,

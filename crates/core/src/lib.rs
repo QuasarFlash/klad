@@ -13,6 +13,7 @@ pub mod keys;
 pub mod look;
 pub mod maps;
 pub mod markedit;
+pub mod merge;
 pub mod migrate;
 pub mod notes;
 pub mod ops;

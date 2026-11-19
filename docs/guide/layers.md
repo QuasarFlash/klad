@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 22:40_
+_Last updated: 2026-11-19 22:45_
 
 # Layers, masks and clipping
 
@@ -8,7 +8,16 @@ Keep lines, colour and shading on their own layers, and decide where each one sh
 
 At the top of the Layers pane, click **paint** for brush strokes or **vector** for [shapes and text](shapes-and-text.md). Drag a row to move the layer. Double click its name and type to rename it.
 
+Right click a layer's row for its menu: rename, duplicate, delete, merge, group, lock, mask and more. **alt ]** and **alt [** go to the layer above or below; **alt cmd ]** and **alt cmd [** move the layer up or down. Cmd click more rows to select several layers: hide, lock, group, duplicate and delete then act on all of them.
+
 To put part of a drawing on a layer of its own, [select it](selecting.md#split-part-of-a-drawing-onto-its-own-layer), right click the canvas and select **Move to new layer**.
+
+## Merge layers
+
+1. Select the upper layer.
+2. Choose **Merge down** from its right-click menu or from **Layer > Merge**.
+
+Strokes, pixels and shapes stay editable. Layers merge with their own kind, and klad says why when two can't merge. **Merge selected** merges the layers you cmd clicked; **Merge visible** merges every visible layer, into one picture when they differ. **Ungroup** takes a group apart.
 
 ## Shade inside flat colour
 

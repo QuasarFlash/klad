@@ -35,6 +35,8 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad set`](#klad-set): Change properties: klad set art.klad n4 fill=#ff0000 transform.rotate=15 (null removes)
 - [`klad recolour`](#klad-recolour): Recolour strokes and fills together: the group moves to the colour and each keeps its own lighter or darker shade
 - [`klad detach`](#klad-detach): Detach eraser, smudge and blender strokes from the marks they are attached to
+- [`klad merge`](#klad-merge): Merge layers into the lowest of them, or every visible layer into one picture
+- [`klad ungroup`](#klad-ungroup): Take a group apart: its layers go where it was
 - [`klad style`](#klad-style): Give shapes the look of another: its fill, outline and opacity
 - [`klad combine`](#klad-combine): Unite, subtract, intersect or exclude shapes into one path
 - [`klad order`](#klad-order): Put shapes, strokes or fills in front of or behind the others on their layer
@@ -1351,6 +1353,80 @@ Arguments:
 
 
   [IDS]...
+
+
+Options:
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad merge
+
+```text
+Merge layers of one kind into the lowest of them, frame by frame: paint into paint keeps the strokes and fills as they are, pixel into pixel the pixels, vector into vector the shapes (in a group that keeps the layer's opacity). A see-through upper layer's opacity goes onto each of its strokes, so where they overlap they look a little stronger. Layers of different kinds, with masks, clipping, blend modes, effects or animated keys, or in different groups, are refused with the reason. One history step.
+
+  klad merge art.klad lines ink            (ink merges into lines, the lower of the two)
+  klad merge art.klad --down ink           (ink merges into the layer under it)
+  klad merge art.klad --visible            (every visible layer: merged as above when they can be, else one picture on a vector layer named merged)
+
+Usage: klad merge [OPTIONS] <BUNDLE> [LAYERS]...
+
+Arguments:
+  <BUNDLE>
+
+
+  [LAYERS]...
+
+
+Options:
+      --down <LAYER>
+          Merge this layer into the one under it
+
+      --visible
+          Every visible layer that is not a reference
+
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad ungroup
+
+```text
+Take a group apart: its layers take its place, in the same order, and the group is gone. A see-through group passes its opacity on to each layer, a hidden one hides them; its blend mode, mask and effects go, and the command says so. One history step.
+
+  klad ungroup art.klad trees
+
+Usage: klad ungroup [OPTIONS] <BUNDLE> <GROUP>
+
+Arguments:
+  <BUNDLE>
+
+
+  <GROUP>
 
 
 Options:

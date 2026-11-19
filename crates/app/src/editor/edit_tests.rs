@@ -585,3 +585,117 @@ fn shapes_take_another_look_combine_into_one_path_and_text_becomes_paths() {
     );
     let _ = std::fs::remove_dir_all(&path);
 }
+
+fn right_click_row(h: &mut Harness<'static, Editor>, name: &str) {
+    use egui_kittest::kittest::{NodeT, Queryable};
+    let canvas = h.state().canvas_rect;
+    let found = h
+        .query_all_by_label(name)
+        .filter(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+        .find(|n| !canvas.contains(n.rect().center()))
+        .expect("a row of that name");
+    found.click_secondary();
+    h.run_steps(4);
+}
+
+fn shown(h: &Harness<'static, Editor>, label: &str) -> bool {
+    use egui_kittest::kittest::Queryable;
+    h.query_all_by_label_contains(label).next().is_some()
+}
+
+#[test]
+fn a_right_click_on_a_layer_opens_its_menu_and_layers_merge_move_and_step_from_the_keyboard() {
+    let path = sample("layer-menu");
+    let mut h = harness(editor(&path), vec2(1440.0, 1600.0));
+    activate(&mut h, "lines");
+    right_click_row(&mut h, "colour");
+    assert_eq!(
+        h.state().scene.active_layer().map(|l| l.name.clone()).as_deref(),
+        Some("colour")
+    );
+    assert!(
+        shown(&h, "Merge down") && shown(&h, "Rename") && shown(&h, "Make it a map layer"),
+        "the paint layer's menu"
+    );
+    assert!(!shown(&h, "Ungroup"), "ungroup is for groups");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    right_click_row(&mut h, "shapes");
+    assert!(
+        shown(&h, "Merge down") && !shown(&h, "Lock alpha") && !shown(&h, "Make it a colour layer"),
+        "the vector layer's menu"
+    );
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+
+    activate(&mut h, "colour");
+    chord(&mut h, Modifiers::ALT, Key::CloseBracket);
+    assert_eq!(
+        h.state().scene.active_layer().map(|l| l.name.clone()).as_deref(),
+        Some("lines"),
+        "alt ] goes to the layer above"
+    );
+    chord(&mut h, Modifiers::ALT, Key::OpenBracket);
+    assert_eq!(
+        h.state().scene.active_layer().map(|l| l.name.clone()).as_deref(),
+        Some("colour")
+    );
+    let order = |h: &Harness<'static, Editor>| -> Vec<String> {
+        h.state()
+            .scene
+            .bundle
+            .doc
+            .layers
+            .iter()
+            .map(|l| l.name.clone())
+            .collect()
+    };
+    let before = order(&h);
+    chord(&mut h, Modifiers::ALT | Modifiers::COMMAND, Key::CloseBracket);
+    let after = order(&h);
+    let at = |list: &[String], name: &str| list.iter().position(|n| n == name).unwrap();
+    assert_eq!(
+        at(&after, "colour"),
+        at(&before, "colour") + 1,
+        "alt cmd ] moves the layer up: {after:?}"
+    );
+    chord(&mut h, Modifiers::ALT | Modifiers::COMMAND, Key::OpenBracket);
+    assert_eq!(order(&h), before);
+
+    activate(&mut h, "lines");
+    let marks = marks_on(&h, &layer_named(&h, "lines").clone()) + marks_on(&h, &layer_named(&h, "colour").clone());
+    h.state_mut().invoke(Cmd::MergeDown).unwrap();
+    h.run_steps(3);
+    assert!(said(&h).contains("merged 2 layers into colour"), "{}", said(&h));
+    assert!(h.state().scene.bundle.doc.find_layer("lines").is_err());
+    assert_eq!(marks_on(&h, &layer_named(&h, "colour").clone()), marks);
+    chord(&mut h, Modifiers::COMMAND, Key::Z);
+    assert!(
+        h.state().scene.bundle.doc.find_layer("lines").is_ok(),
+        "one cmd Z takes the merge back"
+    );
+
+    activate(&mut h, "rim");
+    let shade = layer_named(&h, "shade").id.clone();
+    h.state_mut().also = vec![shade];
+    h.run_steps(1);
+    h.state_mut().invoke(Cmd::ToggleVisible).unwrap();
+    h.run_steps(2);
+    assert!(
+        !layer_named(&h, "rim").visible && !layer_named(&h, "shade").visible,
+        "hide acts on every selected layer"
+    );
+    h.state_mut().invoke(Cmd::GroupLayer).unwrap();
+    h.run_steps(2);
+    let group = h.state().scene.active_layer().unwrap().clone();
+    assert_eq!(group.children().len(), 2, "group takes every selected layer");
+    right_click_row(&mut h, "group");
+    assert!(shown(&h, "Ungroup"));
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    h.state_mut().invoke(Cmd::Ungroup).unwrap();
+    h.run_steps(2);
+    assert!(h.state().scene.bundle.doc.find_layer("group").is_err(), "{}", said(&h));
+    assert!(!layer_named(&h, "rim").id.is_empty());
+    let _ = std::fs::remove_dir_all(&path);
+}
