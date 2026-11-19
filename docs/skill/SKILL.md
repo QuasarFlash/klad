@@ -92,6 +92,8 @@ klad lasso art.klad l4 --polygon '600,600 1400,560 1450,1300 640,1380' --cut --m
 klad lasso art.klad l4 --polygon '...' --cut --rotate 12 --scale 1.1
 klad lasso art.klad l4 --polygon '...' --flip h
 klad lasso art.klad l4 --polygon '...' --cut --rm
+klad lasso art.klad l4 --ellipse 600,600,400,300 --move 40,0     # the ellipse that fits the box
+klad lasso art.klad l4 --at 820,940 --tolerance 0.15 --rm         # a magic wand: the area of one colour there, cut at its edge
 ```
 
 - Without a move, turn, scale, flip or `--rm` it lists the strokes and fills inside the polygon and those crossing its edge.

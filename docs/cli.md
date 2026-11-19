@@ -109,8 +109,10 @@ Make a klad drawing from an Aseprite file (.aseprite or .ase), or a pixel drawin
   klad import sprite.png                      (a picture of 512 px or less a side, at its own size)
   klad import sprite@8x.png --size 32         (shrunk to 32 px on its longest side)
   klad import photo.jpg --size 64 --colors 16
+  klad import photo.jpg                       (larger than 512 px: a painting drawing of its size with the picture on a layer)
+  klad import --clipboard                     (the picture copied in another app: pasted.klad here)
 
-A picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.
+A picture larger than 512 px a side, without --size or --colors, or any picture with --painting, makes a painting drawing of its size: the picture on a layer at the bottom and a paint layer over it. Otherwise a picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.
 
 From an Aseprite file, what comes over: image layers as pixel layers with their name, visibility, opacity and blend mode, groups as groups, every cel as a drawing on its frame (linked cels stay linked), the palette with its names, and tags as clips. Frame times become whole frames: a file of 100 ms frames is 10 frames a second, and a frame shown for 300 ms holds for three. Indexed, grey and RGBA files all open; every pixel is bound to its palette colour, and colours a file uses outside its palette are added to it.
 
@@ -118,13 +120,19 @@ What does not: tilemap layers, tilesets and slices are left out, a tag that play
 
 klad export art.klad --aseprite writes a drawing's pixel layers back to an Aseprite file.
 
-Usage: klad import [OPTIONS] <FILE>
+Usage: klad import [OPTIONS] [FILE]
 
 Arguments:
-  <FILE>
+  [FILE]
 
 
 Options:
+      --clipboard
+          The picture on the clipboard, copied in another app (the drawing is pasted.klad here unless -o names it)
+
+      --painting
+          A picture: a painting drawing with the picture on a layer, whatever its size (pictures larger than 512 px come in that way already)
+
       --size <SIZE>
           A picture: its longest side in pixels once it is pixel art, 1 to 512 (needed when the picture is larger)
 
@@ -1187,7 +1195,7 @@ Arguments:
           layer, cel, mask, rect, ellipse, path, group, rays, image, scatter, repeat, mirror or text
 
   [REST]...
-          For layers the kind first (paint, pixel, vector, group, bones, image with src=photo.jpg, or adjust and its type: hsl, levels, curves, balance, gradient-map, fill), then key=value pairs
+          For layers the kind first (paint, pixel, vector, group, bones, image with src=photo.jpg or src=clipboard, or adjust and its type: hsl, levels, curves, balance, gradient-map, fill), then key=value pairs
 
 Options:
       --in <INTO>
@@ -1572,6 +1580,10 @@ Select the strokes and fills of a paint layer inside a polygon and move, turn, s
   klad lasso art.klad l3 --polygon '...' --cut --rotate 15 --scale 1.2
   klad lasso art.klad l3 --polygon '...' --flip h
   klad lasso art.klad l3 --polygon '...' --cut --rm
+  klad lasso art.klad l3 --ellipse 100,100,300,200 --move 40,0
+  klad lasso art.klad l3 --at 220,180 --tolerance 0.2 --rm
+
+--box and --ellipse take a box (x,y,w,h) in place of the polygon. --at is a magic wand: it takes the area of one colour around that point of the layer, up to where the colour changes by more than --tolerance (0 to 1), and cuts what crosses its edge, so the parts inside are taken.
 
 Also a lasso op in klad apply: {"op":"lasso","layer":"l3","polygon":[[100,100],[400,120],[380,400]],"cut":true,"x":60,"y":-20} (or "rm":true).
 
@@ -1587,6 +1599,17 @@ Arguments:
 Options:
       --polygon <POLYGON>
           x,y pairs separated by spaces
+
+      --ellipse <X,Y,W,H>
+          The ellipse that fits this box, in place of a polygon
+
+      --at <X,Y>
+          A magic wand: the area of one colour around this point on the layer, up to its edge (takes the parts inside, as --cut)
+
+      --tolerance <TOLERANCE>
+          With --at: how far a colour may be from the one at the point, 0 to 1
+
+          [default: 0.1]
 
       --box <X,Y,W,H>
           A box in place of a polygon: its top left pixel and its size in pixels
@@ -3853,6 +3876,9 @@ Options:
 
       --references
           Keep reference layers (photos to trace over), which exports leave out
+
+      --clipboard
+          Put the picture on the clipboard, for pasting in another app, instead of writing a file
 
       --sheet <SHEET>
           Sprite sheet and Aseprite JSON: all, a clip or a range like 0-11

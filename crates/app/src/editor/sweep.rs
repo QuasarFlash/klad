@@ -1014,7 +1014,10 @@ impl Desk {
             }
         };
         let screen: Vec<Pos2> = path.iter().map(|p| self.at(*p)).collect();
-        self.h.state_mut().select_box = !matches!(gesture, Gesture::Loop);
+        self.h.state_mut().marquee = match gesture {
+            Gesture::Loop => super::marquee::Marquee::Loop,
+            _ => super::marquee::Marquee::Box,
+        };
         self.stroke(&screen);
         match hand.finish {
             Finish::Nothing => {}

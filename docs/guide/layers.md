@@ -1,4 +1,4 @@
-_Last updated: 2026-11-17 09:25_
+_Last updated: 2026-11-19 22:40_
 
 # Layers, masks and clipping
 
@@ -35,3 +35,5 @@ Alt click its eye in the Layers pane. Alt click it again to bring the others bac
 ## Trace over a picture
 
 Drop a PNG or JPEG on the window and tick **reference** in its layer settings. (A `.klad` drawing dropped on the window opens instead.) You keep seeing it while you draw, and exports leave it out.
+
+To start a drawing from a picture, choose it in **File > Open**: klad makes a drawing next to it, of its size, with the picture on a layer (a picture of 512 px or less a side comes in as a pixel drawing). **File > New from clipboard** does the same with a picture copied in another app.

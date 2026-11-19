@@ -44,6 +44,7 @@ pub enum Cmd {
     Delete,
     Deselect,
     Copy,
+    CopyMerged,
     Cut,
     Paste,
     BringToFront,
@@ -192,6 +193,7 @@ pub enum Cmd {
     PasteCellsLinked,
     ClipSettings,
     NewDocument,
+    NewFromClipboard,
     OpenDocument,
     OpenRecent,
     CopyPath,
@@ -549,7 +551,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 222] = [
+    pub const ALL: [Cmd; 224] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -590,6 +592,7 @@ impl Cmd {
         Cmd::Delete,
         Cmd::Deselect,
         Cmd::Copy,
+        Cmd::CopyMerged,
         Cmd::Cut,
         Cmd::Paste,
         Cmd::BringToFront,
@@ -738,6 +741,7 @@ impl Cmd {
         Cmd::PasteCellsLinked,
         Cmd::ClipSettings,
         Cmd::NewDocument,
+        Cmd::NewFromClipboard,
         Cmd::CloseDocument,
         Cmd::Quit,
         Cmd::FirstSteps,
@@ -1135,6 +1139,15 @@ impl Cmd {
                 T::Press(const { &[cmd(Key::C)] }),
                 R::No,
                 "keep the selected strokes or shapes for cmd V; while the timeline is in use, the selected frames",
+            ),
+            Cmd::CopyMerged => spec(
+                "edit.copy-merged",
+                "copy what you see",
+                icon::COPY,
+                G::Edit,
+                T::Press(const { &[keys(Key::C, true, false, true)] }),
+                R::No,
+                "put the picture as you see it, every layer together, on the clipboard for another app: inside the selection, or the whole canvas",
             ),
             Cmd::Cut => spec(
                 "edit.cut",
@@ -2614,6 +2627,15 @@ impl Cmd {
                 R::No,
                 "a new .klad bundle: name, folder, size, background; this one stays saved",
             ),
+            Cmd::NewFromClipboard => spec(
+                "file.new-from-clipboard",
+                "new drawing from the clipboard",
+                icon::PASTE,
+                G::File,
+                T::None,
+                R::No,
+                "a new drawing of the size of the picture copied in another app, with the picture on a layer; it is made next to this drawing and opens",
+            ),
             Cmd::OpenDocument => spec(
                 "file.open",
                 "open a drawing",
@@ -2830,6 +2852,7 @@ impl Cmd {
             Cmd::Delete => "Delete",
             Cmd::Deselect => "Deselect",
             Cmd::Copy => "Copy",
+            Cmd::CopyMerged => "Copy merged",
             Cmd::Cut => "Cut",
             Cmd::BringToFront => "Bring to front",
             Cmd::BringForward => "Bring forward",
@@ -2979,6 +3002,7 @@ impl Cmd {
             Cmd::PasteCellsLinked => "Paste cells as links",
             Cmd::ClipSettings => "Clip settings…",
             Cmd::NewDocument => "New…",
+            Cmd::NewFromClipboard => "New from clipboard",
             Cmd::OpenDocument => "Open…",
             Cmd::OpenRecent => "All recent drawings…",
             Cmd::CopyPath => "Copy path",
@@ -3054,6 +3078,7 @@ pub const MENUS: [Menu; 9] = [
         title: "File",
         items: &[
             Run(Cmd::NewDocument),
+            Run(Cmd::NewFromClipboard),
             Run(Cmd::OpenDocument),
             Item::Recent,
             Run(Cmd::CloseDocument),
@@ -3091,6 +3116,7 @@ pub const MENUS: [Menu; 9] = [
             Line,
             Run(Cmd::Cut),
             Run(Cmd::Copy),
+            Run(Cmd::CopyMerged),
             Run(Cmd::Paste),
             Run(Cmd::DuplicateInPlace),
             Run(Cmd::Delete),

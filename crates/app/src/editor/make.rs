@@ -649,6 +649,10 @@ impl Editor {
     }
 
     pub(super) fn import_picture(&mut self, bytes: &[u8], name: &str) -> Result<()> {
+        self.import_picture_at(bytes, name, None)
+    }
+
+    pub(super) fn import_picture_at(&mut self, bytes: &[u8], name: &str, centre: Option<egui::Vec2>) -> Result<()> {
         let (src, w, h) = match klad_render::assets::import_image(&self.scene.bundle.root, bytes) {
             Ok(made) => made,
             Err(e) => {
@@ -659,7 +663,8 @@ impl Editor {
         let (cw, ch) = self.scene.size();
         let fit = (cw as f32 / w as f32).min(ch as f32 / h as f32).min(1.0);
         let (pw, ph) = (w as f32 * fit, h as f32 * fit);
-        let node = json!({"type": "image", "src": src, "x": (cw as f32 - pw) / 2.0, "y": (ch as f32 - ph) / 2.0, "w": pw, "h": ph});
+        let (mx, my) = centre.map_or((cw as f32 / 2.0, ch as f32 / 2.0), |c| (c.x, c.y));
+        let node = json!({"type": "image", "src": src, "x": mx - pw / 2.0, "y": my - ph / 2.0, "w": pw, "h": ph});
         let stem = std::path::Path::new(name)
             .file_stem()
             .and_then(|s| s.to_str())

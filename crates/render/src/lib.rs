@@ -1,6 +1,7 @@
 pub mod align;
 pub mod aseprite;
 pub mod assets;
+pub mod clipboard;
 pub mod effects;
 pub mod export;
 pub mod fonts;
@@ -19,6 +20,7 @@ pub mod shift;
 pub mod sprites;
 pub mod text;
 pub mod vector;
+pub mod wand;
 
 pub const RENDER_VERSION: u32 = 2;
 

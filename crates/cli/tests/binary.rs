@@ -2924,3 +2924,119 @@ fn order_puts_marks_and_shapes_in_front_or_behind_and_strokes_paint_lines_and_fi
     assert!(String::from_utf8_lossy(&layer_too.stderr).contains("is a layer"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn lasso_takes_an_ellipse_or_a_wand_and_pictures_go_through_the_clipboard() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-clip-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bundle = dir.join("a.klad");
+    let path = bundle.to_str().unwrap();
+    let board = dir.join("board.png");
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .env("KLAD_CLIPBOARD", &board)
+            .output()
+            .unwrap()
+    };
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    draw(&["new", path, "--width", "200", "--height", "100"]);
+    draw(&[
+        "stroke",
+        path,
+        "l1",
+        "--line",
+        "20,20,60,20",
+        "--size",
+        "6",
+        "--color",
+        "#ff0000",
+    ]);
+    draw(&[
+        "stroke",
+        path,
+        "l1",
+        "--line",
+        "120,70,180,70",
+        "--size",
+        "6",
+        "--color",
+        "#0000ff",
+    ]);
+    let inside = draw(&["lasso", path, "l1", "--ellipse", "10,5,60,30"]);
+    assert!(inside.contains("inside (1)"), "{inside}");
+    let missed = run(&["lasso", path, "l1", "--at", "100,50", "--rm"]);
+    assert!(!missed.status.success());
+    assert!(String::from_utf8_lossy(&missed.stderr).contains("nothing is painted at 100,50"));
+    draw(&["lasso", path, "l1", "--at", "150,70", "--rm"]);
+    let listed: serde_json::Value = serde_json::from_str(&draw(&["strokes", path, "l1", "--json"])).unwrap();
+    assert_eq!(
+        listed["strokes"].as_array().unwrap().len(),
+        1,
+        "the wand took the blue stroke"
+    );
+
+    draw(&["export", path, "--clipboard"]);
+    let copied = std::fs::read(&board).unwrap();
+    assert_eq!(&copied[1..4], b"PNG");
+    let made = draw(&["import", "--clipboard"]);
+    assert!(made.trim().ends_with("pasted.klad"), "{made}");
+    let small: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("pasted.klad").join("doc.json")).unwrap()).unwrap();
+    assert_eq!(
+        small["layers"][0]["pixel"], true,
+        "a small picture is a pixel drawing: {}",
+        small["layers"][0]
+    );
+
+    let wide = dir.join("wide.klad");
+    draw(&["new", wide.to_str().unwrap(), "--width", "700", "--height", "40"]);
+    draw(&[
+        "stroke",
+        wide.to_str().unwrap(),
+        "l1",
+        "--line",
+        "10,20,690,20",
+        "--size",
+        "8",
+    ]);
+    draw(&["export", wide.to_str().unwrap(), "--clipboard"]);
+    draw(&["import", "--clipboard", "-o", "big.klad"]);
+    let big: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("big.klad").join("doc.json")).unwrap()).unwrap();
+    assert_eq!(
+        (big["canvas"]["width"].as_u64(), big["canvas"]["height"].as_u64()),
+        (Some(700), Some(40))
+    );
+    let kinds: Vec<&str> = big["layers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|l| l["kind"].as_str())
+        .collect();
+    assert_eq!(
+        kinds.first(),
+        Some(&"vector"),
+        "the picture lies at the bottom: {kinds:?}"
+    );
+    assert_eq!(
+        big["layers"][0]["cels"][0]["nodes"][0]["type"], "image",
+        "a picture larger than 512 px comes in as a painting with the picture on a layer"
+    );
+    draw(&["add", path, "layer", "image", "src=clipboard"]);
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(bundle.join("doc.json")).unwrap()).unwrap();
+    assert!(doc["layers"].as_array().unwrap().iter().any(|l| l["name"] == "pasted"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

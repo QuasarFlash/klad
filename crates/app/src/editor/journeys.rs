@@ -3143,7 +3143,7 @@ fn someone_keeps_their_drawings_in_order() {
         "the message says in plain words that the drawing is damaged and what to do",
     );
 
-    j.act("give Open the path of a picture");
+    j.act("give Open the path of a picture: klad makes a drawing of it next to it and opens that");
     let (_, rendered) = j.agent(&["render", &home.join("poster final.klad").display().to_string()]);
     let picture = rendered
         .lines()
@@ -3153,12 +3153,18 @@ fn someone_keeps_their_drawings_in_order() {
     j.retype("Or paste its path", &format!("{}/{picture}", home.display()));
     j.click("Open");
     j.look("picture-to-open");
-    let said = shown(start_error(&j));
-    j.note(format!("it said: {said}"));
+    let stem = std::path::Path::new(&picture)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let opened = j.ed().map(|ed| ed.scene.bundle.root.clone());
+    j.note(format!("it opened {opened:?}"));
     j.expect(
-        "a-picture-given-to-open-says-how-to-bring-it-in",
-        said.contains("Import") || said.contains("import") || said.contains("drop"),
-        "the refusal says how a picture comes into klad",
+        "a-picture-given-to-open-becomes-a-drawing",
+        opened.is_some_and(|p| {
+            p.extension().is_some_and(|e| e == "klad") && p.file_stem().is_some_and(|s| s.to_string_lossy() == stem)
+        }),
+        "the picture opens as a drawing made next to it",
     );
 
     j.finish(&[]);

@@ -5,6 +5,7 @@ mod brushwin;
 mod buffer;
 mod cells;
 mod checks;
+mod clip;
 mod clips;
 mod commands;
 mod compare;
@@ -19,6 +20,7 @@ mod lock;
 mod look;
 mod make;
 mod maps;
+mod marquee;
 mod options;
 mod paintover;
 mod panels;
@@ -965,10 +967,12 @@ pub(crate) struct Editor {
     pub(crate) brush_figure: straight::Figure,
     brush_last: Option<(String, Vec2)>,
     typed: Option<typed::Typed>,
+    own_picture: Option<clip::Own>,
     pub(crate) pixel_filled: bool,
     pub(crate) pixel_diagonal: bool,
     pub(crate) pixel_fill_all: bool,
-    pub(crate) select_box: bool,
+    pub(crate) marquee: marquee::Marquee,
+    pub(crate) wand_tolerance: f32,
     pub(crate) pixel_mode: PixelMode,
     pub(crate) pixel_dither: u32,
     pub(crate) pixel_two: bool,
@@ -1187,10 +1191,12 @@ impl Editor {
             brush_figure: straight::Figure::Free,
             brush_last: None,
             typed: None,
+            own_picture: None,
             pixel_filled: false,
             pixel_diagonal: false,
             pixel_fill_all: false,
-            select_box: true,
+            marquee: marquee::Marquee::Box,
+            wand_tolerance: klad_render::wand::TOLERANCE,
             pixel_mode: PixelMode::Draw,
             pixel_dither: 100,
             pixel_two: false,
@@ -2543,11 +2549,18 @@ impl Editor {
             .collect()
     }
 
+    fn marquee_here(&self) -> marquee::Marquee {
+        let grid = self.scene.on_grid();
+        match self.tool == Tool::Strokes || (grid && self.tool == Tool::Select) {
+            true => self.marquee,
+            false => marquee::Marquee::Loop,
+        }
+    }
+
     fn lasso_outline(&self, lasso: &Lasso) -> Vec<Vec2> {
         let grid = self.scene.on_grid();
-        let boxed = self.select_box && (self.tool == Tool::Strokes || (grid && self.tool == Tool::Select));
-        match (boxed, lasso.points.first(), lasso.points.last()) {
-            (true, Some(a), Some(b)) => {
+        match (self.marquee_here(), lasso.points.first(), lasso.points.last()) {
+            (marquee::Marquee::Box, Some(a), Some(b)) => {
                 let (lo, hi) = (a.min(*b), a.max(*b));
                 let (lo, hi) = match grid {
                     true => (lo.floor(), hi.ceil()),
@@ -2555,6 +2568,7 @@ impl Editor {
                 };
                 vec![lo, vec2(hi.x, lo.y), hi, vec2(lo.x, hi.y)]
             }
+            (marquee::Marquee::Ellipse, Some(a), Some(b)) => marquee::ellipse(*a, *b, self.modifiers.shift),
             _ => lasso.points.clone(),
         }
     }
@@ -2564,7 +2578,8 @@ impl Editor {
             return Ok(());
         };
         let zoom = self.view.map_or(1.0, |v| v.zoom);
-        let click = !lasso.far || lasso.points.len() < 3;
+        let wand = self.marquee_here() == marquee::Marquee::Wand;
+        let click = !wand && (!lasso.far || lasso.points.len() < 3);
         if click
             && !self.modifiers.shift
             && let Some((path, _)) = self.mark_at(lasso.points[0], 5.0 / zoom)
@@ -2599,8 +2614,17 @@ impl Editor {
         let at = lasso.points[0];
         let erased = self.erased();
         let outline = self.lasso_outline(&lasso);
-        let polygon: Option<Vec<[f32; 2]>> =
-            (lasso.far && outline.len() >= 3).then(|| outline.iter().map(|p| [p.x, p.y]).collect());
+        let polygon: Option<Vec<[f32; 2]>> = match wand {
+            true => self.wand_polygon(at),
+            false => (lasso.far && outline.len() >= 3).then(|| outline.iter().map(|p| [p.x, p.y]).collect()),
+        };
+        if wand && polygon.is_none() {
+            self.say(
+                Tone::Refused,
+                "the wand takes an area of one colour: click on what is painted on this layer",
+            );
+            return Ok(());
+        }
         let pick = |marks: &[Mark]| -> (Vec<u32>, bool) {
             match &polygon {
                 Some(polygon) => {
@@ -2635,22 +2659,28 @@ impl Editor {
                 (layer, cel, ids, crossing)
             })
             .collect();
-        let adding = self.modifiers.shift;
-        let previous = self.picked.clone().filter(|p| adding && p.cel == cel);
+        let taking = self.modifiers.alt && !click;
+        let adding = self.modifiers.shift && !(wand && taking);
+        let previous = self.picked.clone().filter(|p| (adding || taking) && p.cel == cel);
         let crossed = crossing || others.iter().any(|o| o.3);
-        let cut = polygon
-            .clone()
-            .filter(|_| self.cuts() && crossed)
-            .or_else(|| previous.as_ref().and_then(|p| p.cut.clone()));
-        let merge = |held: Vec<u32>, found: &[u32]| {
-            found.iter().fold(held, |mut ids, id| {
-                if adding && !lasso.far && ids.contains(id) {
+        let cut = match taking {
+            true => previous.as_ref().and_then(|p| p.cut.clone()),
+            false => polygon
+                .clone()
+                .filter(|_| (self.cuts() || wand) && crossed)
+                .or_else(|| previous.as_ref().and_then(|p| p.cut.clone())),
+        };
+        let far = lasso.far || wand;
+        let merge = |held: Vec<u32>, found: &[u32]| match taking {
+            true => held.into_iter().filter(|id| !found.contains(id)).collect(),
+            false => found.iter().fold(held, |mut ids, id| {
+                if adding && !far && ids.contains(id) {
                     ids.retain(|x| x != id);
                 } else if !ids.contains(id) {
                     ids.push(*id);
                 }
                 ids
-            })
+            }),
         };
         let ids = merge(previous.as_ref().map_or(Vec::new(), |p| p.ids.clone()), &found);
         let more: Vec<Part> = others
@@ -2675,10 +2705,7 @@ impl Editor {
             }
         }
         if self.picked.is_none() && polygon.is_some() && crossed {
-            let shape = match self.select_box && self.tool == Tool::Strokes {
-                true => "box",
-                false => "loop",
-            };
+            let shape = self.marquee_here().label();
             self.say(
                 Tone::Info,
                 format!("the {shape} holds no whole stroke: tick \"a box or loop cuts strokes at its edge\" in the bar to take the parts inside"),
@@ -3584,8 +3611,10 @@ impl Editor {
                 }
             }
             (Tool::Strokes, Phase::Down) => match self.grab_at(view, rect, e.pos) {
-                Some((id, grab, corners)) => self.start_drag(id, grab, corners, c, false),
-                None => {
+                Some((id, grab, corners)) if !(self.modifiers.alt && grab == Grab::Move) => {
+                    self.start_drag(id, grab, corners, c, false)
+                }
+                _ => {
                     self.lasso = Some(Lasso {
                         points: vec![c],
                         start: e.pos,

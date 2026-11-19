@@ -325,7 +325,7 @@ fn a_lasso_picks_strokes_on_every_layer_when_all_layers_is_on() {
     activate(&mut h, "lines");
     h.key_press(Key::S);
     h.run_steps(2);
-    h.state_mut().select_box = false;
+    h.state_mut().marquee = super::marquee::Marquee::Loop;
     let lasso = |h: &mut Harness<'static, Editor>| {
         let corners = [(5.0, 5.0), (505.0, 5.0), (505.0, 379.0), (5.0, 379.0), (5.0, 10.0)];
         let at: Vec<egui::Pos2> = corners.iter().map(|(x, y)| canvas_at(h, *x, *y)).collect();
@@ -5076,7 +5076,7 @@ fn strokes_select_move_and_copy_across_cmd_clicked_layers() {
     assert_eq!(h.state().also, vec!["l5".to_string()]);
     h.key_press(Key::S);
     h.run_steps(2);
-    h.state_mut().select_box = false;
+    h.state_mut().marquee = super::marquee::Marquee::Loop;
     let view = h.state().view.unwrap();
     let rect = h.state().canvas_rect;
     let at = |x: f32, y: f32| rect.min + view.to_screen(egui::Vec2::new(x, y), rect.size());
@@ -9067,7 +9067,11 @@ fn s_drags_a_box_around_strokes_and_draws_a_loop_when_loop_is_picked() {
     activate(&mut h, "lines");
     h.key_press(Key::S);
     h.run_steps(2);
-    assert!(h.state().select_box, "S starts as a box, as its icon shows");
+    assert_eq!(
+        h.state().marquee,
+        super::marquee::Marquee::Box,
+        "S starts as a box, as its icon shows"
+    );
     let (from, to) = (canvas_at(&h, 20.0, 20.0), canvas_at(&h, 320.0, 220.0));
     drag(&mut h, from, to);
     h.run_steps(2);
@@ -9077,7 +9081,7 @@ fn s_drags_a_box_around_strokes_and_draws_a_loop_when_loop_is_picked() {
     h.run_steps(2);
     h.get_by_label("loop").click();
     h.run_steps(2);
-    assert!(!h.state().select_box);
+    assert_eq!(h.state().marquee, super::marquee::Marquee::Loop);
     let (from, to) = (canvas_at(&h, 20.0, 20.0), canvas_at(&h, 320.0, 220.0));
     drag(&mut h, from, to);
     h.run_steps(2);

@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 21:30_
+_Last updated: 2026-11-19 22:40_
 
 # Changing strokes
 
@@ -12,7 +12,7 @@ Press **V**, press on what you want to move and drag. Hold **alt** to drag a cop
 
 ## Select strokes
 
-Press **S** and click a stroke. Shift click adds more. Drag a box around strokes to select them, or pick **loop** in the bar over the canvas and draw a loop around them. The box or loop takes the strokes that are wholly inside it; to take the parts of strokes that cross its edge too, tick **a box or loop cuts strokes at its edge** in the bar. **cmd A** selects everything on the layer at this frame.
+Press **S** and click a stroke. Shift click adds more. Drag a box around strokes to select them, or pick **loop** or **ellipse** in the bar over the canvas and draw around them. **wand** takes the area of one colour you click, up to its edge; its **tolerance** lets close colours in. Hold **shift** to add to the selection and **alt** to take away from it. The box or loop takes the strokes that are wholly inside it; to take the parts of strokes that cross its edge too, tick **a box or loop cuts strokes at its edge** in the bar. **cmd A** selects everything on the layer at this frame.
 
 To pick on every layer instead of only the active one, switch the bar over the canvas to **all layers**.
 
@@ -25,6 +25,8 @@ To recolour, click the palette button in the bar and pick a colour on the wheel,
 ## Copy and paste
 
 **cmd C** copies the selected strokes or shapes, **cmd X** cuts them, and **cmd V** pastes them in place, on this frame or on another one. Strokes are pasted on the layer you have selected, so to put them on another layer, select that layer before you paste. Shapes pasted while a paint layer is active get a vector layer of their own above it.
+
+Copying also puts a picture of the selection on the clipboard, for other apps. **shift cmd C** copies what you see, every layer together: inside the selection, or the whole canvas. A picture copied in another app pastes with **cmd V** onto a new layer in the middle of the view, selected so you can move it; on a pixel layer it comes in as pixels in the drawing's palette.
 
 ## Put something in front or behind
 

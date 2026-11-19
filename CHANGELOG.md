@@ -8,6 +8,8 @@
 - **shift and alt while transforming.** A corner now scales from the opposite corner: **shift** frees the proportions, **alt** scales from the middle. **shift** keeps a move level or upright and turns in 15 degree steps; **alt** stretches both sides. The status line names the keys while you drag.
 - **Typed numbers.** The numbers button in the selection bar sets position, size and angle.
 - **shift** click on a selected shape still adds or removes shapes; **shift** drag on it now moves it level.
+- **More ways to select.** Next to box and loop, the S tool selects with an **ellipse** or a **wand** that takes the area of one colour you click, with a tolerance; **alt** takes away from the selection (`klad lasso --ellipse`, `--at` with `--tolerance`).
+- **Pictures to and from other apps.** A picture copied in another app pastes with **cmd V** onto a new layer, selected, or onto a pixel layer as pixels. **cmd C** also puts a picture of the selection on the clipboard, and **shift cmd C** (Copy merged) what you see. **File > New from clipboard** and **File > Open** of a PNG or JPEG make a drawing of a picture (`klad import --clipboard`, `klad import photo.jpg`, `klad export --clipboard`, `klad add art.klad layer image src=clipboard`).
 
 ## 0.4.0 (2026-11-19)
 

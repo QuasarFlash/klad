@@ -467,7 +467,9 @@ impl Start {
         if picker::NATIVE
             && ui
                 .add(egui::Button::new("Choose an Aseprite file...").min_size(vec2(200.0, 28.0)))
-                .on_hover_text("an .aseprite or .ase file opens as a new klad drawing next to it")
+                .on_hover_text(
+                    "an .aseprite or .ase file, or a PNG or JPEG picture, opens as a new klad drawing next to it",
+                )
                 .clicked()
         {
             picked = picker::choose_file(Some(&settings.drawings_folder()), "Open");
@@ -486,7 +488,10 @@ impl Start {
                 picked = Some(expand(self.path.trim()));
             }
         });
-        ui.label(RichText::new("The path of an Aseprite file (.aseprite, .ase) works too.").color(theme::WEAK));
+        ui.label(
+            RichText::new("The path of an Aseprite file (.aseprite, .ase) or a picture (.png, .jpg) works too.")
+                .color(theme::WEAK),
+        );
         let path = picked?;
         if foreign(&path) {
             return Some(path);
@@ -677,10 +682,11 @@ pub fn expand(text: &str) -> PathBuf {
 
 pub fn foreign(path: &Path) -> bool {
     path.is_file()
-        && path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| e.eq_ignore_ascii_case("aseprite") || e.eq_ignore_ascii_case("ase"))
+        && (is_picture(path)
+            || path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("aseprite") || e.eq_ignore_ascii_case("ase")))
 }
 
 pub fn brought_in(path: &Path) -> Result<(PathBuf, Option<String>)> {
@@ -699,7 +705,7 @@ pub fn brought_in(path: &Path) -> Result<(PathBuf, Option<String>)> {
     }
     let Some(exe) = draw_binary() else {
         bail!(
-            "the klad command line tool is missing next to the editor, so an Aseprite file cannot be opened: install klad again (it ships both)"
+            "the klad command line tool is missing next to the editor, so an Aseprite file or a picture cannot be opened: install klad again (it ships both)"
         );
     };
     let out = std::process::Command::new(exe).arg("import").arg(path).output()?;

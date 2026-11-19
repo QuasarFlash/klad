@@ -1830,6 +1830,7 @@ name = "klad-render"
 version = "0.4.0"
 dependencies = [
  "anyhow",
+ "arboard",
  "bytemuck",
  "crc32fast",
  "flate2",

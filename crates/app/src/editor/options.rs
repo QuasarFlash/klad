@@ -598,18 +598,24 @@ impl Editor {
     }
 
     fn box_or_loop(&mut self, ui: &mut egui::Ui, what: &str) {
-        [(true, "box"), (false, "loop")].iter().for_each(|(boxed, label)| {
+        super::marquee::Marquee::ALL.iter().for_each(|kind| {
             if ui
-                .selectable_label(self.select_box == *boxed, *label)
-                .hint(match boxed {
-                    true => format!("drag a box around the {what} to select"),
-                    false => format!("draw a loop around the {what} to select"),
-                })
+                .selectable_label(self.marquee == *kind, kind.label())
+                .hint(kind.hint(what))
                 .clicked()
             {
-                self.select_box = *boxed;
+                self.marquee = *kind;
             }
         });
+        if self.marquee == super::marquee::Marquee::Wand && !self.scene.on_grid() {
+            ui.add(
+                egui::DragValue::new(&mut self.wand_tolerance)
+                    .range(0.0..=1.0)
+                    .speed(0.01)
+                    .prefix("tolerance "),
+            )
+            .hint("how far a colour may be from the one you click and still be taken");
+        }
     }
 
     fn pick_scope(&mut self, ui: &mut egui::Ui) {

@@ -304,3 +304,163 @@ fn a_shape_moves_level_with_shift_scales_from_its_far_corner_and_takes_typed_num
     assert!((top - 10.0).abs() < 1.0, "typing y moves the strokes: {top}");
     let _ = std::fs::remove_dir_all(&path);
 }
+
+fn picked_ids(h: &Harness<'static, Editor>) -> Vec<u32> {
+    let mut ids = h.state().picked.as_ref().map(|p| p.ids.clone()).unwrap_or_default();
+    ids.sort_unstable();
+    ids
+}
+
+#[test]
+fn an_ellipse_a_wand_and_alt_select_and_take_away_strokes() {
+    use super::marquee::Marquee;
+    let path = sample("marquee");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "lines");
+    h.key_press(Key::S);
+    h.run_steps(2);
+    let layer = layer_named(&h, "lines").id.clone();
+    let short = parse_lines(&format!(
+        r#"{{"op":"stroke","layer":"{layer}","path":"M200 330 L260 330","size":6}}"#
+    ))
+    .unwrap();
+    h.state_mut().apply(short).unwrap();
+    h.run_steps(2);
+    let marks: Vec<u32> = h.state().scene.active_marks().iter().map(Mark::id).collect();
+    assert_eq!(marks.len(), 3);
+
+    h.state_mut().marquee = Marquee::Ellipse;
+    let (a, b) = (canvas_at(&h, 180.0, 312.0), canvas_at(&h, 280.0, 348.0));
+    drag(&mut h, a, b);
+    h.run_steps(2);
+    assert_eq!(
+        picked_ids(&h),
+        [marks[2]],
+        "the ellipse takes the stroke wholly inside it: {}",
+        said(&h)
+    );
+
+    h.state_mut().marquee = Marquee::Box;
+    chord(&mut h, Modifiers::COMMAND, Key::A);
+    assert_eq!(picked_ids(&h).len(), 3);
+    hold(&mut h, Modifiers::ALT);
+    let (a, b) = (canvas_at(&h, 310.0, 210.0), canvas_at(&h, 30.0, 30.0));
+    drag(&mut h, a, b);
+    hold(&mut h, Modifiers::NONE);
+    assert_eq!(
+        picked_ids(&h),
+        [marks[1], marks[2]],
+        "alt takes the boxed stroke away: {}",
+        said(&h)
+    );
+
+    chord(&mut h, Modifiers::NONE, Key::Escape);
+    h.state_mut().marquee = Marquee::Wand;
+    let empty = canvas_at(&h, 480.0, 360.0);
+    click(&mut h, empty);
+    assert!(
+        said(&h).contains("the wand takes an area of one colour"),
+        "{}",
+        said(&h)
+    );
+    let on = canvas_at(&h, 170.0, 120.0);
+    click(&mut h, on);
+    assert!(h.state().picked.is_some(), "{}", said(&h));
+    assert!(
+        picked_ids(&h).contains(&marks[0]),
+        "the wand takes the stroke it was clicked on: {:?}",
+        picked_ids(&h)
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn a_picture_from_another_app_pastes_on_a_new_layer_and_copies_go_out_as_pictures() {
+    let path = sample("pictures");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "colour");
+    let layers = h.state().scene.bundle.doc.all_layers().len();
+    let red = egui::ColorImage::new([20, 10], vec![egui::Color32::RED; 200]);
+    h.event(egui::Event::PasteImage(std::sync::Arc::new(red)));
+    h.run_steps(3);
+    assert_eq!(
+        h.state().scene.bundle.doc.all_layers().len(),
+        layers + 1,
+        "{}",
+        said(&h)
+    );
+    assert!(said(&h).contains("pasted a 20 by 10 px picture"), "{}", said(&h));
+    assert_eq!(h.state().tool, Tool::Select);
+    assert!(
+        h.state().selection.is_some(),
+        "the picture is selected so it moves at once"
+    );
+
+    activate(&mut h, "lines");
+    h.key_press(Key::S);
+    h.run_steps(2);
+    chord(&mut h, Modifiers::COMMAND, Key::A);
+    chord(&mut h, Modifiers::COMMAND, Key::C);
+    let own = h.state().own_picture.expect("cmd C puts a picture on the clipboard");
+    assert!(
+        own.0 > 200 && own.1 > 150,
+        "the picture is the selection's box: {own:?}"
+    );
+    let ours = h.state().selection_picture().unwrap();
+    let image = egui::ColorImage::from_rgba_unmultiplied([ours.width as usize, ours.height as usize], &ours.rgba);
+    activate(&mut h, "colour");
+    let before = marks_on(&h, &layer_named(&h, "colour").clone());
+    let all = h.state().scene.bundle.doc.all_layers().len();
+    h.event(egui::Event::PasteImage(std::sync::Arc::new(image)));
+    h.run_steps(3);
+    assert_eq!(
+        (
+            marks_on(&h, &layer_named(&h, "colour").clone()),
+            h.state().scene.bundle.doc.all_layers().len()
+        ),
+        (before + 2, all),
+        "klad's own picture pastes back as the strokes it was copied from: {}",
+        said(&h)
+    );
+
+    chord(&mut h, Modifiers::NONE, Key::Escape);
+    h.state_mut().picked = None;
+    h.state_mut().selection = None;
+    h.state_mut().invoke(Cmd::CopyMerged).unwrap();
+    h.run_steps(2);
+    assert_eq!(
+        h.state().own_picture.map(|o| (o.0, o.1)),
+        Some((512, 384)),
+        "{}",
+        said(&h)
+    );
+    assert!(said(&h).contains("copied the whole picture"), "{}", said(&h));
+    let png = path.join("photo.png");
+    std::fs::write(&png, klad_render::clipboard::png(&ours)).unwrap();
+    assert!(crate::start::foreign(&png), "File > Open takes pictures");
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn the_wand_on_a_pixel_layer_takes_the_joined_pixels_of_one_colour_and_leaves_the_hole() {
+    use super::marquee::Marquee;
+    let path = super::ui_tests::pixel_sample("wand");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    h.key_press(Key::S);
+    h.run_steps(2);
+    h.state_mut().marquee = Marquee::Wand;
+    let at = canvas_at(&h, 4.5, 4.5);
+    click(&mut h, at);
+    let marks: Vec<u32> = h.state().scene.active_marks().iter().map(Mark::id).collect();
+    assert_eq!(marks.len(), 2);
+    assert_eq!(
+        picked_ids(&h),
+        [marks[0]],
+        "the ring of dark pixels, and not the red pixel in its hole: {}",
+        said(&h)
+    );
+    let red = canvas_at(&h, 5.5, 5.5);
+    click(&mut h, red);
+    assert_eq!(picked_ids(&h), [marks[1]]);
+    let _ = std::fs::remove_dir_all(&path);
+}

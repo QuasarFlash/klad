@@ -1179,6 +1179,8 @@ impl Editor {
             Cmd::PasteCellsLinked => self.paste_cells(true)?,
             Cmd::ClipSettings => self.windows.clip = !self.windows.clip,
             Cmd::NewDocument => self.wants = Some(super::Want::New),
+            Cmd::NewFromClipboard => self.new_from_clipboard()?,
+            Cmd::CopyMerged => self.copy_merged()?,
             Cmd::CloseDocument => self.wants = Some(super::Want::Close),
             Cmd::FirstSteps => self.first.open = !self.first.open,
             Cmd::Quit => self.ctx.send_viewport_cmd(egui::ViewportCommand::Close),
@@ -1417,6 +1419,18 @@ impl Editor {
             return Ok(());
         }
         self.flip_and_roll(ui)?;
+        let images: Vec<std::sync::Arc<egui::ColorImage>> = ui.input(|i| {
+            i.events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::PasteImage(image) => Some(image.clone()),
+                    _ => None,
+                })
+                .collect()
+        });
+        if !typing && !self.windows.settings {
+            images.iter().try_for_each(|image| self.paste_image(image))?;
+        }
         let bindings = self.bindings.clone();
         let pressed: Vec<(Option<Cmd>, bool, bool)> = ui.input(|i| {
             i.events

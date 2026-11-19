@@ -32,15 +32,30 @@ pub(super) struct Copied {
 }
 
 impl Copied {
-    fn count(&self) -> usize {
-        self.pieces.iter().map(Piece::count).sum()
+    pub(super) fn marks(&self) -> Vec<Mark> {
+        self.pieces
+            .iter()
+            .flat_map(|p| {
+                let cut = p.cut.clone();
+                p.around
+                    .iter()
+                    .cloned()
+                    .map(move |mut m| {
+                        if let Some(polygon) = &cut {
+                            m.cuts_mut().push(klad_core::cut::Cut {
+                                keep: klad_core::cut::Keep::Inside,
+                                polygon: polygon.clone(),
+                            });
+                        }
+                        m
+                    })
+                    .chain(p.whole.iter().cloned())
+            })
+            .collect()
     }
 
-    fn whence(&self) -> String {
-        match &self.pieces[..] {
-            [one] => one.cel.clone(),
-            many => format!("{} layers", many.len()),
-        }
+    fn count(&self) -> usize {
+        self.pieces.iter().map(Piece::count).sum()
     }
 }
 
@@ -161,10 +176,12 @@ impl Editor {
     }
 
     fn keep_picked(&mut self, ctx: &egui::Context) -> Option<String> {
+        if let Some(picture) = self.selection_picture() {
+            self.picture_out(ctx, picture);
+        }
         let shapes = self.copied_shapes();
         if !shapes.is_empty() {
             let what = counted(shapes.len(), "shape");
-            ctx.copy_text(format!("klad: {what}"));
             self.shape_clip = Some(shapes);
             self.clipboard = None;
             self.cells_last = false;
@@ -172,7 +189,6 @@ impl Editor {
         }
         let copied = self.copied()?;
         self.shape_clip = None;
-        ctx.copy_text(format!("klad: {} marks of {}", copied.count(), copied.whence()));
         let what = counted(copied.count(), "mark");
         self.clipboard = Some(copied);
         self.cells_last = false;

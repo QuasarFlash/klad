@@ -136,10 +136,22 @@ impl Where {
 enum Command {
     #[command(
         about = "Open an Aseprite file or a picture as a klad pixel drawing",
-        long_about = "Make a klad drawing from an Aseprite file (.aseprite or .ase), or a pixel drawing from a picture (.png, .jpg). The drawing is written next to the file (hero.aseprite makes hero.klad) unless -o names it, and its path is printed.\n\n  klad import hero.aseprite\n  klad import hero.ase -o sprites/hero.klad\n  klad import sprite.png                      (a picture of 512 px or less a side, at its own size)\n  klad import sprite@8x.png --size 32         (shrunk to 32 px on its longest side)\n  klad import photo.jpg --size 64 --colors 16\n\nA picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.\n\nFrom an Aseprite file, what comes over: image layers as pixel layers with their name, visibility, opacity and blend mode, groups as groups, every cel as a drawing on its frame (linked cels stay linked), the palette with its names, and tags as clips. Frame times become whole frames: a file of 100 ms frames is 10 frames a second, and a frame shown for 300 ms holds for three. Indexed, grey and RGBA files all open; every pixel is bound to its palette colour, and colours a file uses outside its palette are added to it.\n\nWhat does not: tilemap layers, tilesets and slices are left out, a tag that plays backwards or back and forth becomes a clip that plays forwards, and blend modes klad does not have blend as normal. Each of these is said when it happens.\n\nklad export art.klad --aseprite writes a drawing's pixel layers back to an Aseprite file."
+        long_about = "Make a klad drawing from an Aseprite file (.aseprite or .ase), or a pixel drawing from a picture (.png, .jpg). The drawing is written next to the file (hero.aseprite makes hero.klad) unless -o names it, and its path is printed.\n\n  klad import hero.aseprite\n  klad import hero.ase -o sprites/hero.klad\n  klad import sprite.png                      (a picture of 512 px or less a side, at its own size)\n  klad import sprite@8x.png --size 32         (shrunk to 32 px on its longest side)\n  klad import photo.jpg --size 64 --colors 16\n  klad import photo.jpg                       (larger than 512 px: a painting drawing of its size with the picture on a layer)\n  klad import --clipboard                     (the picture copied in another app: pasted.klad here)\n\nA picture larger than 512 px a side, without --size or --colors, or any picture with --painting, makes a painting drawing of its size: the picture on a layer at the bottom and a paint layer over it. Otherwise a picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.\n\nFrom an Aseprite file, what comes over: image layers as pixel layers with their name, visibility, opacity and blend mode, groups as groups, every cel as a drawing on its frame (linked cels stay linked), the palette with its names, and tags as clips. Frame times become whole frames: a file of 100 ms frames is 10 frames a second, and a frame shown for 300 ms holds for three. Indexed, grey and RGBA files all open; every pixel is bound to its palette colour, and colours a file uses outside its palette are added to it.\n\nWhat does not: tilemap layers, tilesets and slices are left out, a tag that plays backwards or back and forth becomes a clip that plays forwards, and blend modes klad does not have blend as normal. Each of these is said when it happens.\n\nklad export art.klad --aseprite writes a drawing's pixel layers back to an Aseprite file."
     )]
     Import {
-        file: PathBuf,
+        #[arg(required_unless_present = "clipboard")]
+        file: Option<PathBuf>,
+        #[arg(
+            long,
+            conflicts_with = "file",
+            help = "The picture on the clipboard, copied in another app (the drawing is pasted.klad here unless -o names it)"
+        )]
+        clipboard: bool,
+        #[arg(
+            long,
+            help = "A picture: a painting drawing with the picture on a layer, whatever its size (pictures larger than 512 px come in that way already)"
+        )]
+        painting: bool,
         #[arg(
             long,
             help = "A picture: its longest side in pixels once it is pixel art, 1 to 512 (needed when the picture is larger)"
@@ -675,7 +687,7 @@ enum Command {
         #[arg(help = "layer, cel, mask, rect, ellipse, path, group, rays, image, scatter, repeat, mirror or text")]
         what: String,
         #[arg(
-            help = "For layers the kind first (paint, pixel, vector, group, bones, image with src=photo.jpg, or adjust and its type: hsl, levels, curves, balance, gradient-map, fill), then key=value pairs"
+            help = "For layers the kind first (paint, pixel, vector, group, bones, image with src=photo.jpg or src=clipboard, or adjust and its type: hsl, levels, curves, balance, gradient-map, fill), then key=value pairs"
         )]
         rest: Vec<String>,
         #[command(flatten)]
@@ -836,13 +848,19 @@ enum Command {
     },
     #[command(
         about = "Lasso strokes and fills on a paint layer; --cut also takes the parts crossing the edge",
-        long_about = "Select the strokes and fills of a paint layer inside a polygon and move, turn, scale, flip or delete them in one step. Without --cut only whole marks move: strokes whose points are all inside and fills whose pixels are. With --cut every stroke or fill crossing the edge is split at the edge: the part outside stays where it is and the part inside moves with the rest, so nothing outside the lasso changes. Without a move, turn, scale, flip or --rm it only lists what is inside and what crosses.\n\n  klad lasso art.klad l3 --polygon '100,100 400,120 380,400 90,380'\n  klad lasso art.klad l3 --polygon '100,100 400,120 380,400 90,380' --cut --move 60,-20\n  klad lasso art.klad l3 --polygon '...' --cut --rotate 15 --scale 1.2\n  klad lasso art.klad l3 --polygon '...' --flip h\n  klad lasso art.klad l3 --polygon '...' --cut --rm\n\nAlso a lasso op in klad apply: {\"op\":\"lasso\",\"layer\":\"l3\",\"polygon\":[[100,100],[400,120],[380,400]],\"cut\":true,\"x\":60,\"y\":-20} (or \"rm\":true)."
+        long_about = "Select the strokes and fills of a paint layer inside a polygon and move, turn, scale, flip or delete them in one step. Without --cut only whole marks move: strokes whose points are all inside and fills whose pixels are. With --cut every stroke or fill crossing the edge is split at the edge: the part outside stays where it is and the part inside moves with the rest, so nothing outside the lasso changes. Without a move, turn, scale, flip or --rm it only lists what is inside and what crosses.\n\n  klad lasso art.klad l3 --polygon '100,100 400,120 380,400 90,380'\n  klad lasso art.klad l3 --polygon '100,100 400,120 380,400 90,380' --cut --move 60,-20\n  klad lasso art.klad l3 --polygon '...' --cut --rotate 15 --scale 1.2\n  klad lasso art.klad l3 --polygon '...' --flip h\n  klad lasso art.klad l3 --polygon '...' --cut --rm\n  klad lasso art.klad l3 --ellipse 100,100,300,200 --move 40,0\n  klad lasso art.klad l3 --at 220,180 --tolerance 0.2 --rm\n\n--box and --ellipse take a box (x,y,w,h) in place of the polygon. --at is a magic wand: it takes the area of one colour around that point of the layer, up to where the colour changes by more than --tolerance (0 to 1), and cuts what crosses its edge, so the parts inside are taken.\n\nAlso a lasso op in klad apply: {\"op\":\"lasso\",\"layer\":\"l3\",\"polygon\":[[100,100],[400,120],[380,400]],\"cut\":true,\"x\":60,\"y\":-20} (or \"rm\":true)."
     )]
     Lasso {
         bundle: PathBuf,
         layer: String,
-        #[arg(long, required_unless_present = "area", help = "x,y pairs separated by spaces")]
+        #[arg(long, required_unless_present_any = ["area", "ellipse", "at"], help = "x,y pairs separated by spaces")]
         polygon: Option<String>,
+        #[arg(long, value_name = "X,Y,W,H", conflicts_with_all = ["polygon", "area", "at"], help = "The ellipse that fits this box, in place of a polygon")]
+        ellipse: Option<String>,
+        #[arg(long, value_name = "X,Y", value_parser = parse_pair, conflicts_with_all = ["polygon", "area"], help = "A magic wand: the area of one colour around this point on the layer, up to its edge (takes the parts inside, as --cut)")]
+        at: Option<[f32; 2]>,
+        #[arg(long, default_value_t = klad_render::wand::TOLERANCE, requires = "at", help = "With --at: how far a colour may be from the one at the point, 0 to 1")]
+        tolerance: f32,
         #[arg(
             long = "box",
             value_name = "X,Y,W,H",
@@ -2207,6 +2225,12 @@ enum Command {
         references: bool,
         #[arg(
             long,
+            conflicts_with_all = ["sheet", "frames", "gif", "godot", "godot_scene", "godot_rig", "aseprite", "tileset", "out"],
+            help = "Put the picture on the clipboard, for pasting in another app, instead of writing a file"
+        )]
+        clipboard: bool,
+        #[arg(
+            long,
             conflicts_with_all = ["frames", "godot"],
             help = "Sprite sheet and Aseprite JSON: all, a clip or a range like 0-11"
         )]
@@ -2790,6 +2814,25 @@ fn parse_points(text: &str) -> Result<Vec<[f32; 3]>> {
 
 const CHANGED_EXIT: i32 = 75;
 
+fn wand_polygon(path: &Path, layer: &str, frame: u32, x: f32, y: f32, tolerance: f32) -> Result<Vec<[f32; 2]>> {
+    let bundle = Bundle::open(path)?;
+    let owner = bundle.doc.find_layer(layer)?;
+    let cel = owner
+        .content_at(frame)
+        .ok_or_else(|| anyhow!("layer {layer} has no drawing at frame {frame}"))?
+        .id
+        .clone();
+    let marks = bundle.read_marks(&owner.id, &cel)?;
+    let brushes = klad_brush::BrushSet::for_bundle(&bundle)?;
+    let mut raster = klad_brush::Raster::new(bundle.doc.canvas.width, bundle.doc.canvas.height);
+    klad_brush::replay_onto(&mut raster, &marks, &brushes)?;
+    klad_render::wand::region(&raster, x, y, tolerance, owner.pixel()).ok_or_else(|| {
+        anyhow!(
+            "nothing is painted at {x},{y} on {layer}: the wand takes an area of one colour, so give a point on paint"
+        )
+    })
+}
+
 fn figure_path(kind: &str, text: &str) -> Result<String> {
     let [a, b, c, d]: [f32; 4] = parse_numbers(text)?
         .try_into()
@@ -2889,10 +2932,21 @@ fn run() -> Result<()> {
     match Cli::parse().command {
         Command::Import {
             file,
+            clipboard,
+            painting,
             size,
             colors,
             out,
         } => {
+            let ask = pixelise::Ask { size, colors };
+            let file = match (file, clipboard) {
+                (_, true) => {
+                    println!("{}", pixelise::from_clipboard(&ask, out, painting)?.display());
+                    return Ok(());
+                }
+                (Some(file), false) => file,
+                (None, false) => return Err(anyhow!("give a file to import, or --clipboard")),
+            };
             let made = match (aseprite::is_file(&file), pixelise::is_picture(&file)) {
                 (true, _) if size.is_some() || colors.is_some() => {
                     return Err(anyhow!(
@@ -2900,7 +2954,7 @@ fn run() -> Result<()> {
                     ));
                 }
                 (true, _) => aseprite::import(&file, out)?,
-                (_, true) => pixelise::import(&file, &pixelise::Ask { size, colors }, out)?,
+                (_, true) => pixelise::import(&file, &ask, out, painting)?,
                 _ => {
                     return Err(anyhow!(
                         "klad import opens Aseprite files (.aseprite, .ase) and pictures (.png, .jpg) as pixel drawings: {} is something else. A picture to trace or paint over goes on a layer with klad add <bundle> layer image src=<file>",
@@ -3517,6 +3571,9 @@ fn run() -> Result<()> {
             bundle,
             layer,
             polygon,
+            ellipse,
+            at,
+            tolerance,
             area,
             cut,
             offset,
@@ -3530,13 +3587,21 @@ fn run() -> Result<()> {
             frame,
             flags,
         } => {
-            let polygon = match (area, polygon) {
-                (Some([x, y, w, h]), _) => {
+            let cut = cut || at.is_some();
+            let polygon = match (area, polygon, ellipse, at) {
+                (Some([x, y, w, h]), ..) => {
                     let (x0, y0, x1, y1) = (x as f32, y as f32, (x + w) as f32, (y + h) as f32);
                     vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
                 }
-                (None, Some(text)) => text.split_whitespace().map(parse_pair).collect::<Result<Vec<_>>>()?,
-                (None, None) => Vec::new(),
+                (None, Some(text), ..) => text.split_whitespace().map(parse_pair).collect::<Result<Vec<_>>>()?,
+                (None, None, Some(e), _) => {
+                    let [x, y, w, h]: [f32; 4] = parse_numbers(&e)?
+                        .try_into()
+                        .map_err(|_| anyhow!("--ellipse takes x,y,w,h"))?;
+                    klad_core::region::ellipse(x, y, w, h, 64)
+                }
+                (None, None, None, Some([x, y])) => wand_polygon(&bundle, &layer, frame, x, y, tolerance)?,
+                (None, None, None, None) => Vec::new(),
             };
             if polygon.len() < 3 {
                 return Err(anyhow!("--polygon needs at least 3 x,y points"));
@@ -4682,6 +4747,7 @@ fn run() -> Result<()> {
             depth,
             background,
             references,
+            clipboard,
             sheet,
             frames,
             gif,
@@ -4768,6 +4834,30 @@ fn run() -> Result<()> {
                     (_, Some(spec), _) => sprites::frames(&bundle, spec, &look, out),
                     (_, _, Some(dir)) => sprites::godot(&bundle, dir.clone().or(out), store, &look, &packing, &extras),
                     _ if scenes => Ok(()),
+                    _ if clipboard => {
+                        let tmp = std::env::temp_dir().join(format!("klad-clipboard-{}.png", std::process::id()));
+                        export::run(
+                            &bundle,
+                            export::Export {
+                                layer: layer.clone(),
+                                frame,
+                                scale,
+                                depth: 8,
+                                background,
+                                references,
+                                variant,
+                                out: Some(tmp.clone()),
+                                maps: maps.clone(),
+                                invert,
+                            },
+                        )?;
+                        let read = std::fs::read(&tmp);
+                        let _ = std::fs::remove_file(&tmp);
+                        let picture = klad_render::pixelise::decode(&read?)?;
+                        klad_render::clipboard::write(&picture)?;
+                        eprintln!("copied a {}x{} picture to the clipboard", picture.width, picture.height);
+                        Ok(())
+                    }
                     _ => export::run(
                         &bundle,
                         export::Export {
