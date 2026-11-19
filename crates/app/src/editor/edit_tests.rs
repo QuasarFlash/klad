@@ -752,3 +752,103 @@ fn the_canvas_turns_crops_to_a_drag_and_takes_a_size_and_a_paper_from_its_window
     assert!(h.state().scene.bundle.doc.canvas.background.is_some(), "{}", said(&h));
     let _ = std::fs::remove_dir_all(&path);
 }
+
+#[test]
+fn shapes_snap_to_the_grid_guides_and_other_shapes_and_guides_come_out_of_the_rulers() {
+    let path = sample("snap");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "shapes");
+    chord(&mut h, Modifiers::COMMAND, Key::Quote);
+    chord(&mut h, Modifiers::COMMAND | Modifiers::SHIFT, Key::Quote);
+    let g = h.state().scene.bundle.doc.guides.clone();
+    assert!(
+        g.show_grid && g.snap && g.grid.is_some(),
+        "cmd ' shows the grid and shift cmd ' snaps: {g:?}"
+    );
+    h.state_mut()
+        .timeline_apply(vec![klad_core::ops::Op::Grid(klad_core::guides::GridEdit {
+            every: Some([32.0, 32.0]),
+            ..Default::default()
+        })])
+        .unwrap();
+    h.key_press(Key::U);
+    h.run_steps(2);
+    let (a, b) = (canvas_at(&h, 225.0, 255.0), canvas_at(&h, 289.5, 319.0));
+    drag(&mut h, a, b);
+    h.run_steps(3);
+    let made = nodes(&h, "shapes").last().cloned().unwrap();
+    match made.shape {
+        klad_core::doc::Shape::Rect { x, y, w, h: hh, .. } => {
+            assert_eq!(
+                (x, y, w, hh),
+                (224.0, 256.0, 64.0, 64.0),
+                "the rectangle's corners snapped to the grid"
+            )
+        }
+        other => panic!("{other:?}"),
+    }
+
+    hold(&mut h, Modifiers::COMMAND);
+    let (a, b) = (canvas_at(&h, 353.0, 33.0), canvas_at(&h, 410.0, 70.0));
+    drag(&mut h, a, b);
+    hold(&mut h, Modifiers::NONE);
+    let loose = nodes(&h, "shapes").last().cloned().unwrap();
+    assert!(
+        matches!(loose.shape, klad_core::doc::Shape::Rect { x, .. } if (x - 353.0).abs() < 1.0),
+        "cmd leaves the snap: {:?}",
+        loose.shape
+    );
+
+    h.state_mut().invoke(Cmd::Rulers).unwrap();
+    h.run_steps(2);
+    let rect = h.state().canvas_rect;
+    let (from, to) = (
+        egui::pos2(rect.center().x, rect.top() + 6.0),
+        canvas_at(&h, 300.0, 150.0),
+    );
+    drag(&mut h, from, to);
+    h.run_steps(2);
+    let ys = h.state().scene.bundle.doc.guides.y.clone();
+    assert_eq!(ys.len(), 1, "a guide dragged out of the top ruler: {}", said(&h));
+    assert!((ys[0] - 150.0).abs() <= 1.0, "{ys:?}");
+    h.state_mut().tool = Tool::Select;
+    h.run_steps(1);
+    let on = canvas_at(&h, 40.0, ys[0]);
+    let rect = h.state().canvas_rect;
+    let back = egui::pos2(rect.center().x, rect.top() + 6.0);
+    drag(&mut h, on, back);
+    h.run_steps(2);
+    assert!(
+        h.state().scene.bundle.doc.guides.y.is_empty(),
+        "dragged back onto the ruler, it goes: {}",
+        said(&h)
+    );
+
+    h.state_mut()
+        .timeline_apply(vec![klad_core::ops::Op::Grid(klad_core::guides::GridEdit {
+            show: Some(false),
+            ..Default::default()
+        })])
+        .unwrap();
+    h.run_steps(1);
+    let first = nodes(&h, "shapes")[0].id.clone();
+    h.state_mut().selection = Some(first.clone());
+    h.run_steps(2);
+    let start = canvas_at(&h, 80.0, 60.0);
+    let (_, corners) = h.state().handles().unwrap();
+    let left = corners.iter().map(|c| c.x).fold(f32::MAX, f32::min);
+    let other = nodes(&h, "shapes")[1].id.clone();
+    let edge = klad_render::overlay::node_world_box(&h.state().scene.bundle.doc, &other)
+        .unwrap()
+        .unwrap()[0];
+    let end = canvas_at(&h, 80.0 + (edge - left) - 2.0, 60.0);
+    drag(&mut h, start, end);
+    h.run_steps(3);
+    let (_, corners) = h.state().handles().unwrap();
+    let now = corners.iter().map(|c| c.x).fold(f32::MAX, f32::min);
+    assert!(
+        (now - edge).abs() < 0.25,
+        "the moved shape's left edge snapped to the other shape's at {edge}: {now}"
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}

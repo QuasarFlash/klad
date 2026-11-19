@@ -103,6 +103,7 @@ fn doc_shell(doc: &Document) -> Document {
         export: doc.export.clone(),
         atmosphere: doc.atmosphere.clone(),
         maps: doc.maps.clone(),
+        guides: doc.guides.clone(),
         next_id: doc.next_id,
         here: doc.here.clone(),
     }

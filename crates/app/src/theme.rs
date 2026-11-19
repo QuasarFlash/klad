@@ -61,6 +61,8 @@ pub mod icon {
     pub const UNITE: &str = "\u{E87E}";
     pub const MERGE: &str = "\u{ED3E}";
     pub const CROP: &str = "\u{E1D4}";
+    pub const MAGNET: &str = "\u{E680}";
+    pub const RULER: &str = "\u{E6B8}";
     pub const SUBTRACT: &str = "\u{EBD6}";
     pub const INTERSECT: &str = "\u{E2D2}";
     pub const EXCLUDE: &str = "\u{E882}";

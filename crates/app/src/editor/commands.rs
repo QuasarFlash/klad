@@ -238,6 +238,10 @@ impl Editor {
             }
             .or(editing),
             Cmd::BringToFront | Cmd::BringForward | Cmd::SendBackward | Cmd::SendToBack => self.can_arrange(),
+            Cmd::ClearGuides => {
+                let g = &self.scene.bundle.doc.guides;
+                (g.x.is_empty() && g.y.is_empty()).then(|| "there are no guides: drag one out of a ruler (cmd R shows them)".to_string())
+            }
             Cmd::CropToSelection => match self.selected() {
                 Some(Selected::Strokes | Selected::Shape(_)) => editing,
                 _ => Some("select strokes (S) or shapes (V) first: the canvas becomes their box".to_string()),
@@ -754,6 +758,15 @@ impl Editor {
             Cmd::ExportAseprite => self.exporting(super::export::What::Aseprite),
             Cmd::ExportSvg => self.exporting(super::export::What::Svg),
             Cmd::CanvasWindow => self.windows.canvas,
+            Cmd::ShowGrid => {
+                let g = &self.scene.bundle.doc.guides;
+                g.show_grid && g.grid.is_some()
+            }
+            Cmd::Snap => self.scene.bundle.doc.guides.snap,
+            Cmd::GridWindow => self.windows.grid,
+            Cmd::Rulers => self.settings.rulers,
+            Cmd::HideGuides => !self.scene.bundle.doc.guides.hidden,
+            Cmd::LockGuides => self.scene.bundle.doc.guides.locked,
             Cmd::CropTool => self.cropping.is_some(),
             Cmd::ExportGodotWindow => self.exporting(super::export::What::Godot),
             Cmd::Pixelize => self.windows.pixels,
@@ -1221,6 +1234,16 @@ impl Editor {
                 }
             }
             Cmd::Ungroup => self.ungroup()?,
+            Cmd::ShowGrid => self.toggle_grid(false)?,
+            Cmd::Snap => self.toggle_grid(true)?,
+            Cmd::GridWindow => self.windows.grid = !self.windows.grid,
+            Cmd::Rulers => {
+                self.settings.rulers = !self.settings.rulers;
+                self.settings_dirty = true;
+            }
+            Cmd::HideGuides => self.guides_switch(true)?,
+            Cmd::LockGuides => self.guides_switch(false)?,
+            Cmd::ClearGuides => self.clear_guides()?,
             Cmd::CanvasWindow
             | Cmd::CropTool
             | Cmd::CropToSelection

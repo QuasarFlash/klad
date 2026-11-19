@@ -61,6 +61,8 @@ impl Default for Defaults {
 pub struct Settings {
     #[serde(default)]
     pub version: u32,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub rulers: bool,
     #[serde(default)]
     pub pens: BTreeMap<String, PenSettings>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -112,6 +114,7 @@ fn yes() -> bool {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            rulers: false,
             version: VERSION,
             pens: BTreeMap::new(),
             recent: Vec::new(),

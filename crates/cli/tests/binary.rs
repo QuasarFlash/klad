@@ -3506,3 +3506,72 @@ fn the_canvas_grows_crops_scales_turns_and_flips_with_everything_on_it() {
     draw(&["export", "rig.klad", "--frame", "3", "-o", "posed.png"]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn the_grid_and_guides_are_kept_in_the_drawing_and_set_from_the_command_line() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-grid-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let doc = || -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(dir.join("a.klad").join("doc.json")).unwrap()).unwrap()
+    };
+    draw(&["new", "a.klad", "--width", "320", "--height", "240"]);
+    assert!(draw(&["grid", "a.klad"]).contains("no grid"));
+    draw(&[
+        "grid", "a.klad", "--every", "16,8", "--sub", "4", "--show", "on", "--snap", "on",
+    ]);
+    let said = draw(&["grid", "a.klad"]);
+    assert!(
+        said.contains("every 16x8") && said.contains("shown, snapping on"),
+        "{said}"
+    );
+    let d = doc();
+    assert_eq!(d["format"], "klad/9");
+    assert_eq!(d["guides"]["grid"]["every"], serde_json::json!([16.0, 8.0]));
+    assert_eq!(d["guides"]["snap"], true);
+    draw(&["guides", "a.klad", "--x", "120", "--x", "40", "--y", "64"]);
+    let said = draw(&["guides", "a.klad"]);
+    assert!(
+        said.contains("upright at x: 40 120") && said.contains("level at y: 64"),
+        "{said}"
+    );
+    draw(&["guides", "a.klad", "--rm-x", "40", "--locked", "on"]);
+    assert_eq!(doc()["guides"]["x"], serde_json::json!([120.0]));
+    assert_eq!(doc()["guides"]["locked"], true);
+    std::fs::write(
+        dir.join("g.jsonl"),
+        "{\"op\":\"grid\",\"every\":32,\"iso\":true}\n{\"op\":\"guides\",\"clear\":true}\n",
+    )
+    .unwrap();
+    draw(&["apply", "a.klad", "--file", "g.jsonl"]);
+    assert_eq!(doc()["guides"]["grid"]["iso"], true);
+    assert!(doc()["guides"].get("x").is_none());
+    let bad = run(&["grid", "a.klad", "--every", "0"]);
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("1 to 4096"));
+    draw(&["grid", "a.klad", "--off"]);
+    assert!(draw(&["grid", "a.klad"]).contains("no grid"));
+    draw(&["new", "tiles.klad", "--pixel", "64x64", "--tile", "16"]);
+    draw(&["grid", "tiles.klad", "--show", "on"]);
+    assert!(
+        draw(&["grid", "tiles.klad"]).contains("every 16x16"),
+        "a tiled drawing's grid starts at the tile size"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

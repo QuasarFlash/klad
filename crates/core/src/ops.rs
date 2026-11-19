@@ -164,6 +164,8 @@ pub enum Op {
         background: Option<Option<String>>,
     },
     Atmosphere(Option<crate::look::Atmosphere>),
+    Grid(crate::guides::GridEdit),
+    Guides(crate::guides::GuideEdit),
     Maps(Option<crate::maps::Maps>),
     Frames(FrameSpec),
     Cel(CelSpec),
@@ -1920,6 +1922,64 @@ impl Op {
                     Some(other) => bail!("background takes a colour like \"#f4efe6\" or null, not {other}"),
                 },
             },
+            "grid" => {
+                let pair = |map: &mut Map<String, Value>, key: &str| -> Result<Option<[f32; 2]>> {
+                    match map.remove(key) {
+                        None => Ok(None),
+                        Some(Value::Number(n)) => {
+                            let v = n.as_f64().ok_or_else(|| anyhow!("{key} takes a number or [x, y]"))? as f32;
+                            Ok(Some([v, v]))
+                        }
+                        Some(v) => serde_json::from_value(v)
+                            .map(Some)
+                            .map_err(|_| anyhow!("{key} takes a number or [x, y]")),
+                    }
+                };
+                let flag = |map: &mut Map<String, Value>, key: &str| -> Result<Option<bool>> {
+                    match map.remove(key) {
+                        None => Ok(None),
+                        Some(Value::Bool(b)) => Ok(Some(b)),
+                        Some(other) => bail!("{key} takes true or false, not {other}"),
+                    }
+                };
+                Op::Grid(crate::guides::GridEdit {
+                    off: flag(&mut map, "off")?.unwrap_or(false),
+                    every: pair(&mut map, "every")?,
+                    sub: whole(&mut map, "sub")?,
+                    offset: pair(&mut map, "offset")?,
+                    iso: flag(&mut map, "iso")?,
+                    colour: take_str(&mut map, "colour")?.or(take_str(&mut map, "color")?),
+                    opacity: map.remove("opacity").and_then(|v| v.as_f64()).map(|v| v as f32),
+                    show: flag(&mut map, "show")?,
+                    snap: flag(&mut map, "snap")?,
+                })
+            }
+            "guides" => {
+                let list = |map: &mut Map<String, Value>, key: &str| -> Result<Vec<f32>> {
+                    match map.remove(key) {
+                        None => Ok(Vec::new()),
+                        Some(Value::Number(n)) => Ok(vec![n.as_f64().unwrap_or(0.0) as f32]),
+                        Some(v) => serde_json::from_value(v).map_err(|_| anyhow!("{key} takes a number or a list")),
+                    }
+                };
+                let flag = |map: &mut Map<String, Value>, key: &str| -> Result<Option<bool>> {
+                    match map.remove(key) {
+                        None => Ok(None),
+                        Some(Value::Bool(b)) => Ok(Some(b)),
+                        Some(other) => bail!("{key} takes true or false, not {other}"),
+                    }
+                };
+                Op::Guides(crate::guides::GuideEdit {
+                    add_x: list(&mut map, "x")?,
+                    add_y: list(&mut map, "y")?,
+                    rm_x: list(&mut map, "rmX")?,
+                    rm_y: list(&mut map, "rmY")?,
+                    clear: flag(&mut map, "clear")?.unwrap_or(false),
+                    hidden: flag(&mut map, "hidden")?,
+                    locked: flag(&mut map, "locked")?,
+                    snap: flag(&mut map, "snap")?,
+                })
+            }
             "timeline" => Op::Timeline {
                 fps: whole(&mut map, "fps")?,
                 frames: whole(&mut map, "frames")?,
@@ -4319,6 +4379,15 @@ pub fn apply(doc: &mut Document, op: &Op, out: &mut Applied) -> Result<()> {
             if !out.changed.iter().any(|c| c == "palette") {
                 out.changed.push("palette".into());
             }
+        }
+        Op::Grid(edit) => {
+            let tile = doc.canvas.tile;
+            crate::guides::edit_grid(&mut doc.guides, edit, tile)?;
+            out.changed.push("grid".into());
+        }
+        Op::Guides(edit) => {
+            crate::guides::edit_guides(&mut doc.guides, edit)?;
+            out.changed.push("guides".into());
         }
         Op::Atmosphere(air) => {
             if let Some(air) = air {

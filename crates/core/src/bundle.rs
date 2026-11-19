@@ -1021,6 +1021,8 @@ pub fn summarize(ops: &[Op]) -> String {
             Op::Canvas { tile: Some(None), .. } => "no tiles".to_string(),
             Op::Canvas { wrap: Some(true), .. } => "the canvas wraps".to_string(),
             Op::Canvas { .. } => "the canvas stops at its edges".to_string(),
+            Op::Grid(_) => "the grid".to_string(),
+            Op::Guides(_) => "the guides".to_string(),
             Op::Atmosphere(Some(_)) => "atmosphere".to_string(),
             Op::Atmosphere(None) => "atmosphere off".to_string(),
             Op::Maps(Some(_)) => "maps".to_string(),

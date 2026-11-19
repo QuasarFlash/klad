@@ -306,6 +306,72 @@ enum Command {
         flags: EditFlags,
     },
     #[command(
+        about = "The grid: its spacing, offset, look, and whether it shows and snaps",
+        long_about = "The grid over the drawing: its spacing across and down, a stronger line every few lines, where it starts, square or isometric (2:1 for pixel art), its colour and opacity, and two switches: whether it shows in the editor and whether things snap (to the grid, the guides, and other shapes' edges and centres). A drawing cut into tiles starts with the tile size. Without flags it prints the grid. One history step.\n\n  klad grid art.klad --every 16 --sub 4 --show on --snap on\n  klad grid art.klad --every 32,16 --iso\n  klad grid art.klad --off\n\nAs an op: {\"op\":\"grid\",\"every\":16,\"sub\":4,\"show\":true,\"snap\":true}."
+    )]
+    Grid {
+        bundle: PathBuf,
+        #[arg(
+            long,
+            value_name = "PX[,PX]",
+            help = "The spacing, across and down (one number for both)"
+        )]
+        every: Option<String>,
+        #[arg(long, help = "A stronger line every this many lines (0: none)")]
+        sub: Option<u32>,
+        #[arg(long, value_name = "X,Y", allow_hyphen_values = true, help = "Where the grid starts")]
+        offset: Option<String>,
+        #[arg(long, value_parser = ["on", "off"], help = "Isometric (2:1) instead of square")]
+        iso: Option<String>,
+        #[arg(long, alias = "color", help = "The grid's colour, #4f8fe8")]
+        colour: Option<String>,
+        #[arg(long, help = "The grid's opacity, 0 to 1")]
+        opacity: Option<f32>,
+        #[arg(long, value_parser = ["on", "off"], help = "Show the grid in the editor")]
+        show: Option<String>,
+        #[arg(long, value_parser = ["on", "off"], help = "Snap to the grid, the guides and other shapes")]
+        snap: Option<String>,
+        #[arg(long, help = "No grid")]
+        off: bool,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
+        about = "Guides: level and upright lines to line things up and snap to",
+        long_about = "Guides: upright lines at x and level lines at y, in canvas px, kept in the drawing. Things snap to them when snapping is on (klad grid --snap on). Without flags it lists them. One history step.\n\n  klad guides art.klad --x 120 --x 480 --y 64\n  klad guides art.klad --rm-x 120\n  klad guides art.klad --clear\n  klad guides art.klad --locked on --hidden off\n\nAs an op: {\"op\":\"guides\",\"x\":[120,480],\"y\":[64]}, with \"rmX\", \"rmY\", \"clear\", \"hidden\", \"locked\" and \"snap\"."
+    )]
+    Guides {
+        bundle: PathBuf,
+        #[arg(
+            long,
+            allow_hyphen_values = true,
+            help = "An upright guide at this x (repeat for more)"
+        )]
+        x: Vec<f32>,
+        #[arg(long, allow_hyphen_values = true, help = "A level guide at this y (repeat for more)")]
+        y: Vec<f32>,
+        #[arg(
+            long = "rm-x",
+            allow_hyphen_values = true,
+            help = "Take the upright guide at this x away"
+        )]
+        rm_x: Vec<f32>,
+        #[arg(
+            long = "rm-y",
+            allow_hyphen_values = true,
+            help = "Take the level guide at this y away"
+        )]
+        rm_y: Vec<f32>,
+        #[arg(long, help = "Take every guide away")]
+        clear: bool,
+        #[arg(long, value_parser = ["on", "off"], help = "Hide the guides in the editor (they do not snap while hidden)")]
+        hidden: Option<String>,
+        #[arg(long, value_parser = ["on", "off"], help = "Lock the guides so they cannot be dragged")]
+        locked: Option<String>,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
         about = "Exposure sheet: a row per frame, a column per layer (top first)",
         long_about = "Exposure sheet: a row per frame, a column per layer (top first).\n\nA cel id marks the frame a drawing starts, | that it is still showing, c5->c1 a link (c5 shows c1's drawing), . a blank frame. Clips are listed on the right ([run on their first frame, run] on their last)."
     )]
@@ -3273,6 +3339,105 @@ fn run() -> Result<()> {
                 });
             }
             agent::edit(&bundle, &ops, &output(&flags, 0))?;
+        }
+        Command::Grid {
+            bundle,
+            every,
+            sub,
+            offset,
+            iso,
+            colour,
+            opacity,
+            show,
+            snap,
+            off,
+            flags,
+        } => {
+            let pair = |text: Option<String>| -> Result<Option<[f32; 2]>> {
+                text.map(|t| {
+                    let v = parse_numbers(&t)?;
+                    match v.as_slice() {
+                        [a] => Ok([*a, *a]),
+                        [a, b] => Ok([*a, *b]),
+                        _ => Err(anyhow!("give one number or two: 16 or 16,8")),
+                    }
+                })
+                .transpose()
+            };
+            let on = |v: Option<String>| v.map(|v| v == "on");
+            let edit = klad_core::guides::GridEdit {
+                off,
+                every: pair(every)?,
+                sub,
+                offset: pair(offset)?,
+                iso: on(iso),
+                colour,
+                opacity,
+                show: on(show),
+                snap: on(snap),
+            };
+            match edit == klad_core::guides::GridEdit::default() {
+                true => {
+                    let doc = Bundle::open(&bundle)?.doc;
+                    let g = &doc.guides;
+                    match &g.grid {
+                        None => println!("no grid; snapping {}", if g.snap { "on" } else { "off" }),
+                        Some(grid) => println!(
+                            "grid every {}x{} px, a stronger line every {}, from {},{}, {}, {} at {}; {}, snapping {}",
+                            grid.every[0],
+                            grid.every[1],
+                            grid.sub,
+                            grid.offset[0],
+                            grid.offset[1],
+                            if grid.iso { "isometric" } else { "square" },
+                            grid.colour,
+                            grid.opacity,
+                            if g.show_grid { "shown" } else { "hidden" },
+                            if g.snap { "on" } else { "off" }
+                        ),
+                    }
+                }
+                false => agent::edit(&bundle, &[Op::Grid(edit)], &output(&flags, 0))?,
+            }
+        }
+        Command::Guides {
+            bundle,
+            x,
+            y,
+            rm_x,
+            rm_y,
+            clear,
+            hidden,
+            locked,
+            flags,
+        } => {
+            let on = |v: Option<String>| v.map(|v| v == "on");
+            let edit = klad_core::guides::GuideEdit {
+                add_x: x,
+                add_y: y,
+                rm_x,
+                rm_y,
+                clear,
+                hidden: on(hidden),
+                locked: on(locked),
+                snap: None,
+            };
+            match edit == klad_core::guides::GuideEdit::default() {
+                true => {
+                    let doc = Bundle::open(&bundle)?.doc;
+                    let g = &doc.guides;
+                    let list = |v: &[f32]| v.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(" ");
+                    println!("upright at x: {}", list(&g.x));
+                    println!("level at y: {}", list(&g.y));
+                    println!(
+                        "{}{}; snapping {}",
+                        if g.hidden { "hidden" } else { "shown" },
+                        if g.locked { ", locked" } else { "" },
+                        if g.snap { "on" } else { "off" }
+                    );
+                }
+                false => agent::edit(&bundle, &[Op::Guides(edit)], &output(&flags, 0))?,
+            }
         }
         Command::Canvas {
             bundle,

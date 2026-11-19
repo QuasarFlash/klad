@@ -32,6 +32,7 @@ mod pixels;
 mod prefs;
 mod selection;
 mod shift;
+mod snap;
 mod straight;
 mod target;
 mod text;
@@ -796,6 +797,7 @@ struct Windows {
     paintover: bool,
     compare: bool,
     canvas: bool,
+    grid: bool,
 }
 
 #[derive(Default)]
@@ -975,6 +977,8 @@ pub(crate) struct Editor {
     look_from: Option<String>,
     canvas_form: canvas::Form,
     cropping: Option<canvas::Crop>,
+    guide_drag: Option<snap::GuideDrag>,
+    snap_lines: Option<(Option<f32>, Option<f32>)>,
     pub(crate) pixel_filled: bool,
     pub(crate) pixel_diagonal: bool,
     pub(crate) pixel_fill_all: bool,
@@ -1202,6 +1206,8 @@ impl Editor {
             look_from: None,
             canvas_form: canvas::Form::default(),
             cropping: None,
+            guide_drag: None,
+            snap_lines: None,
             pixel_filled: false,
             pixel_diagonal: false,
             pixel_fill_all: false,
@@ -3512,6 +3518,10 @@ impl Editor {
             self.crop_pen(e.phase, c, on_canvas);
             return Ok(());
         }
+        if self.guide_pen(&e, view, rect, c, on_canvas)? {
+            return Ok(());
+        }
+        let c = self.snapped(&e, c);
         let picking = self.modifiers.alt && !self.modifiers.command && matches!(self.tool, Tool::Brush | Tool::Fill);
         let sizing_now = self.modifiers.alt && self.modifiers.command && self.tool == Tool::Brush;
         match (e.phase, self.sizing) {
@@ -4696,6 +4706,7 @@ impl Editor {
         }
         self.draw_pins(&painter, |c| self.screen(view, rect, c));
         self.crop_overlay(&painter, |c| self.screen(view, rect, c));
+        self.draw_guides(&painter, rect, |c| self.screen(view, rect, c));
         self.draw_checks(&painter, |c| self.screen(view, rect, c));
         if let Some(lasso) = self.lasso.as_ref().filter(|l| l.far) {
             let line: Vec<Pos2> = self

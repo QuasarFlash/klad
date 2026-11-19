@@ -1,4 +1,4 @@
-_Last updated: 2026-11-14 11:51 (format `klad/8`, stroke files `KLST` version 3, brushes `klad-brush/1`)_
+_Last updated: 2026-11-19 23:20 (format `klad/9`, stroke files `KLST` version 3, brushes `klad-brush/1`)_
 
 # The klad drawing format
 
@@ -32,13 +32,13 @@ Writers replace files atomically (write a temporary file, then rename), so a rea
 - **Colours** are `"#rrggbb"` or `"#rrggbbaa"`: sRGB, straight (not premultiplied) alpha.
 - **Ids** are unique across the whole document and use letters, digits, `-` and `_`. Ids are case sensitive. klad makes new ones from a prefix (`l` layer, `c` cel, `n` node), a number, and the tag of the copy that made them: `l48qa`. Each copy of a drawing (a clone, a git worktree: any folder without `.cache/copy.json`) picks a two-letter tag the first time klad opens it and keeps it in `.cache/copy.json`, with counters that only go up, so two copies edited apart never make the same id; the copy a drawing was made in has no tag (`l48`). A folder copied by hand with its `.cache/` keeps the tag: delete `.cache/` in the copy to give it its own. Ids already in a drawing never change. Writers that make their own ids should do the same or use a long random part. A drawing with an id used twice does not open; `klad repair` gives every later one a new id.
 - **JSON** is UTF-8, written pretty with a stable key order. Keys at their default value are left out; readers must take the defaults listed below for missing keys. Most objects reject keys they do not know, so writers must not add their own.
-- **Versions.** `format` names the version of `doc.json` and everything it implies; this is `klad/8`. Each version opens the older `klad/` drawings and migrates them in memory (written back on the next change). A reader that meets a newer version than it knows should refuse to write the bundle. Drawings from before `klad/1` (`.draw` folders, formats `draw-anything/0` to `/9`) do not open.
+- **Versions.** `format` names the version of `doc.json` and everything it implies; this is `klad/9`. Each version opens the older `klad/` drawings and migrates them in memory (written back on the next change). A reader that meets a newer version than it knows should refuse to write the bundle. Drawings from before `klad/1` (`.draw` folders, formats `draw-anything/0` to `/9`) do not open.
 
 ## doc.json
 
 ```json
 {
-  "format": "klad/8",
+  "format": "klad/9",
   "canvas": { "width": 2048, "height": 2048, "background": "#f4efe6" },
   "timeline": { "fps": 12, "frames": 24, "origin": [1024, 1800],
     "clips": [{ "name": "run", "from": 0, "to": 11, "loop": true, "fps": 24 }] },
@@ -60,7 +60,7 @@ Writers replace files atomically (write a temporary file, then rename), so a rea
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `format` | string | | `"klad/8"` |
+| `format` | string | | `"klad/9"` |
 | `canvas` | object | | `width`, `height` (px), `background` (a colour; none is transparent), `wrap` (bool, default false: the drawing is a tile, and klad brings pixel marks drawn past an edge back in on the other side; it changes nothing about how the drawing renders); `tile` ([width, height] in px, left out when there is none: the drawing is cut into tiles of that size, a tileset, and each side of the canvas is a whole number of them) |
 | `timeline` | object | 12 fps, 1 frame | see below |
 | `palette` | array | `[]` | swatches: `color`, optional `name` (unique, not starting with `#`), optional `id` (unique; set once a pixel mark uses the swatch), optional `ramp` (the name of the ramp it belongs to) |
@@ -69,6 +69,7 @@ Writers replace files atomically (write a temporary file, then rename), so a rea
 | `export` | object | `{}` | `godot`: the folder Godot exports go to, relative to the folder holding the bundle |
 | `atmosphere` | object | none | fog by depth: `color` (`#9aa8b8`), `top` (a colour higher up), `density` (0.5), `blur` (1), `desaturate` (0.15) |
 | `maps` | object | none | light maps (below): `surface`, `ambient`, `shininess`, `lights`; left out when the maps are off |
+| `guides` | object | none | the grid and guides, for drawing and snapping in the editor; they never render: `grid` (`every` [across, down] px, `sub` a stronger line every n, `offset` [x, y], `iso` bool for a 2:1 isometric grid, `colour`, `opacity`), `showGrid` (bool), `x` (upright guides at these x), `y` (level guides at these y), `hidden`, `locked`, `snap` (bool: things snap to the grid, the guides and other shapes); left out when there is none |
 
 Strokes and fills store their colour, so for them the palette is a list of names for colours, never a reference: renaming or recolouring a swatch changes nothing drawn. Pixel marks (below) also name the swatch they were drawn with, by its `id`: when klad changes that swatch's colour it rewrites the colour of every pixel mark bound to it, and when the swatch is removed it clears the marks' binding and leaves their colour. A reader draws a pixel mark in the colour the mark stores. A **ramp** is the swatches that share a `ramp` name, in palette order, dark to light.
 
@@ -408,3 +409,4 @@ How the maps come out, for a reader that wants to make its own:
 | `klad/6` | stroke files version 2: eraser, smudge and blender strokes record the marks they are attached to, and attached erasers erase only those (2026-11-09). Older drawings open unchanged, with nothing attached. |
 | `klad/7` | pixel layers: paint layers with `pixel`, pixel marks in stroke files (version 3), palette swatches with an `id` (2026-11-11), palette `variants` and `canvas.tile` (2026-11-12). Older drawings open unchanged. |
 | `klad/8` | light maps: the document's `maps`, a layer's `surface`, `map`, `shine`, `specular`, `emissive` and `z`, a surface's `directions` (2026-11-14). Older drawings open unchanged, with the maps off. |
+| `klad/9` | the document's `guides`: the grid, guides and snapping (2026-11-19). Older drawings open unchanged, with no grid or guides. |

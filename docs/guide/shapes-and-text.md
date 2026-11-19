@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 22:30_
+_Last updated: 2026-11-19 23:20_
 
 # Shapes, paths and text
 
@@ -41,6 +41,13 @@ Select shapes with **V**. In the bar under them, drag **outline** or type a widt
 2. Pick **Unite**, **Subtract**, **Intersect** or **Exclude** from the bar's combine button, or from **Edit > Shape**.
 
 The result is one path with the look of the shape at the back. **Subtract** cuts the shapes in front out of it.
+
+## Line things up on a grid or guides
+
+1. Press **cmd '** to show the grid and **shift cmd '** to snap to it. **View > Grid…** sets its spacing, stronger lines and look, square or isometric.
+2. Press **cmd R** for the rulers and drag a guide out of one. Drag it back onto the ruler to take it away.
+
+While snapping is on, shapes, points, moves, the pen and bones snap to the grid, the guides and the edges and middles of other shapes. Hold **cmd** while you drag to leave the snap.
 
 ## Fill a shape with a gradient
 

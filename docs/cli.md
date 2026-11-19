@@ -12,6 +12,8 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad pixelize`](#klad-pixelize): Make pixels of a picture or of a painted or vector layer
 - [`klad new`](#klad-new): Create an empty bundle with paint layers
 - [`klad canvas`](#klad-canvas): The canvas: its size and background, whether it wraps at its edges, and the size of its tiles
+- [`klad grid`](#klad-grid): The grid: its spacing, offset, look, and whether it shows and snaps
+- [`klad guides`](#klad-guides): Guides: level and upright lines to line things up and snap to
 - [`klad frames`](#klad-frames): Exposure sheet: a row per frame, a column per layer (top first)
 - [`klad frame`](#klad-frame): Insert or remove frames in every layer or the listed ones
 - [`klad arcs`](#klad-arcs): Track marks, parts or points across frames: positions, spacing, ground contacts, feet crossing
@@ -344,6 +346,133 @@ Options:
 
       --paper <COLOUR>
           The paper colour, #f4efe6, or none for a see-through paper
+
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad grid
+
+```text
+The grid over the drawing: its spacing across and down, a stronger line every few lines, where it starts, square or isometric (2:1 for pixel art), its colour and opacity, and two switches: whether it shows in the editor and whether things snap (to the grid, the guides, and other shapes' edges and centres). A drawing cut into tiles starts with the tile size. Without flags it prints the grid. One history step.
+
+  klad grid art.klad --every 16 --sub 4 --show on --snap on
+  klad grid art.klad --every 32,16 --iso
+  klad grid art.klad --off
+
+As an op: {"op":"grid","every":16,"sub":4,"show":true,"snap":true}.
+
+Usage: klad grid [OPTIONS] <BUNDLE>
+
+Arguments:
+  <BUNDLE>
+
+
+Options:
+      --every <PX[,PX]>
+          The spacing, across and down (one number for both)
+
+      --sub <SUB>
+          A stronger line every this many lines (0: none)
+
+      --offset <X,Y>
+          Where the grid starts
+
+      --iso <ISO>
+          Isometric (2:1) instead of square
+
+          [possible values: on, off]
+
+      --colour <COLOUR>
+          The grid's colour, #4f8fe8
+
+      --opacity <OPACITY>
+          The grid's opacity, 0 to 1
+
+      --show <SHOW>
+          Show the grid in the editor
+
+          [possible values: on, off]
+
+      --snap <SNAP>
+          Snap to the grid, the guides and other shapes
+
+          [possible values: on, off]
+
+      --off
+          No grid
+
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad guides
+
+```text
+Guides: upright lines at x and level lines at y, in canvas px, kept in the drawing. Things snap to them when snapping is on (klad grid --snap on). Without flags it lists them. One history step.
+
+  klad guides art.klad --x 120 --x 480 --y 64
+  klad guides art.klad --rm-x 120
+  klad guides art.klad --clear
+  klad guides art.klad --locked on --hidden off
+
+As an op: {"op":"guides","x":[120,480],"y":[64]}, with "rmX", "rmY", "clear", "hidden", "locked" and "snap".
+
+Usage: klad guides [OPTIONS] <BUNDLE>
+
+Arguments:
+  <BUNDLE>
+
+
+Options:
+      --x <X>
+          An upright guide at this x (repeat for more)
+
+      --y <Y>
+          A level guide at this y (repeat for more)
+
+      --rm-x <RM_X>
+          Take the upright guide at this x away
+
+      --rm-y <RM_Y>
+          Take the level guide at this y away
+
+      --clear
+          Take every guide away
+
+      --hidden <HIDDEN>
+          Hide the guides in the editor (they do not snap while hidden)
+
+          [possible values: on, off]
+
+      --locked <LOCKED>
+          Lock the guides so they cannot be dragged
+
+          [possible values: on, off]
 
       --render
           Render a preview after the edit and print its path

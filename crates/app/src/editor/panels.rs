@@ -1186,6 +1186,17 @@ impl Editor {
             );
             self.windows.tiles &= open;
         }
+        if self.windows.grid {
+            let mut open = true;
+            Self::window(
+                ctx,
+                "grid",
+                (format!("{} Grid", icon::PIXELS), Spot::Middle),
+                &mut open,
+                |ui| self.check(|e| e.grid_window(ui)),
+            );
+            self.windows.grid &= open;
+        }
         if self.windows.canvas {
             let mut open = true;
             Self::window(
