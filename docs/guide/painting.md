@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 23:05_
+_Last updated: 2026-11-19 23:45_
 
 # Painting
 
@@ -48,13 +48,23 @@ Paint with **Smudge**, **Wet round** or **Blender** over colours that are alread
 
 Turn on **mirror** in the brush bar. Every stroke is painted with its mirror image across an upright line.
 
+## Paint in perspective
+
+1. Choose **View > Drawing guides…** and click **2-point perspective** (or one or three points, a **ruler** or an **ellipse**).
+2. Drag the guide's points on the canvas while the window is open: the vanishing points, the ruler's ends, the ellipse's middle and sides.
+3. Paint. Each stroke runs to the vanishing point it heads for, or stays upright or level. Near a ruler a stroke runs on it, further away parallel to it; an ellipse takes strokes round it.
+
+Hold **cmd** while you paint to draw freely, or turn off **follow** in the brush bar.
+
 ## Make your own brush
 
 ![The brush editor over the canvas](../images/guide-brush.png)
 
 1. Press **F5** to open the brush editor.
 2. Change the tip, the pressure or the kind of paint, and watch the sample stroke at the top.
-3. Type a name and click **save in this drawing**.
+3. Type a name and click **save in this drawing**, or **save in your brushes** to have it in every drawing.
+
+Right click a brush of the drawing in the brush tiles to save it in **your brushes**. Your brushes are listed under the others in every drawing; right click one to rename, group, move or forget it. A drawing that uses one keeps its own copy, so it looks the same on another computer. The buttons next to **your brushes** write them all to one file to share, and add a shared file's brushes to yours.
 
 ## Tune your pen
 

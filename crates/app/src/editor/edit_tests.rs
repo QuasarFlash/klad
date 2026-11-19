@@ -852,3 +852,180 @@ fn shapes_snap_to_the_grid_guides_and_other_shapes_and_guides_come_out_of_the_ru
     );
     let _ = std::fs::remove_dir_all(&path);
 }
+
+fn last_points(h: &Harness<'static, Editor>) -> Vec<(f32, f32)> {
+    h.state()
+        .scene
+        .active_marks()
+        .iter()
+        .rev()
+        .find_map(Mark::as_stroke)
+        .map(|s| s.samples.iter().map(|p| p.pos()).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn the_brush_follows_perspective_and_a_ruler_and_the_guides_move_in_their_window() {
+    use klad_core::assist::Assist;
+    use klad_core::guides::AssistEdit;
+    let path = sample("assists");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "colour");
+    h.state_mut()
+        .timeline_apply(vec![klad_core::ops::Op::Assists(AssistEdit {
+            add: vec![Assist::Perspective {
+                points: vec![[-500.0, 100.0], [900.0, 100.0]],
+            }],
+            on: Some(true),
+            ..Default::default()
+        })])
+        .unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().is_on(Cmd::FollowGuides), Some(true));
+    let (a, b) = (canvas_at(&h, 300.0, 300.0), canvas_at(&h, 146.0, 256.0));
+    drag(&mut h, a, b);
+    h.run_steps(2);
+    let points = last_points(&h);
+    assert!(points.len() > 3, "{}", said(&h));
+    points.iter().for_each(|(x, y)| {
+        let cross = (x - 300.0) * (100.0 - 300.0) - (y - 300.0) * (-500.0 - 300.0);
+        let off = cross.abs() / (800.0f32).hypot(200.0);
+        assert!(
+            off < 1.0,
+            "the stroke runs to the left vanishing point: ({x}, {y}) is {off} px off"
+        );
+    });
+    let (c, d) = (canvas_at(&h, 200.0, 300.0), canvas_at(&h, 204.0, 200.0));
+    drag(&mut h, c, d);
+    h.run_steps(2);
+    let up = last_points(&h);
+    assert!(
+        up.iter().all(|(x, _)| (x - 200.0).abs() < 0.6),
+        "uprights stay upright: {up:?}"
+    );
+    h.state_mut().invoke(Cmd::FollowGuides).unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().is_on(Cmd::FollowGuides), Some(false));
+    let (e, f) = (canvas_at(&h, 400.0, 300.0), canvas_at(&h, 440.0, 220.0));
+    drag(&mut h, e, f);
+    h.run_steps(2);
+    let free = last_points(&h);
+    assert!(
+        near(*free.last().unwrap(), (440.0, 220.0)),
+        "with following off the stroke is free: {free:?}"
+    );
+    h.state_mut()
+        .timeline_apply(vec![klad_core::ops::Op::Assists(AssistEdit {
+            clear: true,
+            add: vec![Assist::Ruler {
+                from: [100.0, 350.0],
+                to: [400.0, 350.0],
+            }],
+            on: Some(true),
+            ..Default::default()
+        })])
+        .unwrap();
+    h.run_steps(2);
+    let (g, k) = (canvas_at(&h, 110.0, 356.0), canvas_at(&h, 300.0, 362.0));
+    drag(&mut h, g, k);
+    h.run_steps(2);
+    let along = last_points(&h);
+    assert!(
+        along.iter().all(|(_, y)| (y - 350.0).abs() < 0.6),
+        "a stroke near the ruler runs on it: {along:?}"
+    );
+    h.state_mut().invoke(Cmd::AssistsWindow).unwrap();
+    h.run_steps(3);
+    assert!(shown(&h, "2-point perspective"), "the drawing guides window is open");
+    let marks = h.state().scene.active_marks().len();
+    let (m, n) = (canvas_at(&h, 400.0, 350.0), canvas_at(&h, 400.0, 300.0));
+    drag(&mut h, m, n);
+    h.run_steps(2);
+    assert_eq!(
+        h.state().scene.active_marks().len(),
+        marks,
+        "dragging a guide's point paints nothing"
+    );
+    match &h.state().scene.bundle.doc.guides.assists[0] {
+        Assist::Ruler { to, .. } => assert!((to[1] - 300.0).abs() < 1.0, "the ruler's end moved: {to:?}"),
+        other => panic!("{other:?}"),
+    }
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.run_steps(2);
+    match &h.state().scene.bundle.doc.guides.assists[0] {
+        Assist::Ruler { to, .. } => assert!((to[1] - 350.0).abs() < 1.0, "moving a guide is one undo step: {to:?}"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn brushes_saved_to_yours_show_in_another_drawing_which_keeps_its_own_copy() {
+    let root = std::env::temp_dir().join(format!("draw-ui-yours-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let lib = klad_render::library::Library::at(root.join("brushes"));
+    let path = sample("yours-a");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    h.state_mut().yours = super::yours::Yours::at(Some(lib.clone()));
+    let mut def = klad_core::brushes::library("ink").unwrap();
+    def.name = "wet ink".into();
+    def.spacing = 0.35;
+    h.state().scene.bundle.embed_brush("wet-ink", &def).unwrap();
+    h.state_mut().embedded.insert("wet-ink".into(), def.clone());
+    h.state_mut().brushes.insert("wet-ink", def.clone());
+    h.state_mut().save_to_yours("wet-ink").unwrap();
+    assert!(said(&h).contains("your brushes"), "{}", said(&h));
+    assert!(
+        h.state_mut().save_to_yours("ink").is_err(),
+        "klad's own brushes are in every drawing already"
+    );
+    assert_eq!(lib.list().len(), 1);
+
+    let other = sample("yours-b");
+    let mut g = harness(editor(&other), vec2(1440.0, 1000.0));
+    g.state_mut().yours = super::yours::Yours::at(Some(lib.clone()));
+    g.state_mut().tool = Tool::Brush;
+    if g.state().is_on(Cmd::BrushPane) != Some(true) {
+        g.state_mut().invoke(Cmd::BrushPane).unwrap();
+    }
+    g.run_steps(3);
+    assert!(shown(&g, "your brushes"), "the brush tiles show your brushes");
+    {
+        use egui_kittest::kittest::{NodeT, Queryable};
+        g.query_all_by_label("wet ink")
+            .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+            .expect("a tile for the saved brush")
+            .scroll_to_me();
+        g.run_steps(4);
+        g.query_all_by_label("wet ink")
+            .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+            .expect("a tile for the saved brush")
+            .click();
+    }
+    g.run_steps(3);
+    assert_eq!(g.state().brush, "wet-ink", "{}", said(&g));
+    assert_eq!(
+        g.state().scene.bundle.brush("wet-ink").unwrap().unwrap().spacing,
+        0.35,
+        "picking it gives the drawing its own copy"
+    );
+    activate(&mut g, "colour");
+    let (a, b) = (canvas_at(&g, 100.0, 100.0), canvas_at(&g, 200.0, 150.0));
+    drag(&mut g, a, b);
+    g.run_steps(2);
+    let drawn = g
+        .state()
+        .scene
+        .active_marks()
+        .iter()
+        .filter_map(Mark::as_stroke)
+        .any(|s| s.brush == "wet-ink");
+    assert!(drawn, "{}", said(&g));
+    lib.forget("wet-ink").unwrap();
+    let reopened = klad_core::bundle::Bundle::open(&other).unwrap();
+    assert_eq!(
+        reopened.brush("wet-ink").unwrap().unwrap().spacing,
+        0.35,
+        "the drawing renders where your brushes lack it"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}

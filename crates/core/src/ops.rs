@@ -166,6 +166,7 @@ pub enum Op {
     Atmosphere(Option<crate::look::Atmosphere>),
     Grid(crate::guides::GridEdit),
     Guides(crate::guides::GuideEdit),
+    Assists(crate::guides::AssistEdit),
     Maps(Option<crate::maps::Maps>),
     Frames(FrameSpec),
     Cel(CelSpec),
@@ -1980,6 +1981,25 @@ impl Op {
                     snap: flag(&mut map, "snap")?,
                 })
             }
+            "assists" => Op::Assists(crate::guides::AssistEdit {
+                add: match map.remove("add") {
+                    None => Vec::new(),
+                    Some(v) => serde_json::from_value(v).map_err(|e| {
+                        anyhow!("add takes guides like {{\"kind\":\"perspective\",\"points\":[[x,y]]}}, {{\"kind\":\"ruler\",\"from\":[x,y],\"to\":[x,y]}} or {{\"kind\":\"ellipse\",\"center\":[x,y],\"radii\":[rx,ry]}}: {e}")
+                    })?,
+                },
+                set: None,
+                remove: match map.remove("remove") {
+                    None => Vec::new(),
+                    Some(v) => serde_json::from_value(v).map_err(|_| anyhow!("remove takes the guides' numbers, from 0"))?,
+                },
+                clear: matches!(map.remove("clear"), Some(Value::Bool(true))),
+                on: match map.remove("on") {
+                    None => None,
+                    Some(Value::Bool(b)) => Some(b),
+                    Some(other) => bail!("on takes true or false, not {other}"),
+                },
+            }),
             "timeline" => Op::Timeline {
                 fps: whole(&mut map, "fps")?,
                 frames: whole(&mut map, "frames")?,
@@ -4387,6 +4407,10 @@ pub fn apply(doc: &mut Document, op: &Op, out: &mut Applied) -> Result<()> {
         }
         Op::Guides(edit) => {
             crate::guides::edit_guides(&mut doc.guides, edit)?;
+            out.changed.push("guides".into());
+        }
+        Op::Assists(edit) => {
+            crate::guides::edit_assists(&mut doc.guides, edit)?;
             out.changed.push("guides".into());
         }
         Op::Atmosphere(air) => {

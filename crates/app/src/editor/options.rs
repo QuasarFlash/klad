@@ -166,7 +166,13 @@ pub(super) struct Samples {
 }
 
 impl Samples {
-    fn texture(&mut self, ctx: &egui::Context, brushes: &BrushSet, id: &str, def: &BrushDef) -> Option<TextureHandle> {
+    pub(super) fn texture(
+        &mut self,
+        ctx: &egui::Context,
+        brushes: &BrushSet,
+        id: &str,
+        def: &BrushDef,
+    ) -> Option<TextureHandle> {
         let key = def_key(id, def);
         if let Some((k, texture)) = self.textures.get(id).filter(|(k, _)| *k == key) {
             let _ = k;
@@ -181,7 +187,7 @@ impl Samples {
     }
 }
 
-fn label_of(id: &str, def: &BrushDef) -> String {
+pub(super) fn label_of(id: &str, def: &BrushDef) -> String {
     match id.rsplit_once('-') {
         Some((base, tail)) if tail.len() == 6 && tail.chars().all(|c| c.is_ascii_hexdigit()) => {
             format!("{base} variant {tail}")
@@ -423,6 +429,9 @@ impl Editor {
                         self.figure_choice(ui);
                     }
                     self.command_check(ui, Cmd::Symmetry, "mirror");
+                    if !self.scene.bundle.doc.guides.assists.is_empty() {
+                        self.command_check(ui, Cmd::FollowGuides, "follow");
+                    }
                     if let Some(axis) = self.mirror.as_mut() {
                         ui.add(egui::DragValue::new(axis).speed(1.0).prefix("axis x ").suffix(" px"))
                             .hint("where the mirror line stands, in canvas px");
@@ -658,38 +667,19 @@ impl Editor {
             .into_iter()
             .filter(|(_, list)| !list.is_empty())
             .for_each(|(title, list)| {
+                let own = title == "in this document";
                 ui.label(RichText::new(title).color(theme::WEAK).small());
                 list.iter().for_each(|(id, def)| {
-                    let label = label_of(id, def);
-                    let selected = self.brush == *id;
-                    let texture = match id.as_str() {
-                        "eraser" => None,
-                        _ => self.samples.texture(&ctx, &self.brushes, id, def),
-                    };
-                    let text = RichText::new(match id.as_str() {
-                        "eraser" => format!("{} {label}", icon::ERASER),
-                        _ => label.clone(),
-                    });
-                    let button = match &texture {
-                        Some(t) => egui::Button::image_and_text(
-                            egui::Image::new(t).fit_to_exact_size(vec2(SAMPLE.0 as f32, SAMPLE.1 as f32)),
-                            text,
-                        ),
-                        None => egui::Button::new(text),
-                    };
-                    if ui
-                        .add(
-                            button
-                                .selected(selected)
-                                .min_size(vec2(ui.available_width(), theme::TARGET)),
-                        )
-                        .hint(format!("{id}: {}", def.name))
-                        .clicked()
-                    {
+                    let response = self.brush_tile(ui, &ctx, id, id, def, false);
+                    if response.clicked() {
                         picked = Some(id.clone());
+                    }
+                    if own {
+                        response.context_menu(|ui| self.own_brush_menu(ui, id));
                     }
                 });
             });
+        self.yours_tiles(ui);
         if let Some(id) = picked {
             self.tool = Tool::Brush;
             if id != "eraser" {

@@ -42,6 +42,10 @@ pub struct Guides {
     pub locked: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub snap: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub assists: Vec<crate::assist::Assist>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub follow: bool,
 }
 
 impl Guides {
@@ -109,6 +113,50 @@ pub struct GuideEdit {
     pub hidden: Option<bool>,
     pub locked: Option<bool>,
     pub snap: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AssistEdit {
+    pub add: Vec<crate::assist::Assist>,
+    pub set: Option<(usize, crate::assist::Assist)>,
+    pub remove: Vec<usize>,
+    pub clear: bool,
+    pub on: Option<bool>,
+}
+
+pub fn edit_assists(g: &mut Guides, e: &AssistEdit) -> Result<()> {
+    if e.clear {
+        g.assists.clear();
+    }
+    if let Some((i, a)) = &e.set {
+        match g.assists.get_mut(*i) {
+            Some(slot) => *slot = a.clone(),
+            None => bail!("there is no guide {i}: the drawing has {}", g.assists.len()),
+        }
+    }
+    let mut gone = e.remove.clone();
+    gone.sort_unstable();
+    gone.dedup();
+    gone.iter().rev().try_for_each(|i| match *i < g.assists.len() {
+        true => {
+            g.assists.remove(*i);
+            Ok(())
+        }
+        false => bail!("there is no guide {i}: the drawing has {}", g.assists.len()),
+    })?;
+    e.add.iter().try_for_each(|a| {
+        if let crate::assist::Assist::Perspective { points } = a
+            && !(1..=3).contains(&points.len())
+        {
+            bail!("perspective takes one, two or three vanishing points");
+        }
+        g.assists.push(a.clone());
+        Ok(())
+    })?;
+    if let Some(on) = e.on {
+        g.follow = on;
+    }
+    Ok(())
 }
 
 pub fn edit_grid(g: &mut Guides, e: &GridEdit, tile: Option<[u32; 2]>) -> Result<()> {

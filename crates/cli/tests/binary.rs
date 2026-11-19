@@ -3575,3 +3575,148 @@ fn the_grid_and_guides_are_kept_in_the_drawing_and_set_from_the_command_line() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn drawing_guides_bend_strokes_and_your_brushes_follow_you_into_other_drawings() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-assist-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let lib = dir.join("library");
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .env("KLAD_LIBRARY", &lib)
+            .output()
+            .unwrap()
+    };
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let doc = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(dir.join(name).join("doc.json")).unwrap()).unwrap()
+    };
+    draw(&["new", "a.klad", "--width", "640", "--height", "480"]);
+    let refused = run(&["stroke", "a.klad", "l1", "--points", "10,10 50,50", "--follow"]);
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("no drawing guides"));
+    draw(&[
+        "guides",
+        "a.klad",
+        "--perspective",
+        "-400,100,1000,100",
+        "--ruler",
+        "0,400,640,400",
+    ]);
+    let said = draw(&["guides", "a.klad"]);
+    assert!(
+        said.contains("drawing guide 0: 2-point perspective at -400,100 1000,100"),
+        "{said}"
+    );
+    assert!(
+        said.contains("drawing guide 1: a ruler") && said.contains("the brush follows them"),
+        "{said}"
+    );
+    assert_eq!(doc("a.klad")["guides"]["assists"][0]["kind"], "perspective");
+    draw(&[
+        "stroke",
+        "a.klad",
+        "l1",
+        "--points",
+        "300,300 250,290 200,270 150,262",
+        "--follow",
+    ]);
+    let strokes: serde_json::Value = serde_json::from_str(&draw(&["strokes", "a.klad", "l1", "--json"])).unwrap();
+    let pts = strokes["strokes"][0]["points"].as_array().cloned().unwrap_or_default();
+    assert!(pts.len() > 10, "the stroke is sampled along the guide: {strokes}");
+    pts.iter().for_each(|p| {
+        let (x, y) = (p[0].as_f64().unwrap() as f32, p[1].as_f64().unwrap() as f32);
+        let cross = (x - 300.0) * (100.0 - 300.0) - (y - 300.0) * (-400.0 - 300.0);
+        assert!(
+            cross.abs() / 700.0f32.hypot(200.0) < 1.0,
+            "({x}, {y}) is on the line to the left vanishing point"
+        );
+    });
+    draw(&["stroke", "a.klad", "l1", "--line", "100,405,500,396", "--follow"]);
+    draw(&[
+        "guides",
+        "a.klad",
+        "--rm-guide",
+        "0",
+        "--ellipse",
+        "320,240,200,100",
+        "--follow",
+        "off",
+    ]);
+    let g = doc("a.klad")["guides"].clone();
+    assert_eq!(g["assists"][0]["kind"], "ruler");
+    assert_eq!(g["assists"][1]["kind"], "ellipse");
+    assert!(g.get("follow").is_none());
+    assert!(
+        String::from_utf8_lossy(&run(&["guides", "a.klad", "--perspective", "1,2,3"]).stderr)
+            .contains("one, two or three")
+    );
+    assert!(String::from_utf8_lossy(&run(&["guides", "a.klad", "--rm-guide", "7"]).stderr).contains("no guide 7"));
+
+    assert!(draw(&["brushes", "--library"]).contains("no brushes of your own yet"));
+    let mut def: serde_json::Value = serde_json::from_str(&draw(&["brushes", "--show", "ink"])).unwrap();
+    def["name"] = "wet ink".into();
+    def["spacing"] = 0.35.into();
+    std::fs::write(dir.join("wet.json"), def.to_string()).unwrap();
+    draw(&["brushes", "a.klad", "--set", "wet-ink", "wet.json"]);
+    assert!(String::from_utf8_lossy(&run(&["brushes", "a.klad", "--save", "ink"]).stderr).contains("klad's own"));
+    draw(&["brushes", "a.klad", "--save", "wet-ink"]);
+    draw(&["brushes", "a.klad", "--save", "wet-ink", "--as", "wetter"]);
+    draw(&[
+        "brushes",
+        "--rename",
+        "wetter",
+        "wetter ink",
+        "--group",
+        "wetter",
+        "inks",
+        "--move",
+        "wetter",
+        "-1",
+    ]);
+    let mine = draw(&["brushes", "--library"]);
+    let lines: Vec<&str> = mine.lines().collect();
+    assert!(
+        lines[0].starts_with("wetter") && lines[0].contains("wetter ink") && lines[0].contains("[inks]"),
+        "{mine}"
+    );
+    assert!(lines[1].starts_with("wet-ink"), "{mine}");
+    draw(&["new", "b.klad", "--width", "200", "--height", "200"]);
+    draw(&[
+        "stroke",
+        "b.klad",
+        "l1",
+        "--brush",
+        "wet-ink",
+        "--line",
+        "10,10,150,150",
+    ]);
+    let kept: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("b.klad/brushes/wet-ink.json")).unwrap()).unwrap();
+    assert_eq!(
+        kept["spacing"], 0.35,
+        "a stroke with one of your brushes gives the drawing its own copy"
+    );
+    draw(&["new", "c.klad", "--width", "64", "--height", "64"]);
+    assert!(draw(&["brushes", "c.klad", "--take", "wetter"]).contains("its own copy"));
+    assert!(dir.join("c.klad/brushes/wetter.json").exists());
+    draw(&["brushes", "--export-library", "set.json"]);
+    draw(&["brushes", "--forget", "wet-ink"]);
+    draw(&["brushes", "--forget", "wetter"]);
+    assert!(draw(&["brushes", "--library"]).contains("no brushes of your own yet"));
+    assert!(draw(&["render", "b.klad", "--out", "b.png"]).is_empty() || dir.join("b.png").exists());
+    assert!(draw(&["brushes", "--import-library", "set.json"]).contains("2 brushes added"));
+    assert!(draw(&["brushes", "--library"]).contains("[inks]"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

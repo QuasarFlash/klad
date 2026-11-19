@@ -337,8 +337,8 @@ enum Command {
         flags: EditFlags,
     },
     #[command(
-        about = "Guides: level and upright lines to line things up and snap to",
-        long_about = "Guides: upright lines at x and level lines at y, in canvas px, kept in the drawing. Things snap to them when snapping is on (klad grid --snap on). Without flags it lists them. One history step.\n\n  klad guides art.klad --x 120 --x 480 --y 64\n  klad guides art.klad --rm-x 120\n  klad guides art.klad --clear\n  klad guides art.klad --locked on --hidden off\n\nAs an op: {\"op\":\"guides\",\"x\":[120,480],\"y\":[64]}, with \"rmX\", \"rmY\", \"clear\", \"hidden\", \"locked\" and \"snap\"."
+        about = "Guides: level and upright lines to snap to, and drawing guides (perspective, rulers, ellipses) the brush follows",
+        long_about = "Guides: upright lines at x and level lines at y, in canvas px, kept in the drawing. Things snap to them when snapping is on (klad grid --snap on). Without flags it lists them. One history step.\n\n  klad guides art.klad --x 120 --x 480 --y 64\n  klad guides art.klad --rm-x 120\n  klad guides art.klad --clear\n  klad guides art.klad --locked on --hidden off\n\nDrawing guides are what the brush follows while painting in the editor (and klad stroke --follow): one, two or three vanishing points, a ruler line, an ellipse. A stroke runs to the vanishing point it heads for (or stays level or upright), along a ruler (on it when it starts near it, parallel when not), round the ellipse or one of its shape through where it starts.\n\n  klad guides art.klad --perspective -400,300,2400,300 --follow on\n  klad guides art.klad --ruler 100,500,900,420\n  klad guides art.klad --ellipse 512,512,300,120,15\n  klad guides art.klad --rm-guide 0\n\nAs an op: {\"op\":\"guides\",\"x\":[120,480],\"y\":[64]}, with \"rmX\", \"rmY\", \"clear\", \"hidden\", \"locked\" and \"snap\"; drawing guides: {\"op\":\"assists\",\"add\":[{\"kind\":\"perspective\",\"points\":[[-400,300],[2400,300]]}],\"on\":true}, with \"remove\" (numbers) and \"clear\"."
     )]
     Guides {
         bundle: PathBuf,
@@ -368,6 +368,37 @@ enum Command {
         hidden: Option<String>,
         #[arg(long, value_parser = ["on", "off"], help = "Lock the guides so they cannot be dragged")]
         locked: Option<String>,
+        #[arg(
+            long,
+            value_name = "X,Y[,X,Y[,X,Y]]",
+            allow_hyphen_values = true,
+            help = "A drawing guide: perspective with one, two or three vanishing points"
+        )]
+        perspective: Vec<String>,
+        #[arg(
+            long,
+            value_name = "X0,Y0,X1,Y1",
+            allow_hyphen_values = true,
+            help = "A drawing guide: a ruler line strokes run along"
+        )]
+        ruler: Vec<String>,
+        #[arg(
+            long,
+            value_name = "CX,CY,RX,RY[,TURN]",
+            allow_hyphen_values = true,
+            help = "A drawing guide: an ellipse strokes go round (turn in degrees)"
+        )]
+        ellipse: Vec<String>,
+        #[arg(
+            long = "rm-guide",
+            value_name = "N",
+            help = "Take drawing guide N away (0 is the first; klad guides lists them)"
+        )]
+        rm_guide: Vec<usize>,
+        #[arg(long = "clear-drawing-guides", help = "Take every drawing guide away")]
+        clear_drawing_guides: bool,
+        #[arg(long, value_parser = ["on", "off"], help = "Whether the brush follows the drawing guides in the editor")]
+        follow: Option<String>,
         #[command(flatten)]
         flags: EditFlags,
     },
@@ -1234,6 +1265,8 @@ enum Command {
         rect: Option<String>,
         #[arg(long, value_name = "X,Y,W,H", conflicts_with_all = ["path", "points"], help = "A stroke around the ellipse that fits this box, painted with the brush")]
         ellipse: Option<String>,
+        #[arg(long, conflicts_with_all = ["path", "rect", "ellipse"], help = "Bend --points or --line onto the drawing's guides (klad guides --perspective, --ruler, --ellipse), as the brush follows them in the editor")]
+        follow: bool,
         #[arg(long, default_value = "ink")]
         brush: String,
         #[arg(long, default_value = "#000000")]
@@ -2527,8 +2560,8 @@ enum Command {
         out: Option<PathBuf>,
     },
     #[command(
-        about = "List brushes: the library, and with a bundle the ones it embeds",
-        long_about = "List brushes: the built-in library, and with a bundle the brushes it embeds (a document keeps every brush it uses in brushes/<id>.json, so it renders the same when the library changes).\n\n  klad brushes\n  klad brushes art.klad\n  klad brushes art.klad --show ink"
+        about = "List brushes: the library, and with a bundle the ones it embeds; keep your own brushes for every drawing",
+        long_about = "List brushes: the built-in library, and with a bundle the brushes it embeds (a document keeps every brush it uses in brushes/<id>.json, so it renders the same when the library changes).\n\n  klad brushes\n  klad brushes art.klad\n  klad brushes art.klad --show ink\n\nYour brushes are kept in your support folder (KLAD_LIBRARY overrides it) and shown in every drawing's brush tiles. A drawing that uses one keeps its own copy, so it renders the same where your brushes are missing. klad stroke --brush takes them too.\n\n  klad brushes art.klad --save wet-ink [--as wet]\n  klad brushes --library\n  klad brushes new.klad --take wet-ink\n  klad brushes --rename wet-ink 'wet ink' --group wet-ink inks --move wet-ink -1\n  klad brushes --forget wet-ink\n  klad brushes --export-library inks.json\n  klad brushes --import-library inks.json"
     )]
     Brushes {
         bundle: Option<PathBuf>,
@@ -2540,6 +2573,42 @@ enum Command {
         set: Option<Vec<String>>,
         #[arg(long, num_args = 2, value_names = ["NAME", "PNG"], help = "Add a picture (tip or texture) to the bundle's brushes/images")]
         picture: Option<Vec<String>>,
+        #[arg(long, help = "List your brushes, the ones every drawing shows")]
+        library: bool,
+        #[arg(long, value_name = "ID", help = "Save the bundle's brush in your brushes")]
+        save: Option<String>,
+        #[arg(long = "as", value_name = "ID", requires = "save", help = "Save it under this id")]
+        save_as: Option<String>,
+        #[arg(
+            long,
+            value_name = "ID",
+            help = "Give the bundle its own copy of one of your brushes"
+        )]
+        take: Option<String>,
+        #[arg(
+            long,
+            value_name = "ID",
+            help = "Take a brush out of your brushes (drawings keep their copy)"
+        )]
+        forget: Option<String>,
+        #[arg(long, num_args = 2, value_names = ["ID", "NAME"], help = "Rename one of your brushes")]
+        rename: Option<Vec<String>>,
+        #[arg(long, num_args = 2, value_names = ["ID", "GROUP"], help = "Put one of your brushes in a group ('' for none)")]
+        group: Option<Vec<String>>,
+        #[arg(long = "move", num_args = 2, value_names = ["ID", "BY"], allow_hyphen_values = true, help = "Move one of your brushes up (negative) or down the list")]
+        shift: Option<Vec<String>>,
+        #[arg(
+            long = "export-library",
+            value_name = "FILE",
+            help = "Write your brushes, with their pictures, to one file to share"
+        )]
+        export_library: Option<PathBuf>,
+        #[arg(
+            long = "import-library",
+            value_name = "FILE",
+            help = "Add the brushes of a shared file to your brushes"
+        )]
+        import_library: Option<PathBuf>,
     },
     #[command(
         about = "List, add or remove a layer's effects: klad effect art.klad l3 glow radius=24 color=#ffd080",
@@ -2982,6 +3051,110 @@ fn parse_clip_fps(text: &str) -> Result<Option<u32>> {
     }
 }
 
+fn assist_edit(
+    perspective: &[String],
+    ruler: &[String],
+    ellipse: &[String],
+    remove: Vec<usize>,
+    clear: bool,
+    on: Option<bool>,
+) -> Result<klad_core::guides::AssistEdit> {
+    use klad_core::assist::Assist;
+    let pairs = |v: Vec<f32>| v.chunks(2).map(|c| [c[0], c[1]]).collect::<Vec<_>>();
+    let mut add = perspective
+        .iter()
+        .map(|t| {
+            let v = parse_numbers(t)?;
+            match v.len() {
+                2 | 4 | 6 => Ok(Assist::Perspective { points: pairs(v) }),
+                _ => Err(anyhow!(
+                    "--perspective takes one, two or three vanishing points: x,y[,x,y[,x,y]]"
+                )),
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    ruler.iter().try_for_each(|t| match parse_numbers(t)?[..] {
+        [x0, y0, x1, y1] if (x0, y0) != (x1, y1) => {
+            add.push(Assist::Ruler {
+                from: [x0, y0],
+                to: [x1, y1],
+            });
+            Ok(())
+        }
+        _ => Err(anyhow!("--ruler takes two different points: x0,y0,x1,y1")),
+    })?;
+    ellipse.iter().try_for_each(|t| {
+        let v = parse_numbers(t)?;
+        match v[..] {
+            [cx, cy, rx, ry] | [cx, cy, rx, ry, _] if rx > 0.0 && ry > 0.0 => {
+                add.push(Assist::Ellipse {
+                    center: [cx, cy],
+                    radii: [rx, ry],
+                    turn: v.get(4).copied().unwrap_or(0.0),
+                });
+                Ok(())
+            }
+            _ => Err(anyhow!("--ellipse takes cx,cy,rx,ry[,turn] with radii above 0")),
+        }
+    })?;
+    let on = match (on, add.is_empty()) {
+        (None, false) => Some(true),
+        (on, _) => on,
+    };
+    Ok(klad_core::guides::AssistEdit {
+        add,
+        set: None,
+        remove,
+        clear,
+        on,
+    })
+}
+
+fn library_brush(bundle: &Path, brush: &str) -> Result<()> {
+    if klad_core::brushes::library(brush).is_some() {
+        return Ok(());
+    }
+    let opened = Bundle::open(bundle)?;
+    if opened.brush(brush)?.is_some() {
+        return Ok(());
+    }
+    if let Ok(lib) = klad_render::library::Library::home()
+        && lib.get(brush).is_some()
+    {
+        lib.take(&opened, brush)?;
+    }
+    Ok(())
+}
+
+fn followed(bundle: &Path, points: Vec<[f32; 3]>) -> Result<Vec<[f32; 3]>> {
+    let assists = Bundle::open(bundle)?.doc.guides.assists;
+    if assists.is_empty() {
+        bail!("the drawing has no drawing guides to follow: klad guides --perspective, --ruler or --ellipse adds one");
+    }
+    let dense: Vec<[f32; 3]> = points
+        .windows(2)
+        .flat_map(|w| {
+            let (a, b) = (w[0], w[1]);
+            let steps = ((b[0] - a[0]).hypot(b[1] - a[1]) / 4.0).ceil().max(1.0) as usize;
+            (0..steps).map(move |k| {
+                let t = k as f32 / steps as f32;
+                [
+                    a[0] + (b[0] - a[0]) * t,
+                    a[1] + (b[1] - a[1]) * t,
+                    a[2] + (b[2] - a[2]) * t,
+                ]
+            })
+        })
+        .chain(points.last().copied())
+        .collect();
+    let xy: Vec<[f32; 2]> = dense.iter().map(|p| [p[0], p[1]]).collect();
+    Ok(klad_core::assist::follow(&assists, &xy)
+        .into_iter()
+        .zip(dense)
+        .map(|(q, p)| [q[0], q[1], p[2]])
+        .collect())
+}
+
 fn parse_points(text: &str) -> Result<Vec<[f32; 3]>> {
     text.split_whitespace()
         .map(|triple| {
@@ -3409,9 +3582,23 @@ fn run() -> Result<()> {
             clear,
             hidden,
             locked,
+            perspective,
+            ruler,
+            ellipse,
+            rm_guide,
+            clear_drawing_guides,
+            follow,
             flags,
         } => {
             let on = |v: Option<String>| v.map(|v| v == "on");
+            let assists = assist_edit(
+                &perspective,
+                &ruler,
+                &ellipse,
+                rm_guide,
+                clear_drawing_guides,
+                on(follow),
+            )?;
             let edit = klad_core::guides::GuideEdit {
                 add_x: x,
                 add_y: y,
@@ -3422,7 +3609,14 @@ fn run() -> Result<()> {
                 locked: on(locked),
                 snap: None,
             };
-            match edit == klad_core::guides::GuideEdit::default() {
+            let ops: Vec<Op> = [
+                (edit != klad_core::guides::GuideEdit::default()).then_some(Op::Guides(edit)),
+                (assists != klad_core::guides::AssistEdit::default()).then_some(Op::Assists(assists)),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            match ops.is_empty() {
                 true => {
                     let doc = Bundle::open(&bundle)?.doc;
                     let g = &doc.guides;
@@ -3435,8 +3629,20 @@ fn run() -> Result<()> {
                         if g.locked { ", locked" } else { "" },
                         if g.snap { "on" } else { "off" }
                     );
+                    g.assists.iter().enumerate().for_each(|(i, a)| {
+                        let at = a
+                            .handles()
+                            .iter()
+                            .map(|p| format!("{},{}", p[0], p[1]))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        println!("drawing guide {i}: {} at {at}", a.word());
+                    });
+                    if !g.assists.is_empty() {
+                        println!("the brush {}", if g.follow { "follows them" } else { "paints freely" });
+                    }
                 }
-                false => agent::edit(&bundle, &[Op::Guides(edit)], &output(&flags, 0))?,
+                false => agent::edit(&bundle, &ops, &output(&flags, 0))?,
             }
         }
         Command::Canvas {
@@ -4210,6 +4416,7 @@ fn run() -> Result<()> {
             line,
             rect,
             ellipse,
+            follow,
             brush,
             color,
             size,
@@ -4225,6 +4432,21 @@ fn run() -> Result<()> {
             normal,
             flags,
         } => {
+            let (line, points) = match follow {
+                false => (line, points.as_deref().map(parse_points).transpose()?),
+                true => {
+                    let given = match (&line, &points) {
+                        (Some(l), _) => match parse_numbers(l)?[..] {
+                            [x0, y0, x1, y1] => vec![[x0, y0, 1.0], [x1, y1, 1.0]],
+                            _ => bail!("--line takes x0,y0,x1,y1"),
+                        },
+                        (None, Some(p)) => parse_points(p)?,
+                        (None, None) => bail!("--follow bends --points or --line"),
+                    };
+                    (None, Some(followed(&bundle, given)?))
+                }
+            };
+            library_brush(&bundle, &brush)?;
             let taper = taper
                 .as_deref()
                 .map(|t| {
@@ -4248,7 +4470,7 @@ fn run() -> Result<()> {
                 opacity,
                 flow,
                 path,
-                points: points.as_deref().map(parse_points).transpose()?,
+                points,
                 pressure: pressure.as_deref().map(parse_numbers).transpose()?.unwrap_or_default(),
                 tilt: [0.0, 0.0],
                 speed,
@@ -5368,7 +5590,49 @@ fn run() -> Result<()> {
             json,
             set,
             picture,
+            library,
+            save,
+            save_as,
+            take,
+            forget,
+            rename,
+            group,
+            shift,
+            export_library,
+            import_library,
         } => match (bundle.as_deref(), set, picture) {
+            (bundle, _, _)
+                if brushes::Mine {
+                    list: library,
+                    save: save.clone(),
+                    take: take.clone(),
+                    forget: forget.clone(),
+                    rename: rename.clone(),
+                    group: group.clone(),
+                    shift: shift.clone(),
+                    export: export_library.clone(),
+                    import: import_library.clone(),
+                    ..Default::default()
+                }
+                .any() =>
+            {
+                brushes::mine(
+                    bundle,
+                    brushes::Mine {
+                        list: library,
+                        save,
+                        save_as,
+                        take,
+                        forget,
+                        rename,
+                        group,
+                        shift,
+                        export: export_library,
+                        import: import_library,
+                    },
+                    json,
+                )?
+            }
             (Some(b), Some(set), _) => brushes::set(b, &set[0], Path::new(&set[1]))?,
             (Some(b), None, Some(picture)) => brushes::picture(b, &picture[0], Path::new(&picture[1]))?,
             (None, Some(_), _) | (None, None, Some(_)) => anyhow::bail!("--set and --picture need a bundle"),

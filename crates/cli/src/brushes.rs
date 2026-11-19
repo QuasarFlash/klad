@@ -175,3 +175,105 @@ pub fn list(bundle: Option<&Path>, show: Option<&str>, as_json: bool) -> Result<
     });
     Ok(())
 }
+
+#[derive(Default)]
+pub struct Mine {
+    pub list: bool,
+    pub save: Option<String>,
+    pub save_as: Option<String>,
+    pub take: Option<String>,
+    pub forget: Option<String>,
+    pub rename: Option<Vec<String>>,
+    pub group: Option<Vec<String>>,
+    pub shift: Option<Vec<String>>,
+    pub export: Option<std::path::PathBuf>,
+    pub import: Option<std::path::PathBuf>,
+}
+
+impl Mine {
+    pub fn any(&self) -> bool {
+        self.list
+            || self.save.is_some()
+            || self.take.is_some()
+            || self.forget.is_some()
+            || self.rename.is_some()
+            || self.group.is_some()
+            || self.shift.is_some()
+            || self.export.is_some()
+            || self.import.is_some()
+    }
+}
+
+pub fn mine(bundle: Option<&Path>, m: Mine, as_json: bool) -> Result<()> {
+    let lib = klad_render::library::Library::home()?;
+    let need = || bundle.ok_or_else(|| anyhow!("--save and --take need a bundle: klad brushes art.klad --save my-ink"));
+    if let Some(id) = &m.save {
+        let opened = Bundle::open(need()?)?;
+        let def = opened.brush(id)?.ok_or_else(|| {
+            anyhow!(
+                "the drawing has no brush {id} of its own (klad brushes {} lists them)",
+                opened.root.display()
+            )
+        })?;
+        let to = m.save_as.as_deref().unwrap_or(id);
+        lib.save(&opened, to, &def)?;
+        println!("saved {to} in your brushes ({})", lib.dir.display());
+    }
+    if let Some(id) = &m.take {
+        let opened = Bundle::open(need()?)?;
+        let (_, fresh) = lib.take(&opened, id)?;
+        match fresh {
+            true => println!("the drawing has its own copy of {id} now"),
+            false => println!("the drawing has a brush {id} already and keeps it"),
+        }
+    }
+    if let Some(id) = &m.forget {
+        lib.forget(id)?;
+        println!("{id} is out of your brushes; drawings that use it keep their copy");
+    }
+    if let Some(v) = &m.rename {
+        lib.rename(&v[0], &v[1])?;
+    }
+    if let Some(v) = &m.group {
+        lib.group(&v[0], &v[1])?;
+    }
+    if let Some(v) = &m.shift {
+        let by: i32 = v[1]
+            .parse()
+            .map_err(|_| anyhow!("--move takes a brush and a number of places, like -1 or 2"))?;
+        lib.shift(&v[0], by)?;
+    }
+    if let Some(file) = &m.import {
+        let added = lib.import(file)?;
+        println!("{} brushes added to your brushes: {}", added.len(), added.join(", "));
+    }
+    if let Some(file) = &m.export {
+        let n = lib.export(file)?;
+        println!("{n} brushes written to {}", file.display());
+    }
+    if m.list {
+        let saved = lib.list();
+        if as_json {
+            let list: Vec<serde_json::Value> = saved
+                .iter()
+                .map(|s| json!({ "id": s.id, "group": s.group, "brush": s.def }))
+                .collect();
+            println!("{}", serde_json::Value::Array(list));
+            return Ok(());
+        }
+        if saved.is_empty() {
+            println!(
+                "no brushes of your own yet ({}): klad brushes art.klad --save <brush>",
+                lib.dir.display()
+            );
+        }
+        saved.iter().for_each(|s| {
+            let group = match s.group.is_empty() {
+                true => String::new(),
+                false => format!("  [{}]", s.group),
+            };
+            println!("{:<16} {:<16} {:<11}{group}", s.id, s.def.name, tip(&s.def));
+        });
+    }
+    Ok(())
+}

@@ -63,6 +63,8 @@ pub mod icon {
     pub const CROP: &str = "\u{E1D4}";
     pub const MAGNET: &str = "\u{E680}";
     pub const RULER: &str = "\u{E6B8}";
+    pub const PERSPECTIVE: &str = "\u{EBE6}";
+    pub const STAR: &str = "\u{E46A}";
     pub const SUBTRACT: &str = "\u{EBD6}";
     pub const INTERSECT: &str = "\u{E2D2}";
     pub const EXCLUDE: &str = "\u{E882}";

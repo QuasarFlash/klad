@@ -767,6 +767,11 @@ impl Editor {
             Cmd::Rulers => self.settings.rulers,
             Cmd::HideGuides => !self.scene.bundle.doc.guides.hidden,
             Cmd::LockGuides => self.scene.bundle.doc.guides.locked,
+            Cmd::AssistsWindow => self.windows.assists,
+            Cmd::FollowGuides => {
+                let g = &self.scene.bundle.doc.guides;
+                g.follow && !g.assists.is_empty()
+            }
             Cmd::CropTool => self.cropping.is_some(),
             Cmd::ExportGodotWindow => self.exporting(super::export::What::Godot),
             Cmd::Pixelize => self.windows.pixels,
@@ -1244,6 +1249,8 @@ impl Editor {
             Cmd::HideGuides => self.guides_switch(true)?,
             Cmd::LockGuides => self.guides_switch(false)?,
             Cmd::ClearGuides => self.clear_guides()?,
+            Cmd::AssistsWindow => self.windows.assists = !self.windows.assists,
+            Cmd::FollowGuides => self.toggle_follow()?,
             Cmd::CanvasWindow
             | Cmd::CropTool
             | Cmd::CropToSelection

@@ -13,7 +13,7 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad new`](#klad-new): Create an empty bundle with paint layers
 - [`klad canvas`](#klad-canvas): The canvas: its size and background, whether it wraps at its edges, and the size of its tiles
 - [`klad grid`](#klad-grid): The grid: its spacing, offset, look, and whether it shows and snaps
-- [`klad guides`](#klad-guides): Guides: level and upright lines to line things up and snap to
+- [`klad guides`](#klad-guides): Guides: level and upright lines to snap to, and drawing guides (perspective, rulers, ellipses) the brush follows
 - [`klad frames`](#klad-frames): Exposure sheet: a row per frame, a column per layer (top first)
 - [`klad frame`](#klad-frame): Insert or remove frames in every layer or the listed ones
 - [`klad arcs`](#klad-arcs): Track marks, parts or points across frames: positions, spacing, ground contacts, feet crossing
@@ -79,7 +79,7 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad check`](#klad-check): Look over pixel art: stray pixels, doubled corners, jagged lines, banding, colours off the palette
 - [`klad palettes`](#klad-palettes): The palettes that come with klad, to load with klad palette <bundle> --load <name>
 - [`klad export`](#klad-export): Export PNGs, sprite sheets, numbered frames or a Godot SpriteFrames and scene
-- [`klad brushes`](#klad-brushes): List brushes: the library, and with a bundle the ones it embeds
+- [`klad brushes`](#klad-brushes): List brushes: the library, and with a bundle the ones it embeds; keep your own brushes for every drawing
 - [`klad effect`](#klad-effect): List, add or remove a layer's effects: klad effect art.klad l3 glow radius=24 color=#ffd080
 - [`klad reshape`](#klad-reshape): Bend a brush stroke along a new path; it keeps its pressure, tilt and timing (klad strokes --json gives each stroke's fitted path)
 - [`klad undo`](#klad-undo): Undo the last change (from the CLI or the editor)
@@ -440,7 +440,14 @@ Guides: upright lines at x and level lines at y, in canvas px, kept in the drawi
   klad guides art.klad --clear
   klad guides art.klad --locked on --hidden off
 
-As an op: {"op":"guides","x":[120,480],"y":[64]}, with "rmX", "rmY", "clear", "hidden", "locked" and "snap".
+Drawing guides are what the brush follows while painting in the editor (and klad stroke --follow): one, two or three vanishing points, a ruler line, an ellipse. A stroke runs to the vanishing point it heads for (or stays level or upright), along a ruler (on it when it starts near it, parallel when not), round the ellipse or one of its shape through where it starts.
+
+  klad guides art.klad --perspective -400,300,2400,300 --follow on
+  klad guides art.klad --ruler 100,500,900,420
+  klad guides art.klad --ellipse 512,512,300,120,15
+  klad guides art.klad --rm-guide 0
+
+As an op: {"op":"guides","x":[120,480],"y":[64]}, with "rmX", "rmY", "clear", "hidden", "locked" and "snap"; drawing guides: {"op":"assists","add":[{"kind":"perspective","points":[[-400,300],[2400,300]]}],"on":true}, with "remove" (numbers) and "clear".
 
 Usage: klad guides [OPTIONS] <BUNDLE>
 
@@ -471,6 +478,26 @@ Options:
 
       --locked <LOCKED>
           Lock the guides so they cannot be dragged
+
+          [possible values: on, off]
+
+      --perspective <X,Y[,X,Y[,X,Y]]>
+          A drawing guide: perspective with one, two or three vanishing points
+
+      --ruler <X0,Y0,X1,Y1>
+          A drawing guide: a ruler line strokes run along
+
+      --ellipse <CX,CY,RX,RY[,TURN]>
+          A drawing guide: an ellipse strokes go round (turn in degrees)
+
+      --rm-guide <N>
+          Take drawing guide N away (0 is the first; klad guides lists them)
+
+      --clear-drawing-guides
+          Take every drawing guide away
+
+      --follow <FOLLOW>
+          Whether the brush follows the drawing guides in the editor
 
           [possible values: on, off]
 
@@ -2301,6 +2328,9 @@ Options:
 
       --ellipse <X,Y,W,H>
           A stroke around the ellipse that fits this box, painted with the brush
+
+      --follow
+          Bend --points or --line onto the drawing's guides (klad guides --perspective, --ruler, --ellipse), as the brush follows them in the editor
 
       --brush <BRUSH>
           [default: ink]
@@ -4307,6 +4337,16 @@ List brushes: the built-in library, and with a bundle the brushes it embeds (a d
   klad brushes art.klad
   klad brushes art.klad --show ink
 
+Your brushes are kept in your support folder (KLAD_LIBRARY overrides it) and shown in every drawing's brush tiles. A drawing that uses one keeps its own copy, so it renders the same where your brushes are missing. klad stroke --brush takes them too.
+
+  klad brushes art.klad --save wet-ink [--as wet]
+  klad brushes --library
+  klad brushes new.klad --take wet-ink
+  klad brushes --rename wet-ink 'wet ink' --group wet-ink inks --move wet-ink -1
+  klad brushes --forget wet-ink
+  klad brushes --export-library inks.json
+  klad brushes --import-library inks.json
+
 Usage: klad brushes [OPTIONS] [BUNDLE]
 
 Arguments:
@@ -4325,6 +4365,36 @@ Options:
 
       --picture <NAME> <PNG>
           Add a picture (tip or texture) to the bundle's brushes/images
+
+      --library
+          List your brushes, the ones every drawing shows
+
+      --save <ID>
+          Save the bundle's brush in your brushes
+
+      --as <ID>
+          Save it under this id
+
+      --take <ID>
+          Give the bundle its own copy of one of your brushes
+
+      --forget <ID>
+          Take a brush out of your brushes (drawings keep their copy)
+
+      --rename <ID> <NAME>
+          Rename one of your brushes
+
+      --group <ID> <GROUP>
+          Put one of your brushes in a group ('' for none)
+
+      --move <ID> <BY>
+          Move one of your brushes up (negative) or down the list
+
+      --export-library <FILE>
+          Write your brushes, with their pictures, to one file to share
+
+      --import-library <FILE>
+          Add the brushes of a shared file to your brushes
 
   -h, --help
           Print help (see a summary with '-h')

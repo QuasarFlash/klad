@@ -1197,6 +1197,17 @@ impl Editor {
             );
             self.windows.grid &= open;
         }
+        if self.windows.assists {
+            let mut open = true;
+            Self::window(
+                ctx,
+                "drawing guides",
+                (format!("{} Drawing guides", icon::PERSPECTIVE), Spot::Middle),
+                &mut open,
+                |ui| self.check(|e| e.assists_window(ui)),
+            );
+            self.windows.assists &= open;
+        }
         if self.windows.canvas {
             let mut open = true;
             Self::window(

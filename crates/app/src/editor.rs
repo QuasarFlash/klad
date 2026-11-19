@@ -1,4 +1,5 @@
 mod arrange;
+mod assists;
 mod between;
 mod bones;
 mod brushwin;
@@ -40,6 +41,7 @@ mod timeline;
 mod tweens;
 mod typed;
 mod words;
+mod yours;
 
 #[cfg(test)]
 pub(crate) use commands::install_job;
@@ -711,6 +713,7 @@ struct Live {
     last_at: Instant,
     twin: Option<(f32, Stroke, StrokePainter)>,
     straight: Option<straight::Straight>,
+    follow: Option<assists::Follow>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -798,6 +801,7 @@ struct Windows {
     compare: bool,
     canvas: bool,
     grid: bool,
+    assists: bool,
 }
 
 #[derive(Default)]
@@ -978,6 +982,8 @@ pub(crate) struct Editor {
     canvas_form: canvas::Form,
     cropping: Option<canvas::Crop>,
     guide_drag: Option<snap::GuideDrag>,
+    assist_drag: Option<(usize, usize, [f32; 2])>,
+    yours: yours::Yours,
     snap_lines: Option<(Option<f32>, Option<f32>)>,
     pub(crate) pixel_filled: bool,
     pub(crate) pixel_diagonal: bool,
@@ -1207,6 +1213,11 @@ impl Editor {
             canvas_form: canvas::Form::default(),
             cropping: None,
             guide_drag: None,
+            assist_drag: None,
+            yours: yours::Yours::at(match cfg!(test) {
+                true => None,
+                false => klad_render::library::Library::home().ok(),
+            }),
             snap_lines: None,
             pixel_filled: false,
             pixel_diagonal: false,
@@ -3521,6 +3532,9 @@ impl Editor {
         if self.guide_pen(&e, view, rect, c, on_canvas)? {
             return Ok(());
         }
+        if self.assist_pen(&e, view, rect, c)? {
+            return Ok(());
+        }
         let c = self.snapped(&e, c);
         let picking = self.modifiers.alt && !self.modifiers.command && matches!(self.tool, Tool::Brush | Tool::Fill);
         let sizing_now = self.modifiers.alt && self.modifiers.command && self.tool == Tool::Brush;
@@ -3689,14 +3703,20 @@ impl Editor {
                 if let Some(live) = self.live.as_mut() {
                     let dt = e.at.duration_since(live.last_at).as_secs_f32() * 1000.0;
                     let sample = live.recorder.push(raw_of(&e, c, dt));
-                    live.painter
-                        .push_on(&sample, &mut self.buffer, self.scene.active_raster());
-                    live.stroke.samples.push(sample);
-                    if let Some((axis, copy, painter)) = live.twin.as_mut() {
-                        let twin = make::mirrored(&sample, *axis);
-                        painter.push_on(&twin, &mut self.mirror_buffer, self.scene.active_raster());
-                        copy.samples.push(twin);
-                    }
+                    let ready = match live.follow.as_mut() {
+                        Some(follow) => follow.take(sample),
+                        None => vec![sample],
+                    };
+                    ready.into_iter().for_each(|sample| {
+                        live.painter
+                            .push_on(&sample, &mut self.buffer, self.scene.active_raster());
+                        live.stroke.samples.push(sample);
+                        if let Some((axis, copy, painter)) = live.twin.as_mut() {
+                            let twin = make::mirrored(&sample, *axis);
+                            painter.push_on(&twin, &mut self.mirror_buffer, self.scene.active_raster());
+                            copy.samples.push(twin);
+                        }
+                    });
                     live.last_at = e.at;
                     self.pending.get_or_insert(e.at);
                 }
@@ -3872,22 +3892,32 @@ impl Editor {
         if brush.def.color.is_some_and(|c| c.uses_second()) {
             stroke.second = Some(klad_core::color::to_u16(self.second));
         }
-        let mut painter = StrokePainter::live(&brush, &stroke);
-        painter.push_on(&sample, &mut self.buffer, self.scene.active_raster());
-        stroke.samples.push(sample);
-        let twin = self.mirror.map(|axis| {
-            let mut copy = stroke.clone();
-            copy.id = id + 1;
-            copy.seed = stroke.seed.wrapping_add(1);
-            copy.samples = vec![make::mirrored(&sample, axis)];
-            let mut painter = StrokePainter::live(&brush, &copy);
-            painter.push_on(&copy.samples[0], &mut self.mirror_buffer, self.scene.active_raster());
-            (axis, copy, painter)
-        });
         let zoom = self.view.map_or(1.0, |v| v.zoom);
         let straight = self
             .straight_figure()
             .map(|(figure, from)| straight::Straight::new(figure, c, from, sample, zoom));
+        let follow = (straight.is_none() && self.following())
+            .then(|| assists::Follow::new(self.scene.bundle.doc.guides.assists.clone(), sample, zoom));
+        let first: Vec<klad_core::stroke::Sample> = match follow {
+            Some(_) => Vec::new(),
+            None => vec![sample],
+        };
+        let mut painter = StrokePainter::live(&brush, &stroke);
+        first
+            .iter()
+            .for_each(|s| painter.push_on(s, &mut self.buffer, self.scene.active_raster()));
+        stroke.samples.extend(first.iter().copied());
+        let twin = self.mirror.map(|axis| {
+            let mut copy = stroke.clone();
+            copy.id = id + 1;
+            copy.seed = stroke.seed.wrapping_add(1);
+            copy.samples = first.iter().map(|s| make::mirrored(s, axis)).collect();
+            let mut painter = StrokePainter::live(&brush, &copy);
+            copy.samples
+                .iter()
+                .for_each(|s| painter.push_on(s, &mut self.mirror_buffer, self.scene.active_raster()));
+            (axis, copy, painter)
+        });
         self.live = Some(Live {
             stroke,
             painter,
@@ -3896,6 +3926,7 @@ impl Editor {
             last_at: e.at,
             twin,
             straight,
+            follow,
         });
         if straight.is_some() {
             self.show_straight();
@@ -3916,6 +3947,10 @@ impl Editor {
                 Vec::new()
             }
             None => live.recorder.finish(),
+        };
+        let tail = match live.follow.take() {
+            Some(follow) => follow.flush(tail),
+            None => tail,
         };
         tail.iter()
             .for_each(|s| live.painter.push_on(s, &mut self.buffer, self.scene.active_raster()));
@@ -4707,6 +4742,7 @@ impl Editor {
         self.draw_pins(&painter, |c| self.screen(view, rect, c));
         self.crop_overlay(&painter, |c| self.screen(view, rect, c));
         self.draw_guides(&painter, rect, |c| self.screen(view, rect, c));
+        self.draw_assists(&painter, rect, |c| self.screen(view, rect, c));
         self.draw_checks(&painter, |c| self.screen(view, rect, c));
         if let Some(lasso) = self.lasso.as_ref().filter(|l| l.far) {
             let line: Vec<Pos2> = self

@@ -8,6 +8,7 @@ pub mod export;
 pub mod fonts;
 pub mod form;
 pub mod gif;
+pub mod library;
 pub mod maps;
 pub mod occluders;
 pub mod onion;

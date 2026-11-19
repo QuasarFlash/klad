@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 23:20 (format `klad/9`, stroke files `KLST` version 3, brushes `klad-brush/1`)_
+_Last updated: 2026-11-19 23:45 (format `klad/9`, stroke files `KLST` version 3, brushes `klad-brush/1`)_
 
 # The klad drawing format
 
@@ -69,7 +69,7 @@ Writers replace files atomically (write a temporary file, then rename), so a rea
 | `export` | object | `{}` | `godot`: the folder Godot exports go to, relative to the folder holding the bundle |
 | `atmosphere` | object | none | fog by depth: `color` (`#9aa8b8`), `top` (a colour higher up), `density` (0.5), `blur` (1), `desaturate` (0.15) |
 | `maps` | object | none | light maps (below): `surface`, `ambient`, `shininess`, `lights`; left out when the maps are off |
-| `guides` | object | none | the grid and guides, for drawing and snapping in the editor; they never render: `grid` (`every` [across, down] px, `sub` a stronger line every n, `offset` [x, y], `iso` bool for a 2:1 isometric grid, `colour`, `opacity`), `showGrid` (bool), `x` (upright guides at these x), `y` (level guides at these y), `hidden`, `locked`, `snap` (bool: things snap to the grid, the guides and other shapes); left out when there is none |
+| `guides` | object | none | the grid and guides, for drawing and snapping in the editor; they never render: `grid` (`every` [across, down] px, `sub` a stronger line every n, `offset` [x, y], `iso` bool for a 2:1 isometric grid, `colour`, `opacity`), `showGrid` (bool), `x` (upright guides at these x), `y` (level guides at these y), `hidden`, `locked`, `snap` (bool: things snap to the grid, the guides and other shapes), `assists` (drawing guides the brush follows: `{"kind":"perspective","points":[[x,y],…]}` with one to three vanishing points, `{"kind":"ruler","from":[x,y],"to":[x,y]}`, `{"kind":"ellipse","center":[x,y],"radii":[rx,ry],"turn":deg}`), `follow` (bool: the brush follows them); left out when there is none |
 
 Strokes and fills store their colour, so for them the palette is a list of names for colours, never a reference: renaming or recolouring a swatch changes nothing drawn. Pixel marks (below) also name the swatch they were drawn with, by its `id`: when klad changes that swatch's colour it rewrites the colour of every pixel mark bound to it, and when the swatch is removed it clears the marks' binding and leaves their colour. A reader draws a pixel mark in the colour the mark stores. A **ramp** is the swatches that share a `ramp` name, in palette order, dark to light.
 
@@ -409,4 +409,4 @@ How the maps come out, for a reader that wants to make its own:
 | `klad/6` | stroke files version 2: eraser, smudge and blender strokes record the marks they are attached to, and attached erasers erase only those (2026-11-09). Older drawings open unchanged, with nothing attached. |
 | `klad/7` | pixel layers: paint layers with `pixel`, pixel marks in stroke files (version 3), palette swatches with an `id` (2026-11-11), palette `variants` and `canvas.tile` (2026-11-12). Older drawings open unchanged. |
 | `klad/8` | light maps: the document's `maps`, a layer's `surface`, `map`, `shine`, `specular`, `emissive` and `z`, a surface's `directions` (2026-11-14). Older drawings open unchanged, with the maps off. |
-| `klad/9` | the document's `guides`: the grid, guides and snapping (2026-11-19). Older drawings open unchanged, with no grid or guides. |
+| `klad/9` | the document's `guides`: the grid, guides and snapping (2026-11-19), and its drawing guides, `assists` and `follow`. Older drawings open unchanged, with no grid or guides. |

@@ -54,6 +54,8 @@ pub enum Cmd {
     HideGuides,
     LockGuides,
     ClearGuides,
+    AssistsWindow,
+    FollowGuides,
     CanvasWindow,
     CropTool,
     CropToSelection,
@@ -584,7 +586,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 256] = [
+    pub const ALL: [Cmd; 258] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -635,6 +637,8 @@ impl Cmd {
         Cmd::HideGuides,
         Cmd::LockGuides,
         Cmd::ClearGuides,
+        Cmd::AssistsWindow,
+        Cmd::FollowGuides,
         Cmd::CanvasWindow,
         Cmd::CropTool,
         Cmd::CropToSelection,
@@ -1285,6 +1289,24 @@ impl Cmd {
                 T::None,
                 R::No,
                 "take every guide away",
+            ),
+            Cmd::AssistsWindow => spec(
+                "view.drawing-guides",
+                "drawing guides",
+                icon::PERSPECTIVE,
+                G::View,
+                T::None,
+                R::No,
+                "a ruler, one, two or three point perspective or an ellipse that the brush follows; drag their points while the window is open",
+            ),
+            Cmd::FollowGuides => spec(
+                "brush.follow",
+                "follow the drawing guides",
+                icon::PERSPECTIVE,
+                G::Tools,
+                T::None,
+                R::No,
+                "brush strokes run along the drawing guides: to the vanishing point they head for, along a ruler, round an ellipse; hold cmd while you paint to draw freely",
             ),
             Cmd::CanvasWindow => spec(
                 "canvas.window",
@@ -3214,6 +3236,8 @@ impl Cmd {
             Cmd::HideGuides => "Guides",
             Cmd::LockGuides => "Lock guides",
             Cmd::ClearGuides => "Clear guides",
+            Cmd::AssistsWindow => "Drawing guides…",
+            Cmd::FollowGuides => "Follow the drawing guides",
             Cmd::CanvasWindow => "Canvas size…",
             Cmd::CropTool => "Crop",
             Cmd::CropToSelection => "Crop to selection",
@@ -3816,6 +3840,8 @@ pub const MENUS: [Menu; 9] = [
                 "Guides",
                 &[Run(Cmd::HideGuides), Run(Cmd::LockGuides), Run(Cmd::ClearGuides)],
             ),
+            Run(Cmd::AssistsWindow),
+            Run(Cmd::FollowGuides),
             Line,
             Run(Cmd::MapView),
             Run(Cmd::LitView),
