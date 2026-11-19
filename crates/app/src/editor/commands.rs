@@ -30,7 +30,8 @@ const TIMELINE_KEYS: [Cmd; 6] = [
     Cmd::MoveLater,
 ];
 const ZOOM_STEP: f32 = 1.25;
-const ON_THE_DRAWING: [Cmd; 12] = [
+const ON_THE_DRAWING: [Cmd; 13] = [
+    Cmd::CutCells,
     Cmd::NewDrawing,
     Cmd::NewDrawingAfter,
     Cmd::Duplicate,
@@ -140,6 +141,7 @@ impl Editor {
     pub(super) fn for_focus(&self, cmd: Cmd) -> Cmd {
         match (self.on_timeline(), cmd) {
             (true, Cmd::Copy) => Cmd::CopyCells,
+            (true, Cmd::Cut) => Cmd::CutCells,
             (true, Cmd::Paste) if self.cells_last || (self.clipboard.is_none() && self.shape_clip.is_none()) => {
                 Cmd::PasteCells
             }
@@ -198,7 +200,7 @@ impl Editor {
                 .then(|| "no clip here: click a clip's bar above the frame numbers".to_string())
         };
         let editing = self.busy().then(|| "finish the stroke or drag first".to_string());
-        let spanned = matches!(cmd, Cmd::Duplicate | Cmd::DeleteDrawing) && span.is_some();
+        let spanned = matches!(cmd, Cmd::Duplicate | Cmd::DeleteDrawing | Cmd::CutCells) && span.is_some();
         if let Some(locked) = layer.filter(|l| l.locked && ON_THE_DRAWING.contains(&cmd) && !spanned) {
             return Some(super::lock::Locked(vec![locked.name.clone()]).to_string());
         }
@@ -235,7 +237,8 @@ impl Editor {
                     .then(|| "select a shape or strokes with V first".to_string()),
             }
             .or(editing),
-            Cmd::Copy | Cmd::MoveToNewLayer => match self.selected() {
+            Cmd::BringToFront | Cmd::BringForward | Cmd::SendBackward | Cmd::SendToBack => self.can_arrange(),
+            Cmd::Copy | Cmd::Cut | Cmd::MoveToNewLayer => match self.selected() {
                 Some(Selected::Strokes | Selected::Shape(_)) => editing,
                 _ => Some("select strokes (S) or a shape (V) first".to_string()),
             },
@@ -524,6 +527,10 @@ impl Editor {
             Cmd::CopyCells => span.is_none().then_some(()).and_then(|_| {
                 self.drawing_here()
                     .is_none()
+                    .then(|| "select frames first: drag over them in the timeline".to_string())
+            }),
+            Cmd::CutCells => self.timeline_edit().or_else(|| {
+                (span.is_none() && self.drawing_here().is_none())
                     .then(|| "select frames first: drag over them in the timeline".to_string())
             }),
             Cmd::PasteCells | Cmd::PasteCellsLinked => match &self.timeline.cells {
@@ -1004,15 +1011,15 @@ impl Editor {
                         .map_or(Vec::new(), |d| d.points.iter().copied().collect());
                     self.commit_path(PathEdit::Remove { points })?;
                 }
-                _ => {
-                    let ids = self.shapes();
-                    self.selection = None;
-                    self.group.clear();
-                    if !ids.is_empty() {
-                        self.apply(vec![Op::Remove { ids }])?;
-                    }
-                }
+                _ => self.remove_shapes()?,
             },
+            Cmd::Cut => self.cut_picked()?,
+            Cmd::BringToFront | Cmd::BringForward | Cmd::SendBackward | Cmd::SendToBack => {
+                if let Some(to) = super::arrange::order_of(cmd) {
+                    self.arrange(to)?;
+                }
+            }
+            Cmd::CutCells => self.cut_selected_cells()?,
             Cmd::Deselect => {
                 self.timeline.span = None;
                 match self.tool {
@@ -1418,6 +1425,7 @@ impl Editor {
                 .filter(|e| !(popup && matches!(e, egui::Event::Key { key: Key::Escape, .. })))
                 .filter_map(|e| match e {
                     egui::Event::Copy => Some((Some(Cmd::Copy), false, false)),
+                    egui::Event::Cut => Some((Some(Cmd::Cut), false, false)),
                     egui::Event::Paste(_) => Some((Some(Cmd::Paste), false, false)),
                     egui::Event::Key {
                         key,
@@ -1447,7 +1455,7 @@ impl Editor {
                         Repeat::Yes => false,
                         Repeat::WhenShown => self.waiting(),
                     };
-                let once = matches!(cmd, Cmd::Copy | Cmd::Paste);
+                let once = matches!(cmd, Cmd::Copy | Cmd::Cut | Cmd::Paste);
                 if skip || (once && !done.insert(cmd)) {
                     return Ok(());
                 }

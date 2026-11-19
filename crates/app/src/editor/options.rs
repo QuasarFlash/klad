@@ -287,7 +287,25 @@ impl Editor {
         .hint("how much each dab lays down");
     }
 
+    fn figure_choice(&mut self, ui: &mut egui::Ui) {
+        let figure = self.brush_figure;
+        egui::ComboBox::from_id_salt("brush-figure")
+            .width(64.0)
+            .selected_text(figure.label())
+            .show_ui(ui, |ui| {
+                super::straight::Figure::ALL.iter().for_each(|(f, label)| {
+                    ui.selectable_value(&mut self.brush_figure, *f, *label);
+                });
+            })
+            .response
+            .hint(super::straight::HINT);
+    }
+
     fn brush_more(&mut self, ui: &mut egui::Ui) -> Result<()> {
+        ui.horizontal(|ui| {
+            ui.label("draws");
+            self.figure_choice(ui);
+        });
         let current = self.brush.clone();
         let erasing = self.is_on(Cmd::Eraser) == Some(true);
         let t = &mut self.tuning;
@@ -401,6 +419,9 @@ impl Editor {
                     .response
                     .hint("hardness, feather, pressure curve, taper, stabiliser and smoothing");
                     self.command_button(ui, Cmd::BrushWindow, Some("edit"));
+                    if self.brush_figure != super::straight::Figure::Free {
+                        self.figure_choice(ui);
+                    }
                     self.command_check(ui, Cmd::Symmetry, "mirror");
                     if let Some(axis) = self.mirror.as_mut() {
                         ui.add(egui::DragValue::new(axis).speed(1.0).prefix("axis x ").suffix(" px"))

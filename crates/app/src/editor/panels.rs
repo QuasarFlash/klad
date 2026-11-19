@@ -841,6 +841,10 @@ impl Editor {
             }
             ui.separator();
             ui.label(self.draws_into());
+            if let Some(keys) = self.drag_keys() {
+                ui.separator();
+                ui.label(RichText::new(keys).color(theme::ACCENT));
+            }
             self.jobs.running(now).into_iter().for_each(|(id, name, took)| {
                 ui.separator();
                 ui.add(egui::Spinner::new().size(14.0));

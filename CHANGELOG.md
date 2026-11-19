@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-Nothing yet.
+- **Cut.** **cmd X** cuts the selected strokes, shapes or, in the timeline, frames, in one undo step (`Edit > Cut`, `Frame > Cut cells`).
+- **In front and behind.** **cmd ]** and **cmd [** bring the selection forward or send it back, with **shift** all the way (`Edit > Arrange`, the canvas's right-click menu); `klad order` and the `order` op do the same from the command line.
+- **Straight lines with the brush.** **shift** click paints a straight line from the end of the last stroke and **shift** drag keeps a stroke level, upright or at 45 degrees, with every brush. **more** in the brush bar paints lines, rectangles and ellipses (`klad stroke --line`, `--rect`, `--ellipse`).
+- **shift and alt while transforming.** A corner now scales from the opposite corner: **shift** frees the proportions, **alt** scales from the middle. **shift** keeps a move level or upright and turns in 15 degree steps; **alt** stretches both sides. The status line names the keys while you drag.
+- **Typed numbers.** The numbers button in the selection bar sets position, size and angle.
+- **shift** click on a selected shape still adds or removes shapes; **shift** drag on it now moves it level.
 
 ## 0.4.0 (2026-11-19)
 

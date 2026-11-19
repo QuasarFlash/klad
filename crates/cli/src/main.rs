@@ -750,6 +750,24 @@ enum Command {
         flags: EditFlags,
     },
     #[command(
+        about = "Put shapes, strokes or fills in front of or behind the others on their layer",
+        long_about = "Put shapes, strokes or fills in front of or behind the others on their layer. Shapes are the nodes of a vector layer (they change places among the shapes of their drawing or group); strokes and fills are <cel>:s<id> and change places among the marks of their drawing, with the erasers and smudges attached to them. --front and --back go all the way; --up and --down go one place, past the next shape, or for marks past the next mark they overlap. Several things keep their order among themselves. One history step.\n\n  klad order art.klad n4 --front\n  klad order art.klad c9:s12 c9:s13 --down"
+    )]
+    Order {
+        bundle: PathBuf,
+        ids: Vec<String>,
+        #[arg(long, help = "In front of everything on the layer")]
+        front: bool,
+        #[arg(long, help = "Behind everything on the layer")]
+        back: bool,
+        #[arg(long, help = "One place nearer the front")]
+        up: bool,
+        #[arg(long, help = "One place further back")]
+        down: bool,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
         about = "Align shapes to each other, the canvas or one shape, or spread them evenly",
         long_about = "Align shapes (the nodes of a vector layer) by their bounds on the canvas, or spread them evenly. --x lines up left edges, centres or right edges; --y lines up tops, middles or bottoms; both together stack them on one point. Without --to they line up on the bounds of the shapes together, so the outermost one stays; --to canvas uses the canvas (one shape is enough), --to <id> uses that shape, which stays where it is. --spread x or y keeps the two outer shapes and makes the gaps between neighbours equal; with --gap the first stays and each next one follows that many px after it. Aligning one way and spreading the other go together. A shape inside a group moves by the distance seen on the canvas. One history step.\n\n  klad align art.klad n3 n4 n7 --y middle\n  klad align art.klad n3 n4 n7 --y middle --spread x\n  klad align art.klad n3 n4 n7 --spread x --gap 24\n  klad align art.klad title --x centre --to canvas\n  klad align art.klad n4 n7 --x left --to n3"
     )]
@@ -1021,7 +1039,7 @@ enum Command {
     },
     #[command(
         about = "Paint a stroke with a brush along an SVG path or explicit points",
-        long_about = "Paint with a brush along an SVG path (M, L, H, V, C, S, Q, T, Z; several subpaths make several strokes) or explicit points.\n\n  klad stroke art.klad l3 --brush ink --size 14 --color #1b1b1b --path 'M100 400 C 300 200 500 600 700 400' --pressure 0.1,1,0.05\n  klad stroke art.klad l3 --brush ink --size 6 --taper 12,30 --path 'M100 100 Q 200 40 300 120'\n  klad stroke art.klad l3 --points '10,10,0.5 40,30,1 80,35,0.2'\n\nPressure is spread evenly along the stroke. --taper thins the first and last px of the line whatever the pressure. Brushes are a bundle brush id or a library brush (klad brushes). Strokes are marked as agent strokes."
+        long_about = "Paint with a brush along an SVG path (M, L, H, V, C, S, Q, T, Z; several subpaths make several strokes) or explicit points.\n\n  klad stroke art.klad l3 --brush ink --size 14 --color #1b1b1b --path 'M100 400 C 300 200 500 600 700 400' --pressure 0.1,1,0.05\n  klad stroke art.klad l3 --brush ink --size 6 --taper 12,30 --path 'M100 100 Q 200 40 300 120'\n  klad stroke art.klad l3 --points '10,10,0.5 40,30,1 80,35,0.2'\n  klad stroke art.klad l3 --brush pencil --size 4 --line 100,100,400,100\n  klad stroke art.klad l3 --rect 40,40,200,120\n  klad stroke art.klad l3 --ellipse 40,40,200,120\n\n--line paints a straight stroke between two points; --rect and --ellipse paint around a rectangle, or the ellipse that fits that box, with the brush: paint, not shapes. Pressure is spread evenly along the stroke. --taper thins the first and last px of the line whatever the pressure. Brushes are a bundle brush id or a library brush (klad brushes). Strokes are marked as agent strokes."
     )]
     Stroke {
         bundle: PathBuf,
@@ -1030,6 +1048,12 @@ enum Command {
         path: Option<String>,
         #[arg(long, help = "x,y,pressure triples separated by spaces")]
         points: Option<String>,
+        #[arg(long, value_name = "X0,Y0,X1,Y1", conflicts_with_all = ["path", "points", "rect", "ellipse"], help = "A straight stroke between two points")]
+        line: Option<String>,
+        #[arg(long, value_name = "X,Y,W,H", conflicts_with_all = ["path", "points", "ellipse"], help = "A stroke around a rectangle, painted with the brush")]
+        rect: Option<String>,
+        #[arg(long, value_name = "X,Y,W,H", conflicts_with_all = ["path", "points"], help = "A stroke around the ellipse that fits this box, painted with the brush")]
+        ellipse: Option<String>,
         #[arg(long, default_value = "ink")]
         brush: String,
         #[arg(long, default_value = "#000000")]
@@ -2766,6 +2790,44 @@ fn parse_points(text: &str) -> Result<Vec<[f32; 3]>> {
 
 const CHANGED_EXIT: i32 = 75;
 
+fn figure_path(kind: &str, text: &str) -> Result<String> {
+    let [a, b, c, d]: [f32; 4] = parse_numbers(text)?
+        .try_into()
+        .map_err(|_| anyhow!("--{kind} takes four numbers"))?;
+    Ok(match kind {
+        "line" => format!("M{a} {b} L{c} {d}"),
+        "rect" => format!("M{a} {b} H{} V{} H{a} Z", a + c, b + d),
+        _ => {
+            let (rx, ry, cx, cy) = (c / 2.0, d / 2.0, a + c / 2.0, b + d / 2.0);
+            let (kx, ky) = (rx * 0.552_284_8, ry * 0.552_284_8);
+            format!(
+                "M{cx} {} C{} {} {} {} {} {cy} C{} {} {} {} {cx} {} C{} {} {} {} {} {cy} C{} {} {} {} {cx} {}",
+                cy - ry,
+                cx + kx,
+                cy - ry,
+                cx + rx,
+                cy - ky,
+                cx + rx,
+                cx + rx,
+                cy + ky,
+                cx + kx,
+                cy + ry,
+                cy + ry,
+                cx - kx,
+                cy + ry,
+                cx - rx,
+                cy + ky,
+                cx - rx,
+                cx - rx,
+                cy - ky,
+                cx - kx,
+                cy - ry,
+                cy - ry
+            )
+        }
+    })
+}
+
 fn main() {
     let traced = std::env::var_os("KLAD_BACKTRACE").is_some_and(|v| v != "0");
     #[cfg(unix)]
@@ -3296,6 +3358,27 @@ fn run() -> Result<()> {
             }
             agent::edit(&bundle, &[Op::Detach { ids }], &output(&flags, 0))?;
         }
+        Command::Order {
+            bundle,
+            ids,
+            front,
+            back,
+            up,
+            down,
+            flags,
+        } => {
+            if ids.is_empty() {
+                return Err(anyhow!("give the shapes, strokes or fills to put in front or behind"));
+            }
+            let to = match (front, back, up, down) {
+                (true, false, false, false) => klad_core::markedit::Order::Front,
+                (false, true, false, false) => klad_core::markedit::Order::Back,
+                (false, false, true, false) => klad_core::markedit::Order::Forward,
+                (false, false, false, true) => klad_core::markedit::Order::Backward,
+                _ => return Err(anyhow!("give one of --front, --back, --up or --down")),
+            };
+            agent::edit(&bundle, &[Op::Order { ids, to }], &output(&flags, 0))?;
+        }
         Command::Align {
             bundle,
             ids,
@@ -3589,6 +3672,9 @@ fn run() -> Result<()> {
             layer,
             path,
             points,
+            line,
+            rect,
+            ellipse,
             brush,
             color,
             size,
@@ -3612,6 +3698,12 @@ fn run() -> Result<()> {
                         .map_err(|_| anyhow!("--taper takes two lengths: in,out"))
                 })
                 .transpose()?;
+            let path = match (line, rect, ellipse) {
+                (Some(l), _, _) => Some(figure_path("line", &l)?),
+                (_, Some(r), _) => Some(figure_path("rect", &r)?),
+                (_, _, Some(e)) => Some(figure_path("ellipse", &e)?),
+                _ => path,
+            };
             let spec = StrokeSpec {
                 layer,
                 frame,

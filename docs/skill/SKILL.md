@@ -56,7 +56,7 @@ klad stroke art.klad l4 --brush ink --size 5 --taper 8,20 --path 'M100 100 L140 
 - Painting brushes: `wet` picks up the colour under it and mixes it in, `smudge` pulls paint along, `blender` softens what it crosses; all three read only the layer they paint on (paint the colours to mix on one layer). `leaves`, `grass` and `splatter` scatter their picture tips with jittered colour (`leaves` picks one of several leaf shapes per dab: `leaf`, `leaf-oval`, `leaf-lance`, `leaf-twig`; a tip takes more pictures as `{"image":{"image":"leaf","more":["leaf-oval","leaf-lobed"]}}`); `two-tone` paints `--second` at a light press and `--color` at a full one. `--second '#e0a040'` (`"second"` in `apply`) is the second colour for brushes with colour dynamics.
 - New brushes: write the JSON (copy one from `--show`; keys `tip` (`round`, `chalk` or `{"image":{"image":"name"}}`), `dual`, `grain` (`paper` or `image`, `strength`, `scale`, `contrast`, `pressure`), `color` (`hue`, `saturation`, `value`, `strokeHue`, ..., `pressure`, `along`), `paint` (`wet`, `smudge`, `blend`), `feather` (0 to 1, a round tip's edge fades like an airbrush; a soft eraser is the eraser with `"feather":0.8`), `fringe` (0 to 1, the edge frays into streaks along the stroke, like a dry brush)) and `klad brushes art.klad --set my-oil brush.json` (`-` reads stdin). Pictures for tips and textures: `klad brushes art.klad --picture bark bark.png` (dark is paint, or the alpha). Ids and pictures are fixed once in the bundle, since strokes keep their brush.
 - `--taper in,out` thins the first and last px of the line to a point whatever the pressure; without it the brush's taper applies (`ink` is `10,24`), `--taper 0,0` gives round ends. Short hatching wants about `8,20`, long contours `30,80`.
-- `--pressure` spreads values evenly along the stroke; several subpaths in `--path` make several strokes. `--points 'x,y,p x,y,p'` gives explicit samples.
+- `--pressure` spreads values evenly along the stroke; several subpaths in `--path` make several strokes. `--points 'x,y,p x,y,p'` gives explicit samples. `--line x0,y0,x1,y1`, `--rect x,y,w,h` and `--ellipse x,y,w,h` paint a straight line or around a rectangle or ellipse with the brush (paint, not shapes).
 - In `apply`: `{"op":"stroke","layer":"l4","brush":"ink","size":14,"color":"#1b1b1b","path":"M...","pressure":[0.1,1,0.05],"taper":[12,30]}`.
 - Agent strokes are marked `agent` in `klad strokes`; the user's are `human`.
 
@@ -71,6 +71,7 @@ klad recolour art.klad c4:s12 c4:s13 c4:s40 --to '#e3962f'   # several at once, 
 klad rm art.klad c4:s12 c4:s13
 klad transform art.klad c4:s3 c4:s5 --move 40,-10 --rotate 15 --scale 1.2
 klad transform art.klad --layer figure --move -120,0           # a whole layer or group: every drawing, its shapes, bones and poses
+klad order art.klad c4:s3 --front                              # in front of the other marks of its drawing; --back, --up, --down; shapes too (`{"op":"order","ids":[...],"to":"front"}`)
 klad show art.klad c4:s12
 klad render art.klad --focus c4:s12
 ```

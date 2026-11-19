@@ -44,7 +44,12 @@ pub enum Cmd {
     Delete,
     Deselect,
     Copy,
+    Cut,
     Paste,
+    BringToFront,
+    BringForward,
+    SendBackward,
+    SendToBack,
     SelectAll,
     SelectSameColour,
     TransformLayer,
@@ -182,6 +187,7 @@ pub enum Cmd {
     MoveEarlier,
     MoveLater,
     CopyCells,
+    CutCells,
     PasteCells,
     PasteCellsLinked,
     ClipSettings,
@@ -543,7 +549,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 216] = [
+    pub const ALL: [Cmd; 222] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -584,7 +590,12 @@ impl Cmd {
         Cmd::Delete,
         Cmd::Deselect,
         Cmd::Copy,
+        Cmd::Cut,
         Cmd::Paste,
+        Cmd::BringToFront,
+        Cmd::BringForward,
+        Cmd::SendBackward,
+        Cmd::SendToBack,
         Cmd::SelectAll,
         Cmd::SelectSameColour,
         Cmd::TransformLayer,
@@ -722,6 +733,7 @@ impl Cmd {
         Cmd::MoveEarlier,
         Cmd::MoveLater,
         Cmd::CopyCells,
+        Cmd::CutCells,
         Cmd::PasteCells,
         Cmd::PasteCellsLinked,
         Cmd::ClipSettings,
@@ -1123,6 +1135,71 @@ impl Cmd {
                 T::Press(const { &[cmd(Key::C)] }),
                 R::No,
                 "keep the selected strokes or shapes for cmd V; while the timeline is in use, the selected frames",
+            ),
+            Cmd::Cut => spec(
+                "edit.cut",
+                "cut the selection",
+                icon::CUT,
+                G::Edit,
+                T::Press(const { &[cmd(Key::X)] }),
+                R::No,
+                "take the selected strokes or shapes away and keep them for cmd V, in one undo step; while the timeline is in use, the selected frames",
+            ),
+            Cmd::BringToFront => spec(
+                "edit.front",
+                "bring to the front",
+                icon::TO_FRONT,
+                G::Edit,
+                T::Press(
+                    const {
+                        &[
+                            keys(Key::CloseBracket, true, false, true),
+                            Keys {
+                                any_shift: true,
+                                ..cmd(Key::CloseCurlyBracket)
+                            },
+                        ]
+                    },
+                ),
+                R::No,
+                "put the selected shapes or strokes in front of everything else on their layer",
+            ),
+            Cmd::BringForward => spec(
+                "edit.forward",
+                "bring forward",
+                icon::UP,
+                G::Edit,
+                T::Press(const { &[cmd(Key::CloseBracket)] }),
+                R::Yes,
+                "put the selected shapes one place nearer the front, or the selected strokes in front of the next mark they overlap",
+            ),
+            Cmd::SendBackward => spec(
+                "edit.backward",
+                "send backward",
+                icon::DOWN,
+                G::Edit,
+                T::Press(const { &[cmd(Key::OpenBracket)] }),
+                R::Yes,
+                "put the selected shapes one place further back, or the selected strokes behind the next mark they overlap",
+            ),
+            Cmd::SendToBack => spec(
+                "edit.back",
+                "send to the back",
+                icon::TO_BACK,
+                G::Edit,
+                T::Press(
+                    const {
+                        &[
+                            keys(Key::OpenBracket, true, false, true),
+                            Keys {
+                                any_shift: true,
+                                ..cmd(Key::OpenCurlyBracket)
+                            },
+                        ]
+                    },
+                ),
+                R::No,
+                "put the selected shapes or strokes behind everything else on their layer",
             ),
             Cmd::Paste => spec(
                 "edit.paste",
@@ -2357,6 +2434,15 @@ impl Cmd {
                 R::No,
                 "the drawings and holds of the selected frames and rows (or the drawing under the playhead)",
             ),
+            Cmd::CutCells => spec(
+                "cells.cut",
+                "cut the selected cells",
+                icon::CUT,
+                G::Selected,
+                T::None,
+                R::No,
+                "copy the drawings of the selected frames and rows (or the drawing under the playhead) and take them off, in one undo step",
+            ),
             Cmd::PasteCells => spec(
                 "cells.paste",
                 "paste cells as copies",
@@ -2744,6 +2830,11 @@ impl Cmd {
             Cmd::Delete => "Delete",
             Cmd::Deselect => "Deselect",
             Cmd::Copy => "Copy",
+            Cmd::Cut => "Cut",
+            Cmd::BringToFront => "Bring to front",
+            Cmd::BringForward => "Bring forward",
+            Cmd::SendBackward => "Send backward",
+            Cmd::SendToBack => "Send to back",
             Cmd::Paste => "Paste",
             Cmd::SelectAll => "Select all",
             Cmd::SelectSameColour => "Select same colour",
@@ -2883,6 +2974,7 @@ impl Cmd {
             Cmd::MoveEarlier => "Move earlier",
             Cmd::MoveLater => "Move later",
             Cmd::CopyCells => "Copy cells",
+            Cmd::CutCells => "Cut cells",
             Cmd::PasteCells => "Paste cells",
             Cmd::PasteCellsLinked => "Paste cells as links",
             Cmd::ClipSettings => "Clip settings…",
@@ -2997,6 +3089,7 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::Undo),
             Run(Cmd::Redo),
             Line,
+            Run(Cmd::Cut),
             Run(Cmd::Copy),
             Run(Cmd::Paste),
             Run(Cmd::DuplicateInPlace),
@@ -3009,6 +3102,15 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::CutLasso),
             Run(Cmd::PickAllLayers),
             Line,
+            Sub(
+                "Arrange",
+                &[
+                    Run(Cmd::BringToFront),
+                    Run(Cmd::BringForward),
+                    Run(Cmd::SendBackward),
+                    Run(Cmd::SendToBack),
+                ],
+            ),
             Sub(
                 "Transform",
                 &[
@@ -3211,6 +3313,7 @@ pub const MENUS: [Menu; 9] = [
                     Run(Cmd::Inbetween),
                     Run(Cmd::RedoInbetweens),
                     Line,
+                    Run(Cmd::CutCells),
                     Run(Cmd::CopyCells),
                     Run(Cmd::PasteCells),
                     Run(Cmd::PasteCellsLinked),

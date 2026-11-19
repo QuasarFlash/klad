@@ -1,7 +1,7 @@
 use crate::color::parse_hex;
 use crate::doc::{Cel, Clip, Document, Item, Kind, Layer, LayerContent, Loc, MASK, Node, Shape, Swatch, Tween};
 use crate::fill::{self, Coverage, Fill, FillRef, FillSource, Seed};
-use crate::markedit::{LassoAction, MarkChange, MarkTransform, Source, parse_address};
+use crate::markedit::{LassoAction, MarkChange, MarkTransform, Order, Source, arrange, parse_address};
 use crate::path::{flatten, length, profile, resample};
 use crate::pathedit::{self, PathEdit};
 use crate::retime::{self, Retime, RetimeSpec};
@@ -136,6 +136,10 @@ pub enum Op {
     },
     Detach {
         ids: Vec<String>,
+    },
+    Order {
+        ids: Vec<String>,
+        to: Order,
     },
     Shift(ShiftSpec),
     Path {
@@ -1830,6 +1834,21 @@ impl Op {
                     bail!("detach needs an id or ids (strokes and fills, <cel>:s<id>)");
                 }
                 Op::Detach { ids }
+            }
+            "order" => {
+                let mut ids: Vec<String> = match map.remove("ids") {
+                    Some(v) => serde_json::from_value(v).map_err(|_| anyhow!("ids must be a list of strings"))?,
+                    None => Vec::new(),
+                };
+                ids.extend(take_str(&mut map, "id")?);
+                if ids.is_empty() {
+                    bail!("order needs an id or ids: shapes, or strokes and fills (<cel>:s<id>)");
+                }
+                let to = take_str(&mut map, "to")?.ok_or_else(|| anyhow!("order needs to: front, back, up or down"))?;
+                Op::Order {
+                    ids,
+                    to: Order::parse(&to)?,
+                }
             }
             "path" => Op::Path {
                 id: take_str(&mut map, "id")?.ok_or_else(|| anyhow!("path needs the id of a path, rect or ellipse"))?,
@@ -4146,6 +4165,7 @@ pub fn apply(doc: &mut Document, op: &Op, out: &mut Applied) -> Result<()> {
             })?;
             out.changed.extend(ids.iter().cloned());
         }
+        Op::Order { ids, to } => order(doc, ids, *to, out)?,
         Op::Shift(spec) => shift(doc, spec, out)?,
         Op::Move { id, place } => {
             move_item(doc, id, place).with_context(|| format!("mv {id}"))?;
@@ -4552,6 +4572,48 @@ fn shift(doc: &mut Document, spec: &ShiftSpec, out: &mut Applied) -> Result<()> 
         });
     }
     out.changed.push(id);
+    Ok(())
+}
+
+type NodeList = (Vec<usize>, usize, Vec<usize>);
+
+fn order(doc: &mut Document, ids: &[String], to: Order, out: &mut Applied) -> Result<()> {
+    let mut cels: Vec<(String, Vec<u32>)> = Vec::new();
+    let mut lists: Vec<(NodeList, Vec<String>)> = Vec::new();
+    ids.iter().try_for_each(|id| {
+        if let Some((cel, mark)) = parse_address(id) {
+            match cels.iter_mut().find(|(c, _)| c == cel) {
+                Some((_, marks)) => marks.push(mark),
+                None => cels.push((cel.to_string(), vec![mark])),
+            }
+            return Ok(());
+        }
+        match doc.locate(id) {
+            Some(Loc::Node(layer, cel, mut path)) => {
+                path.pop();
+                let key = (layer, cel, path);
+                match lists.iter_mut().find(|(k, _)| *k == key) {
+                    Some((_, nodes)) => nodes.push(id.clone()),
+                    None => lists.push((key, vec![id.clone()])),
+                }
+                Ok(())
+            }
+            Some(Loc::Layer(_)) => bail!("{id} is a layer; layers change places with mv {id} --above or --below"),
+            Some(Loc::Cel(..)) => bail!("{id} is a drawing; drawings change frames with set {id} frame=<n>"),
+            None => bail!("no item {id}"),
+        }
+    })?;
+    cels.into_iter().try_for_each(|(cel, marks)| {
+        let layer = mark_owner(doc, &cel)?;
+        out.push(&layer, &cel, MarkChange::Order { ids: marks, to });
+        Ok::<_, anyhow::Error>(())
+    })?;
+    lists.into_iter().try_for_each(|((layer, cel, parent), nodes)| {
+        let list = node_list(doc, &layer, cel, &parent)?;
+        arrange(list, |n| nodes.contains(&n.id), |_| true, to);
+        Ok::<_, anyhow::Error>(())
+    })?;
+    out.changed.extend(ids.iter().cloned());
     Ok(())
 }
 

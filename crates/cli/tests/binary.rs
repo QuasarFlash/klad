@@ -2797,3 +2797,130 @@ fn klad_pixel_writes_text_in_hard_edged_pixels() {
     assert!(String::from_utf8_lossy(&tiny.stderr).contains("larger --text-size"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn order_puts_marks_and_shapes_in_front_or_behind_and_strokes_paint_lines_and_figures() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-order-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bundle = dir.join("a.klad");
+    let path = bundle.to_str().unwrap();
+    let run = |args: &[&str]| Command::new(env!("CARGO_BIN_EXE_klad")).args(args).output().unwrap();
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    draw(&["new", path, "--width", "200", "--height", "100"]);
+    draw(&["stroke", path, "l1", "--line", "10,50,190,50", "--size", "4"]);
+    draw(&["stroke", path, "l1", "--rect", "20,20,60,40", "--size", "4"]);
+    draw(&["stroke", path, "l1", "--ellipse", "100,10,80,80", "--size", "4"]);
+    let strokes = |draw: &dyn Fn(&[&str]) -> String| {
+        let listed: serde_json::Value = serde_json::from_str(&draw(&["strokes", path, "l1", "--json"])).unwrap();
+        listed["strokes"].as_array().unwrap().clone()
+    };
+    let listed = strokes(&draw);
+    let ids: Vec<u64> = listed.iter().map(|s| s["id"].as_u64().unwrap()).collect();
+    assert_eq!(ids.len(), 3);
+    let near = |b: &serde_json::Value, want: [f64; 4]| (0..4).all(|i| (b[i].as_f64().unwrap() - want[i]).abs() < 4.0);
+    assert!(
+        near(&listed[0]["bounds"], [10.0, 50.0, 190.0, 50.0]),
+        "{}",
+        listed[0]["bounds"]
+    );
+    assert!(
+        near(&listed[1]["bounds"], [20.0, 20.0, 80.0, 60.0]),
+        "{}",
+        listed[1]["bounds"]
+    );
+    assert!(
+        near(&listed[2]["bounds"], [100.0, 10.0, 180.0, 90.0]),
+        "{}",
+        listed[2]["bounds"]
+    );
+    let cel = listed[0]["address"]
+        .as_str()
+        .unwrap()
+        .split(':')
+        .next()
+        .unwrap()
+        .to_string();
+    let first = format!("{cel}:s{}", ids[0]);
+    let order = |draw: &dyn Fn(&[&str]) -> String| -> Vec<u64> {
+        strokes(draw).iter().map(|s| s["id"].as_u64().unwrap()).collect()
+    };
+    draw(&["order", path, &first, "--front"]);
+    assert_eq!(order(&draw), [ids[1], ids[2], ids[0]]);
+    draw(&["order", path, &first, "--back"]);
+    assert_eq!(order(&draw), [ids[0], ids[1], ids[2]]);
+    draw(&["order", path, &first, "--up"]);
+    assert_eq!(
+        order(&draw),
+        [ids[1], ids[0], ids[2]],
+        "one place up: past the rectangle it overlaps"
+    );
+    let none = run(&["order", path, &first]);
+    assert!(!none.status.success());
+    assert!(String::from_utf8_lossy(&none.stderr).contains("--front, --back, --up or --down"));
+    let ops = dir.join("shapes.jsonl");
+    std::fs::write(
+        &ops,
+        r##"{"op":"add","layer":{"kind":"vector","name":"shapes"},"index":0}
+"##,
+    )
+    .unwrap();
+    draw(&["apply", path, "--file", ops.to_str().unwrap()]);
+    let doc = |dir: &std::path::Path| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(dir.join("a.klad").join("doc.json")).unwrap()).unwrap()
+    };
+    let layer = doc(&dir)["layers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["name"] == "shapes")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    std::fs::write(
+        &ops,
+        format!(
+            r##"{{"op":"add","node":{{"id":"red","type":"rect","x":0,"y":0,"w":50,"h":50,"fill":"#ff0000"}},"in":"{layer}","frame":0}}
+{{"op":"add","node":{{"id":"blue","type":"rect","x":20,"y":20,"w":50,"h":50,"fill":"#0000ff"}},"in":"{layer}","frame":0}}
+{{"op":"add","node":{{"id":"green","type":"rect","x":40,"y":40,"w":50,"h":50,"fill":"#00ff00"}},"in":"{layer}","frame":0}}
+"##
+        ),
+    )
+    .unwrap();
+    draw(&["apply", path, "--file", ops.to_str().unwrap()]);
+    let nodes = |dir: &std::path::Path| -> Vec<String> {
+        let d = doc(dir);
+        let l = d["layers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["name"] == "shapes")
+            .unwrap()
+            .clone();
+        l["cels"][0]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(nodes(&dir), ["red", "blue", "green"]);
+    draw(&["order", path, "red", "--front"]);
+    assert_eq!(nodes(&dir), ["blue", "green", "red"]);
+    draw(&["order", path, "red", "blue", "--back"]);
+    assert_eq!(
+        nodes(&dir),
+        ["blue", "red", "green"],
+        "several keep their order among themselves"
+    );
+    draw(&["order", path, "green", "--down"]);
+    assert_eq!(nodes(&dir), ["blue", "green", "red"]);
+    let layer_too = run(&["order", path, &layer, "--front"]);
+    assert!(String::from_utf8_lossy(&layer_too.stderr).contains("is a layer"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

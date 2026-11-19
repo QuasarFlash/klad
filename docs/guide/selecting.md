@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 12:00_
+_Last updated: 2026-11-19 21:30_
 
 # Changing strokes
 
@@ -18,13 +18,17 @@ To pick on every layer instead of only the active one, switch the bar over the c
 
 ## Change what you selected
 
-Drag inside the box to move it, a corner to scale it and the knob to turn it. A turned box stays turned, so the next drag works on it as you see it. The bar next to the selection recolours it, makes strokes thinner or thicker, duplicates it (**cmd D**) and deletes it (**Backspace**).
+Drag inside the box to move it, a corner to scale it and the knob to turn it. A turned box stays turned, so the next drag works on it as you see it. Hold **shift** to move level or upright, to turn in steps of 15 degrees or, on a corner, to change width and height apart; hold **alt** to scale or stretch from the middle. To type a position, size or angle, click the numbers button in the bar. The bar next to the selection recolours it, makes strokes thinner or thicker, duplicates it (**cmd D**) and deletes it (**Backspace**).
 
 To recolour, click the palette button in the bar and pick a colour on the wheel, from the drawing's palette or from the colours you used lately; **use the current colour** gives it the colour you paint with. Recolouring several strokes keeps each one's own lighter or darker shade, so a painted area stays painted.
 
 ## Copy and paste
 
-**cmd C** copies the selected strokes or shapes and **cmd V** pastes them in place, on this frame or on another one. Strokes are pasted on the layer you have selected, so to put them on another layer, select that layer before you paste. Shapes pasted while a paint layer is active get a vector layer of their own above it.
+**cmd C** copies the selected strokes or shapes, **cmd X** cuts them, and **cmd V** pastes them in place, on this frame or on another one. Strokes are pasted on the layer you have selected, so to put them on another layer, select that layer before you paste. Shapes pasted while a paint layer is active get a vector layer of their own above it.
+
+## Put something in front or behind
+
+Select it and press **cmd ]** to bring it forward or **cmd [** to send it back; add **shift** to go all the way. **Edit > Arrange** has the same. Strokes go past the next stroke they overlap.
 
 ## Split part of a drawing onto its own layer
 

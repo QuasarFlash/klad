@@ -3,7 +3,7 @@ use crate::commands::Cmd;
 use crate::lift;
 use crate::messages::Tone;
 use crate::pen::PenEvent;
-use crate::theme;
+use crate::theme::{self, Hint, icon};
 use anyhow::Result;
 use egui::{Id, RichText};
 use klad_core::doc::Item;
@@ -454,6 +454,17 @@ impl Editor {
                                 }
                             }
                         });
+                        if !matches!(selected, Selected::Points) {
+                            let numbers = ui
+                                .menu_button(icon::NUMBERS, |ui| {
+                                    self.check(|e| e.typed_menu(ui));
+                                })
+                                .response
+                                .hint("position, size and angle as numbers");
+                            if numbers.clicked() {
+                                self.typed = None;
+                            }
+                        }
                         if let Some((_, chosen)) = self.chosen_marks().filter(|_| self.on_marks()) {
                             let opacity = chosen.first().map_or(1.0, |(_, m)| match m {
                                 klad_core::stroke::Mark::Stroke(s) => s.opacity,

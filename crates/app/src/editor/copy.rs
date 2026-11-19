@@ -160,38 +160,66 @@ impl Editor {
         }
     }
 
-    pub(super) fn copy_picked(&mut self, ctx: &egui::Context) {
+    fn keep_picked(&mut self, ctx: &egui::Context) -> Option<String> {
         let shapes = self.copied_shapes();
         if !shapes.is_empty() {
             let what = counted(shapes.len(), "shape");
             ctx.copy_text(format!("klad: {what}"));
-            self.say(
-                Tone::Done,
-                format!("copied {what}: cmd V puts a copy on this or another frame, in place"),
-            );
             self.shape_clip = Some(shapes);
             self.clipboard = None;
             self.cells_last = false;
-            return;
+            return Some(what);
         }
-        let Some(copied) = self.copied() else {
-            self.say(
-                Tone::Refused,
-                "select strokes (S) or a shape (V) first; cmd C copies them",
-            );
-            return;
-        };
+        let copied = self.copied()?;
         self.shape_clip = None;
         ctx.copy_text(format!("klad: {} marks of {}", copied.count(), copied.whence()));
-        self.say(
-            Tone::Done,
-            format!(
-                "copied {}: cmd V puts a copy on this or another frame, in place",
-                counted(copied.count(), "mark")
-            ),
-        );
+        let what = counted(copied.count(), "mark");
         self.clipboard = Some(copied);
         self.cells_last = false;
+        Some(what)
+    }
+
+    pub(super) fn copy_picked(&mut self, ctx: &egui::Context) {
+        match self.keep_picked(ctx) {
+            Some(what) => self.say(
+                Tone::Done,
+                format!("copied {what}: cmd V puts a copy on this or another frame, in place"),
+            ),
+            None => self.say(
+                Tone::Refused,
+                "select strokes (S) or a shape (V) first; cmd C copies them",
+            ),
+        }
+    }
+
+    pub(super) fn cut_picked(&mut self) -> Result<()> {
+        let ctx = self.ctx.clone();
+        let Some(what) = self.keep_picked(&ctx) else {
+            self.say(
+                Tone::Refused,
+                "select strokes (S) or a shape (V) first; cmd X cuts them",
+            );
+            return Ok(());
+        };
+        match self.on_marks() {
+            true => self.edit_picked(LassoAction::Remove)?,
+            false => self.remove_shapes()?,
+        }
+        self.say(
+            Tone::Done,
+            format!("cut {what}: cmd V puts them back on this or another frame, in place (cmd Z undoes the cut)"),
+        );
+        Ok(())
+    }
+
+    pub(super) fn remove_shapes(&mut self) -> Result<()> {
+        let ids = self.shapes();
+        self.selection = None;
+        self.group.clear();
+        if !ids.is_empty() {
+            self.apply(vec![Op::Remove { ids }])?;
+        }
+        Ok(())
     }
 
     pub(super) fn paste(&mut self) -> Result<()> {
@@ -366,6 +394,7 @@ impl Editor {
 
     pub(super) fn canvas_menu(&mut self, ui: &mut egui::Ui) {
         [
+            Cmd::Cut,
             Cmd::Copy,
             Cmd::Paste,
             Cmd::DuplicateInPlace,
@@ -376,6 +405,10 @@ impl Editor {
         .for_each(|cmd| self.menu_entry(ui, cmd));
         ui.separator();
         [Cmd::SelectAll, Cmd::Deselect]
+            .into_iter()
+            .for_each(|cmd| self.menu_entry(ui, cmd));
+        ui.separator();
+        super::arrange::ARRANGE
             .into_iter()
             .for_each(|cmd| self.menu_entry(ui, cmd));
     }

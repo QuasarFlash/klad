@@ -55,6 +55,9 @@ pub mod icon {
     pub const TRASH: &str = "\u{E4A6}";
     pub const CLOSE: &str = "\u{E4F6}";
     pub const COPY: &str = "\u{E1CA}";
+    pub const CUT: &str = "\u{EAE0}";
+    pub const TO_FRONT: &str = "\u{E066}";
+    pub const TO_BACK: &str = "\u{E05C}";
     pub const PASTE: &str = "\u{E198}";
     pub const SELECT_ALL: &str = "\u{E746}";
     pub const LASSO: &str = "\u{EDC6}";

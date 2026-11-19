@@ -982,6 +982,16 @@ pub fn summarize(ops: &[Op]) -> String {
             Op::Palette(_) => "palette".to_string(),
             Op::Transform { ids, .. } => format!("transform {}", ids.join(" ")),
             Op::Detach { ids } => format!("detach {}", ids.join(" ")),
+            Op::Order { ids, to } => format!(
+                "order {} to the {}",
+                ids.join(" "),
+                match to {
+                    crate::markedit::Order::Front => "front",
+                    crate::markedit::Order::Back => "back",
+                    crate::markedit::Order::Forward => "next place up",
+                    crate::markedit::Order::Backward => "next place down",
+                }
+            ),
             Op::Shift(spec) => format!("transform {}", spec.layer),
             Op::Path { id, .. } => format!("path {id}"),
             Op::Copy(spec) => format!(

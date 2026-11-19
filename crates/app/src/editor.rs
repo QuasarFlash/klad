@@ -1,3 +1,4 @@
+mod arrange;
 mod between;
 mod bones;
 mod brushwin;
@@ -26,16 +27,20 @@ mod pixels;
 mod prefs;
 mod selection;
 mod shift;
+mod straight;
 mod target;
 mod text;
 mod timeline;
 mod tweens;
+mod typed;
 mod words;
 
 #[cfg(test)]
 pub(crate) use commands::install_job;
 #[cfg(test)]
 mod drag_time;
+#[cfg(test)]
+mod edit_tests;
 #[cfg(test)]
 mod inventory;
 #[cfg(test)]
@@ -421,6 +426,7 @@ fn transform_props(t: &klad_core::doc::Transform) -> Map<String, Value> {
     .collect()
 }
 
+#[derive(Clone)]
 struct Drag {
     grab: Grab,
     node: String,
@@ -435,6 +441,31 @@ struct Drag {
     slop: f32,
     crossed: bool,
     outside: bool,
+    shift: bool,
+    alt: bool,
+    free: bool,
+    toggle: bool,
+}
+
+fn factor(k: f32, whole: bool) -> f32 {
+    let k = if k.abs() < 0.02 {
+        0.02f32.copysign(k)
+    } else {
+        k.clamp(-50.0, 50.0)
+    };
+    match whole {
+        true if k.round() == 0.0 => 1.0f32.copysign(k),
+        true => k.round(),
+        false => k,
+    }
+}
+
+fn ratio(now: f32, start: f32, pivot: f32) -> f32 {
+    let span = start - pivot;
+    match span.abs() < 1.0 {
+        true => 1.0,
+        false => (now - pivot) / span,
+    }
 }
 
 impl Drag {
@@ -443,15 +474,62 @@ impl Drag {
         self.crossed |= (self.now - self.start).length() > self.slop;
     }
 
-    fn scale(&self) -> f32 {
-        if self.grab != Grab::Scale {
-            return 1.0;
+    fn keys(&mut self, m: egui::Modifiers) {
+        self.shift = m.shift;
+        self.alt = m.alt && self.grab != Grab::Move;
+    }
+
+    fn hint(&self) -> &'static str {
+        match self.grab {
+            Grab::Move if self.copy => "shift keeps the copy level or upright",
+            Grab::Move => "shift keeps it level or upright; alt as you start a drag moves a copy",
+            Grab::Scale if self.free => "shift frees the proportions; alt scales from the middle",
+            Grab::Scale => "alt scales from the middle",
+            Grab::Rotate => "shift turns in steps of 15 degrees",
+            Grab::Stretch(_) => "alt stretches both sides from the middle",
         }
-        let free = ((self.now - self.center).length() / (self.start - self.center).length().max(1.0)).clamp(0.02, 50.0);
-        match self.whole {
+    }
+
+    fn pivot(&self) -> Vec2 {
+        if self.alt || self.grab != Grab::Scale {
+            return self.center;
+        }
+        let near = (0..4)
+            .min_by(|&a, &b| {
+                (self.corners[a] - self.start)
+                    .length()
+                    .total_cmp(&(self.corners[b] - self.start).length())
+            })
+            .unwrap_or(0);
+        self.corners[(near + 2) % 4]
+    }
+
+    fn factors(&self) -> (f32, f32) {
+        if self.grab != Grab::Scale {
+            return (1.0, 1.0);
+        }
+        let p = self.pivot();
+        if self.shift && self.free && upright(&self.corners) {
+            return (
+                factor(ratio(self.now.x, self.start.x, p.x), self.whole),
+                factor(ratio(self.now.y, self.start.y, p.y), self.whole),
+            );
+        }
+        let free = ((self.now - p).length() / (self.start - p).length().max(1.0)).clamp(0.02, 50.0);
+        let k = match self.whole {
             true => free.round().max(1.0),
             false => free,
-        }
+        };
+        (k, k)
+    }
+
+    fn scale(&self) -> f32 {
+        self.factors().0
+    }
+
+    fn uneven(&self) -> Option<(f32, f32)> {
+        let (kx, ky) = self.factors();
+        (kx != ky).then_some((kx, ky))
     }
 
     fn angle(&self) -> f32 {
@@ -459,14 +537,21 @@ impl Drag {
             return 0.0;
         }
         let free = (self.now - self.center).angle() - (self.start - self.center).angle();
-        match self.whole {
-            true => (free / std::f32::consts::FRAC_PI_2).round() * std::f32::consts::FRAC_PI_2,
-            false => free,
-        }
+        let step = match (self.whole, self.shift) {
+            (true, _) => std::f32::consts::FRAC_PI_2,
+            (false, true) => std::f32::consts::PI / 12.0,
+            (false, false) => return free,
+        };
+        (free / step).round() * step
     }
 
     fn slide(&self) -> Vec2 {
         let d = self.now - self.start;
+        let d = match self.shift {
+            true if d.x.abs() >= d.y.abs() => vec2(d.x, 0.0),
+            true => vec2(0.0, d.y),
+            false => d,
+        };
         match self.whole {
             true => vec2(d.x.round(), d.y.round()),
             false => d,
@@ -477,24 +562,12 @@ impl Drag {
         let Grab::Stretch(side) = self.grab else {
             return None;
         };
-        let pivot = edge(&self.corners, (side + 2) % 4);
+        let pivot = match self.alt {
+            true => self.center,
+            false => edge(&self.corners, (side + 2) % 4),
+        };
         let axis = if side % 2 == 0 { 1 } else { 0 };
-        let span = self.start[axis] - pivot[axis];
-        let k = if span.abs() < 1.0 {
-            1.0
-        } else {
-            (self.now[axis] - pivot[axis]) / span
-        };
-        let k = if k.abs() < 0.02 {
-            0.02f32.copysign(k)
-        } else {
-            k.clamp(-50.0, 50.0)
-        };
-        let k = match self.whole {
-            true if k.round() == 0.0 => 1.0f32.copysign(k),
-            true => k.round(),
-            false => k,
-        };
+        let k = factor(ratio(self.now[axis], self.start[axis], pivot[axis]), self.whole);
         Some((axis, pivot, k))
     }
 
@@ -512,8 +585,9 @@ impl Drag {
                 [1.0, 0.0, 0.0, 1.0, d.x, d.y]
             }
             Grab::Scale => {
-                let k = self.scale();
-                [k, 0.0, 0.0, k, c.x * (1.0 - k), c.y * (1.0 - k)]
+                let (kx, ky) = self.factors();
+                let p = self.pivot();
+                [kx, 0.0, 0.0, ky, p.x * (1.0 - kx), p.y * (1.0 - ky)]
             }
             Grab::Rotate => {
                 let (s, k) = self.angle().sin_cos();
@@ -554,12 +628,16 @@ impl Drag {
                     ..Default::default()
                 }
             }
-            Grab::Scale => MarkTransform {
-                sx: self.scale(),
-                sy: self.scale(),
-                pivot,
-                ..Default::default()
-            },
+            Grab::Scale => {
+                let (sx, sy) = self.factors();
+                let p = self.pivot();
+                MarkTransform {
+                    sx,
+                    sy,
+                    pivot: Some([p.x, p.y]),
+                    ..Default::default()
+                }
+            }
             Grab::Rotate => MarkTransform {
                 rotate: self.angle().to_degrees(),
                 pivot,
@@ -626,6 +704,7 @@ struct Live {
     recorder: Recorder,
     last_at: Instant,
     twin: Option<(f32, Stroke, StrokePainter)>,
+    straight: Option<straight::Straight>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -883,6 +962,9 @@ pub(crate) struct Editor {
     pub(crate) pixel_size: u32,
     pub(crate) pixel_perfect: bool,
     pub(crate) pixel_shape: PixelShape,
+    pub(crate) brush_figure: straight::Figure,
+    brush_last: Option<(String, Vec2)>,
+    typed: Option<typed::Typed>,
     pub(crate) pixel_filled: bool,
     pub(crate) pixel_diagonal: bool,
     pub(crate) pixel_fill_all: bool,
@@ -1102,6 +1184,9 @@ impl Editor {
             pixel_size: 1,
             pixel_perfect: true,
             pixel_shape: PixelShape::Rect,
+            brush_figure: straight::Figure::Free,
+            brush_last: None,
+            typed: None,
             pixel_filled: false,
             pixel_diagonal: false,
             pixel_fill_all: false,
@@ -1873,9 +1958,13 @@ impl Editor {
                 _ => None,
             })
             .map(|(id, node)| {
-                let t = match drag.stretch().filter(|_| !together) {
-                    Some((axis, _, k)) => lift::stretched(&node, affine, axis, k)?,
-                    None => lift::committed(&node, affine, drag.scale(), drag.angle().to_degrees())?,
+                let t = match (
+                    drag.stretch().filter(|_| !together),
+                    drag.uneven().filter(|_| !together),
+                ) {
+                    (Some((axis, _, k)), _) => lift::stretched(&node, affine, axis, k)?,
+                    (None, Some((kx, ky))) => lift::scaled(&node, affine, kx, ky)?,
+                    (None, None) => lift::committed(&node, affine, drag.scale(), drag.angle().to_degrees())?,
                 };
                 Ok(Op::Set {
                     id,
@@ -2109,6 +2198,10 @@ impl Editor {
             .collect()
     }
 
+    fn drag_keys(&self) -> Option<&'static str> {
+        self.drag.as_ref().filter(|d| d.moved()).map(Drag::hint)
+    }
+
     fn edges(&self) -> bool {
         match self.tool {
             _ if self.on_marks() => true,
@@ -2157,6 +2250,10 @@ impl Editor {
             slop: DRAG_SLOP / self.view.map_or(1.0, |v| v.zoom),
             crossed: false,
             outside: false,
+            shift: self.modifiers.shift,
+            alt: self.modifiers.alt && grab != Grab::Move,
+            free: self.edges() && self.shifting.is_none(),
+            toggle: false,
         });
     }
 
@@ -2268,6 +2365,9 @@ impl Editor {
             return self.finish_stroke_drag(&drag);
         }
         if !drag.moved() {
+            if drag.toggle && self.toggle_shape(drag.start)? {
+                return Ok(());
+            }
             if drag.grab == Grab::Move && !drag.fresh {
                 self.select_at(drag.start, true)?;
             }
@@ -3524,6 +3624,14 @@ impl Editor {
                     self.begin(&e, c)?;
                 }
             }
+            (Tool::Brush, Phase::Move) if self.live.as_ref().is_some_and(|l| l.straight.is_some()) => {
+                let m = self.modifiers;
+                if let Some(s) = self.live.as_mut().and_then(|l| l.straight.as_mut()) {
+                    s.to(c, m);
+                }
+                self.show_straight();
+                self.pending.get_or_insert(e.at);
+            }
             (Tool::Brush, Phase::Move) => {
                 if let Some(live) = self.live.as_mut() {
                     let dt = e.at.duration_since(live.last_at).as_secs_f32() * 1000.0;
@@ -3542,11 +3650,14 @@ impl Editor {
             }
             (Tool::Brush, Phase::Up) => self.finish()?,
             (Tool::Select, Phase::Down) => match self.grab_at(view, rect, e.pos) {
-                Some((_, Grab::Move, _))
-                    if self.modifiers.shift
-                        && self.selection.is_some()
-                        && !self.on_marks()
-                        && self.toggle_shape(c)? => {}
+                Some((id, Grab::Move, corners))
+                    if self.modifiers.shift && self.selection.is_some() && !self.on_marks() =>
+                {
+                    self.start_drag(id, Grab::Move, corners, c, false);
+                    if let Some(drag) = self.drag.as_mut() {
+                        drag.toggle = true;
+                    }
+                }
                 Some((id, grab, corners)) => self.start_drag(id, grab, corners, c, false),
                 None if self.shifting.is_some() => {
                     if let Some((id, corners)) = self.handles() {
@@ -3720,6 +3831,10 @@ impl Editor {
             painter.push_on(&copy.samples[0], &mut self.mirror_buffer, self.scene.active_raster());
             (axis, copy, painter)
         });
+        let zoom = self.view.map_or(1.0, |v| v.zoom);
+        let straight = self
+            .straight_figure()
+            .map(|(figure, from)| straight::Straight::new(figure, c, from, sample, zoom));
         self.live = Some(Live {
             stroke,
             painter,
@@ -3727,7 +3842,11 @@ impl Editor {
             recorder,
             last_at: e.at,
             twin,
+            straight,
         });
+        if straight.is_some() {
+            self.show_straight();
+        }
         self.pending.get_or_insert(e.at);
         Ok(())
     }
@@ -3737,7 +3856,14 @@ impl Editor {
             return Ok(());
         };
         let start = Instant::now();
-        let tail = live.recorder.finish();
+        let straight = live.straight.take();
+        let tail = match straight {
+            Some(s) => {
+                live.stroke.samples = s.samples();
+                Vec::new()
+            }
+            None => live.recorder.finish(),
+        };
         tail.iter()
             .for_each(|s| live.painter.push_on(s, &mut self.buffer, self.scene.active_raster()));
         live.painter.end(&mut self.buffer, self.scene.active_raster());
@@ -3749,7 +3875,12 @@ impl Editor {
             painter.end(&mut self.mirror_buffer, self.scene.active_raster());
         }
         live.stroke.samples.extend(tail);
-        let repainted = needs_repaint(&live.stroke);
+        if straight.is_some()
+            && let Some((axis, copy, _)) = live.twin.as_mut()
+        {
+            copy.samples = live.stroke.samples.iter().map(|s| make::mirrored(s, *axis)).collect();
+        }
+        let repainted = needs_repaint(&live.stroke) || straight.is_some();
         if repainted {
             self.dirty.extend(self.buffer.touched().iter().copied());
             self.buffer.reset();
@@ -3782,6 +3913,10 @@ impl Editor {
         let brush = live.stroke.brush.clone();
         let erasing = live.brush.blend == klad_brush::brush::StrokeBlend::Erase;
         let blend = stroke_blend(&live.brush, live.stroke.lock).unwrap_or(live.brush.blend);
+        let ending = live.stroke.samples.last().map(|s| {
+            let (x, y) = s.pos();
+            vec2(x, y)
+        });
         let attaching = Instant::now();
         live.stroke.on = self.attaching(&live.stroke, &live.brush.def);
         let attach = ms(attaching);
@@ -3792,6 +3927,7 @@ impl Editor {
             touched.extend(self.scene.commit_stroke(copy, &mut self.mirror_buffer, blend)?);
         }
         let commit = ms(start);
+        self.brush_last = self.scene.active_id().zip(ending);
         self.dirty.extend(touched);
         let saving = Instant::now();
         let bytes = self.scene.save_active("stroke")?;
@@ -4156,6 +4292,9 @@ impl Editor {
         let was_focused = self.focused;
         self.focused = ctx.input(|i| i.focused);
         self.modifiers = ctx.input(|i| i.modifiers);
+        if let Some(drag) = self.drag.as_mut() {
+            drag.keys(self.modifiers);
+        }
         self.refresh_shape();
         let events = match &self.pen {
             Some(pen) => pen.drain(ctx.content_rect().height()),
@@ -6284,7 +6423,8 @@ mod tests {
             Grab::Stretch(3),
         ]
         .iter()
-        .for_each(|&grab| {
+        .flat_map(|&grab| [(false, false), (true, false), (false, true)].map(|(shift, alt)| (grab, shift, alt)))
+        .for_each(|(grab, shift, alt)| {
             let drag = Drag {
                 grab,
                 node: "c1:1,2".into(),
@@ -6304,14 +6444,124 @@ mod tests {
                 slop: 0.5,
                 crossed: true,
                 outside: false,
+                shift,
+                alt,
+                free: true,
+                toggle: false,
             };
             let committed = drag.mark_transform();
             let a = committed.affine(committed.pivot.unwrap_or([0.0, 0.0]));
-            drag.affine()
-                .iter()
-                .zip(a)
-                .for_each(|(p, c)| assert!((p - c).abs() < 1e-3, "{grab:?}: {:?} vs {a:?}", drag.affine()));
+            drag.affine().iter().zip(a).for_each(|(p, c)| {
+                assert!(
+                    (p - c).abs() < 1e-3,
+                    "{grab:?} shift {shift} alt {alt}: {:?} vs {a:?}",
+                    drag.affine()
+                )
+            });
         });
+    }
+
+    #[test]
+    fn shift_and_alt_change_how_a_drag_moves_scales_and_turns() {
+        let base = Drag {
+            grab: Grab::Move,
+            node: "n1".into(),
+            strokes: false,
+            whole: false,
+            fresh: false,
+            copy: false,
+            start: vec2(150.0, 150.0),
+            now: vec2(250.0, 170.0),
+            center: vec2(100.0, 100.0),
+            corners: [
+                vec2(50.0, 50.0),
+                vec2(150.0, 50.0),
+                vec2(150.0, 150.0),
+                vec2(50.0, 150.0),
+            ],
+            slop: 0.5,
+            crossed: true,
+            outside: false,
+            shift: false,
+            alt: false,
+            free: true,
+            toggle: false,
+        };
+        assert_eq!(base.slide(), vec2(100.0, 20.0));
+        assert_eq!(
+            Drag {
+                shift: true,
+                ..base.clone()
+            }
+            .slide(),
+            vec2(100.0, 0.0),
+            "shift keeps a move level"
+        );
+        let scale = Drag {
+            grab: Grab::Scale,
+            now: vec2(250.0, 250.0),
+            ..base.clone()
+        };
+        assert_eq!(
+            scale.pivot(),
+            vec2(50.0, 50.0),
+            "a corner scales from the opposite corner"
+        );
+        assert_eq!(scale.factors(), (2.0, 2.0));
+        assert_eq!(
+            Drag {
+                alt: true,
+                ..scale.clone()
+            }
+            .pivot(),
+            vec2(100.0, 100.0),
+            "alt from the middle"
+        );
+        let free = Drag {
+            shift: true,
+            now: vec2(250.0, 150.0),
+            ..scale.clone()
+        };
+        assert_eq!(free.factors(), (2.0, 1.0), "shift frees the proportions");
+        assert_eq!(
+            Drag {
+                free: false,
+                ..free.clone()
+            }
+            .factors()
+            .0,
+            Drag {
+                free: false,
+                ..free.clone()
+            }
+            .factors()
+            .1
+        );
+        let turn = Drag {
+            grab: Grab::Rotate,
+            start: vec2(200.0, 100.0),
+            now: vec2(100.0 + 100.0 * 0.4f32.cos(), 100.0 + 100.0 * 0.4f32.sin()),
+            shift: true,
+            ..base.clone()
+        };
+        assert!(
+            (turn.angle().to_degrees() - 30.0).abs() < 1e-3,
+            "shift turns in 15 degree steps: {}",
+            turn.angle().to_degrees()
+        );
+        let stretch = Drag {
+            grab: Grab::Stretch(1),
+            start: vec2(150.0, 100.0),
+            now: vec2(200.0, 100.0),
+            alt: true,
+            ..base.clone()
+        };
+        let (_, pivot, k) = stretch.stretch().unwrap();
+        assert_eq!(
+            (pivot, k),
+            (vec2(100.0, 100.0), 2.0),
+            "alt stretches both sides from the middle"
+        );
     }
 
     #[test]

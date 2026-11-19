@@ -173,6 +173,21 @@ impl Editor {
         );
     }
 
+    pub(super) fn cut_selected_cells(&mut self) -> Result<()> {
+        self.copy_selected_cells();
+        let ids = self.cels_here();
+        if let Some(count) = self.remove_cels(ids)? {
+            self.say(
+                Tone::Done,
+                format!(
+                    "cut {count} drawing{}: paste them at the playhead as copies or links (cmd Z undoes the cut)",
+                    if count == 1 { "" } else { "s" }
+                ),
+            );
+        }
+        Ok(())
+    }
+
     pub(super) fn paste_cells(&mut self, links: bool) -> Result<()> {
         let Some(cells) = self.timeline.cells.clone() else {
             return Ok(());
@@ -255,7 +270,7 @@ impl Editor {
                 self.command_button(ui, cmd, None);
             });
             ui.separator();
-            [Cmd::CopyCells, Cmd::PasteCells, Cmd::PasteCellsLinked]
+            [Cmd::CutCells, Cmd::CopyCells, Cmd::PasteCells, Cmd::PasteCellsLinked]
                 .into_iter()
                 .for_each(|cmd| {
                     self.command_button(ui, cmd, None);

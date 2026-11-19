@@ -112,11 +112,19 @@ fn the_first_ten_minutes_of_someone_who_draws() {
         "V picks the stroke under the pointer and drags it",
     );
 
-    j.act("cut the picked stroke with cmd X");
+    j.act("cut the picked stroke with cmd X, take the cut back with cmd Z and pick the stroke again");
     let before = marks(&j);
     j.chord(CMD, Key::X);
     j.look("cut");
     j.expect("cmd-x-cuts", marks(&j) + 1 == before, "cmd X cuts what is picked");
+    j.chord(CMD, Key::Z);
+    j.look("cut-undone");
+    j.expect(
+        "undo-takes-the-cut-back",
+        marks(&j) == before,
+        "cmd Z brings the cut stroke back",
+    );
+    j.drag(&[(1250.0, 560.0), (1250.0, 560.0)]);
 
     j.act("delete the picked stroke with Backspace, then undo");
     let before = marks(&j);
@@ -375,7 +383,7 @@ fn the_first_ten_minutes_of_someone_who_draws() {
         "the drawing opens again from the recent list with everything in it",
     );
 
-    j.finish(&["cmd-x-cuts", "layers-panel-shows-layers"]);
+    j.finish(&["layers-panel-shows-layers"]);
 }
 
 fn spot(j: &Journey, pick: impl Fn(&klad_core::stroke::Mark) -> bool) -> Option<(u32, f32, f32)> {
@@ -1461,13 +1469,10 @@ fn someone_changes_one_stroke_and_several_in_what_an_agent_painted() {
     let cut_away = layer_marks(&j, "lines").len() + grass.len() == count_before;
     j.expect("cmd-x-cuts", cut_away, "cmd X cuts what is picked");
 
-    j.act("no cut: copy with cmd C, Delete, then a new paint layer and cmd V");
-    j.chord(CMD, Key::C);
-    j.key(Key::Delete);
     j.click("Layer");
     j.click("New paint layer");
     j.chord(CMD, Key::V);
-    j.look("pasted-after-delete");
+    j.look("pasted-after-cut");
     let new_layer = active_name(&j);
     let all_now = j.ed().map_or(0, |ed| ed.scene.total_marks());
     j.note(format!(
@@ -1475,9 +1480,9 @@ fn someone_changes_one_stroke_and_several_in_what_an_agent_painted() {
         layer_marks(&j, &new_layer).len()
     ));
     j.expect(
-        "copy-delete-paste-keeps-the-strokes",
-        all_now == all_before,
-        "what was copied can still be pasted after the originals are deleted",
+        "cut-and-paste-moves-the-strokes",
+        all_now == all_before && layer_marks(&j, &new_layer).len() >= grass.len(),
+        "what was cut pastes onto the new layer, so the drawing keeps every mark",
     );
 
     j.act("take that back and do it the other way round: copy, a new layer, paste, and delete the originals after");
@@ -1629,7 +1634,7 @@ fn someone_changes_one_stroke_and_several_in_what_an_agent_painted() {
         "cmd Z brings the shape back as it was",
     );
 
-    j.finish(&["cmd-x-cuts"]);
+    j.finish(&[]);
 }
 
 fn tree(j: &Journey) -> Vec<String> {

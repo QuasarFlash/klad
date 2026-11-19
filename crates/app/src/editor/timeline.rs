@@ -994,9 +994,17 @@ impl Editor {
         Ok(())
     }
 
-    pub(super) fn delete_here(&mut self) -> Result<()> {
+    pub(super) fn remove_cels(&mut self, ids: Vec<String>) -> Result<Option<usize>> {
+        let count = ids.len();
+        match ids.is_empty() {
+            true => Ok(None),
+            false => Ok(self.timeline_apply(vec![Op::Remove { ids }])?.map(|_| count)),
+        }
+    }
+
+    pub(super) fn cels_here(&self) -> Vec<String> {
         let doc = &self.scene.bundle.doc;
-        let ids: Vec<String> = match &self.timeline.span {
+        match &self.timeline.span {
             Some(span) => span
                 .rows
                 .iter()
@@ -1011,9 +1019,13 @@ impl Editor {
                 .map(|(cel, _)| cel.id)
                 .into_iter()
                 .collect(),
-        };
-        let (count, spanned, frame) = (ids.len(), self.timeline.span.is_some(), self.scene.frame);
-        if !ids.is_empty() && self.timeline_apply(vec![Op::Remove { ids }])?.is_some() {
+        }
+    }
+
+    pub(super) fn delete_here(&mut self) -> Result<()> {
+        let ids = self.cels_here();
+        let (spanned, frame) = (self.timeline.span.is_some(), self.scene.frame);
+        if let Some(count) = self.remove_cels(ids)? {
             self.say(
                 Tone::Done,
                 match (spanned, count) {

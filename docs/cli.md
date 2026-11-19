@@ -35,6 +35,7 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad set`](#klad-set): Change properties: klad set art.klad n4 fill=#ff0000 transform.rotate=15 (null removes)
 - [`klad recolour`](#klad-recolour): Recolour strokes and fills together: the group moves to the colour and each keeps its own lighter or darker shade
 - [`klad detach`](#klad-detach): Detach eraser, smudge and blender strokes from the marks they are attached to
+- [`klad order`](#klad-order): Put shapes, strokes or fills in front of or behind the others on their layer
 - [`klad align`](#klad-align): Align shapes to each other, the canvas or one shape, or spread them evenly
 - [`klad rm`](#klad-rm): Remove layers, cels or nodes
 - [`klad transform`](#klad-transform): Move, rotate or scale strokes and fills (<cel>:s<id>), or a whole layer or group (--layer)
@@ -1354,6 +1355,52 @@ Options:
           Print help (see a summary with '-h')
 ```
 
+## klad order
+
+```text
+Put shapes, strokes or fills in front of or behind the others on their layer. Shapes are the nodes of a vector layer (they change places among the shapes of their drawing or group); strokes and fills are <cel>:s<id> and change places among the marks of their drawing, with the erasers and smudges attached to them. --front and --back go all the way; --up and --down go one place, past the next shape, or for marks past the next mark they overlap. Several things keep their order among themselves. One history step.
+
+  klad order art.klad n4 --front
+  klad order art.klad c9:s12 c9:s13 --down
+
+Usage: klad order [OPTIONS] <BUNDLE> [IDS]...
+
+Arguments:
+  <BUNDLE>
+
+
+  [IDS]...
+
+
+Options:
+      --front
+          In front of everything on the layer
+
+      --back
+          Behind everything on the layer
+
+      --up
+          One place nearer the front
+
+      --down
+          One place further back
+
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
 ## klad align
 
 ```text
@@ -1865,8 +1912,11 @@ Paint with a brush along an SVG path (M, L, H, V, C, S, Q, T, Z; several subpath
   klad stroke art.klad l3 --brush ink --size 14 --color #1b1b1b --path 'M100 400 C 300 200 500 600 700 400' --pressure 0.1,1,0.05
   klad stroke art.klad l3 --brush ink --size 6 --taper 12,30 --path 'M100 100 Q 200 40 300 120'
   klad stroke art.klad l3 --points '10,10,0.5 40,30,1 80,35,0.2'
+  klad stroke art.klad l3 --brush pencil --size 4 --line 100,100,400,100
+  klad stroke art.klad l3 --rect 40,40,200,120
+  klad stroke art.klad l3 --ellipse 40,40,200,120
 
-Pressure is spread evenly along the stroke. --taper thins the first and last px of the line whatever the pressure. Brushes are a bundle brush id or a library brush (klad brushes). Strokes are marked as agent strokes.
+--line paints a straight stroke between two points; --rect and --ellipse paint around a rectangle, or the ellipse that fits that box, with the brush: paint, not shapes. Pressure is spread evenly along the stroke. --taper thins the first and last px of the line whatever the pressure. Brushes are a bundle brush id or a library brush (klad brushes). Strokes are marked as agent strokes.
 
 Usage: klad stroke [OPTIONS] <BUNDLE> <LAYER>
 
@@ -1883,6 +1933,15 @@ Options:
 
       --points <POINTS>
           x,y,pressure triples separated by spaces
+
+      --line <X0,Y0,X1,Y1>
+          A straight stroke between two points
+
+      --rect <X,Y,W,H>
+          A stroke around a rectangle, painted with the brush
+
+      --ellipse <X,Y,W,H>
+          A stroke around the ellipse that fits this box, painted with the brush
 
       --brush <BRUSH>
           [default: ink]

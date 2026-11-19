@@ -2812,7 +2812,7 @@ fn top_down(h: &Harness<'static, Editor>) -> Vec<String> {
         .collect()
 }
 
-fn layer_named<'a>(h: &'a Harness<'static, Editor>, name: &str) -> &'a Layer {
+pub(super) fn layer_named<'a>(h: &'a Harness<'static, Editor>, name: &str) -> &'a Layer {
     h.state().scene.bundle.doc.find_layer(name).unwrap()
 }
 
@@ -2987,11 +2987,11 @@ fn timeline_cells_select_by_dragging_copy_paste_move_and_open_the_clip() {
     let _ = std::fs::remove_dir_all(&path);
 }
 
-fn said(h: &Harness<'static, Editor>) -> String {
+pub(super) fn said(h: &Harness<'static, Editor>) -> String {
     h.state().messages.latest().map(|m| m.text.clone()).unwrap_or_default()
 }
 
-fn marks_on(h: &Harness<'static, Editor>, layer: &Layer) -> usize {
+pub(super) fn marks_on(h: &Harness<'static, Editor>, layer: &Layer) -> usize {
     layer
         .cels()
         .iter()
