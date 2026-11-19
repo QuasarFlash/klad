@@ -19,6 +19,7 @@ pub(super) enum What {
     Gif,
     Aseprite,
     Godot,
+    Svg,
 }
 
 impl What {
@@ -30,6 +31,7 @@ impl What {
             What::Gif => "Export GIF",
             What::Aseprite => "Export Aseprite file",
             What::Godot => "Export for Godot",
+            What::Svg => "Export SVG",
         }
     }
 
@@ -45,6 +47,9 @@ impl What {
                 "An .aseprite file of the pixel layers and groups, with every frame's drawing, the palette and the clips as tags."
             }
             What::Godot => "Files a Godot project uses as they are, written into a folder of that project.",
+            What::Svg => {
+                "The frame on screen as an SVG: vector layers as shapes an illustration app can edit, each layer a group."
+            }
         }
     }
 
@@ -53,6 +58,7 @@ impl What {
             What::Image | What::Sheet => Some("png"),
             What::Gif => Some("gif"),
             What::Aseprite => Some("aseprite"),
+            What::Svg => Some("svg"),
             What::Frames | What::Godot => None,
         }
     }
@@ -94,6 +100,9 @@ pub(super) struct Form {
     pub godot: Godot,
     pub last: Option<Written>,
     pub typed: Vec<(What, String, String)>,
+    pub pictures: bool,
+    pub outlines: bool,
+    pub only: Vec<String>,
 }
 
 impl Default for Form {
@@ -117,6 +126,9 @@ impl Default for Form {
             godot: Godot::Sprite,
             last: None,
             typed: Vec::new(),
+            pictures: true,
+            outlines: false,
+            only: Vec::new(),
         }
     }
 }
@@ -208,15 +220,28 @@ pub(super) fn args(bundle: &Path, home: &Path, frame: u32, form: &Form) -> Vec<S
         What::Sheet => push("--sheet", Some(form.range.trim().to_string())),
         What::Gif => push("--gif", Some(form.range.trim().to_string())),
         What::Aseprite => push("--aseprite", None),
+        What::Svg => {
+            push("--svg", None);
+            push("--frame", Some(frame.to_string()));
+            if !form.pictures {
+                push("--vectors-only", None);
+            }
+            if form.outlines {
+                push("--outline-text", None);
+            }
+            if !form.only.is_empty() {
+                push("--only", Some(form.only.join(",")));
+            }
+        }
     }
     if let Some(layer) = form
         .layer
         .as_ref()
-        .filter(|_| !matches!(form.what, What::Frames | What::Aseprite))
+        .filter(|_| !matches!(form.what, What::Frames | What::Aseprite) && form.only.is_empty())
     {
         push("--layer", Some(layer.clone()));
     }
-    if form.scale != 1.0 && form.what != What::Aseprite {
+    if form.scale != 1.0 && !matches!(form.what, What::Aseprite | What::Svg) {
         push("--scale", Some(form.scale.to_string()));
     }
     if form.deep && matches!(form.what, What::Image | What::Sheet) {
@@ -292,6 +317,10 @@ impl Editor {
     pub(super) fn open_export(&mut self, what: What) {
         let again = self.windows.export && self.export.what == what;
         self.export.switch_to(what);
+        self.export.only = match what {
+            What::Svg => self.shapes(),
+            _ => Vec::new(),
+        };
         self.windows.export = !again;
     }
 
@@ -305,7 +334,7 @@ impl Editor {
 
     pub(super) fn export(&mut self) -> Result<()> {
         let form = self.export.clone();
-        if !matches!(form.what, What::Image | What::Aseprite) && form.range.trim().is_empty() {
+        if !matches!(form.what, What::Image | What::Aseprite | What::Svg) && form.range.trim().is_empty() {
             bail!("say which frames: all, a clip's name or a range like 0-11");
         }
         let home = self.bundle_home();
@@ -326,6 +355,7 @@ impl Editor {
             What::Sheet => format!("export the sheet of {}", form.range.trim()),
             What::Gif => format!("export a GIF of {}", form.range.trim()),
             What::Aseprite => "export an Aseprite file".to_string(),
+            What::Svg => format!("export an SVG of frame {}", self.scene.frame),
         };
         self.start_job(Spec {
             tag: Tag::Export,
@@ -487,7 +517,7 @@ impl Editor {
             .num_columns(2)
             .spacing(egui::vec2(14.0, 10.0))
             .show(ui, |ui| {
-                if !matches!(what, What::Image | What::Aseprite) {
+                if !matches!(what, What::Image | What::Aseprite | What::Svg) {
                     let frames = label(ui, "frames");
                     ui.horizontal(|ui| {
                         ui.add(
@@ -524,7 +554,27 @@ impl Editor {
                         .hint("export the whole image or one layer or group");
                     ui.end_row();
                 }
-                if what != What::Aseprite {
+                if what == What::Svg {
+                    label(ui, "options");
+                    ui.vertical(|ui| {
+                        ui.checkbox(&mut form.pictures, "paint and pixel layers as pictures")
+                            .hint("off: only the vector layers go into the SVG");
+                        ui.checkbox(&mut form.outlines, "text as outlines")
+                            .hint("the letters as paths, so the SVG looks the same where the font is missing; off keeps text editable");
+                        if !form.only.is_empty() {
+                            let mut alone = true;
+                            if ui
+                                .checkbox(&mut alone, format!("only the {} selected shapes", form.only.len()))
+                                .hint("off: the whole image or the layer chosen above")
+                                .changed()
+                            {
+                                form.only.clear();
+                            }
+                        }
+                    });
+                    ui.end_row();
+                }
+                if !matches!(what, What::Aseprite | What::Svg) {
                     label(ui, "size");
                     ui.horizontal(|ui| {
                         match pixel {

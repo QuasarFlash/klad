@@ -72,6 +72,11 @@ klad rm art.klad c4:s12 c4:s13
 klad transform art.klad c4:s3 c4:s5 --move 40,-10 --rotate 15 --scale 1.2
 klad transform art.klad --layer figure --move -120,0           # a whole layer or group: every drawing, its shapes, bones and poses
 klad order art.klad c4:s3 --front                              # in front of the other marks of its drawing; --back, --up, --down; shapes too (`{"op":"order","ids":[...],"to":"front"}`)
+klad style art.klad n4 n7 n9                                   # n7 and n9 take n4's fill, outline and opacity ({"op":"style","from":"n4","ids":[...]})
+klad combine art.klad n3 n4 --unite                            # one path: --unite, --subtract (front from back), --intersect, --exclude
+klad path art.klad n12 --convert                               # a text node becomes the paths of its letters
+klad export art.klad --svg [--layer n] [--only n3,n4] [--vectors-only] [--outline-text] [--frames all]   # SVG: a group per layer, paint layers as pictures
+klad import logo.svg [--into art.klad]                         # an SVG's shapes as vector layers, in a new drawing or one you have
 klad show art.klad c4:s12
 klad render art.klad --focus c4:s12
 ```

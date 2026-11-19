@@ -982,6 +982,7 @@ pub fn summarize(ops: &[Op]) -> String {
             Op::Palette(_) => "palette".to_string(),
             Op::Transform { ids, .. } => format!("transform {}", ids.join(" ")),
             Op::Detach { ids } => format!("detach {}", ids.join(" ")),
+            Op::Style { from, ids } => format!("the look of {from} on {}", ids.join(" ")),
             Op::Order { ids, to } => format!(
                 "order {} to the {}",
                 ids.join(" "),

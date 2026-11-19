@@ -141,6 +141,10 @@ pub enum Op {
         ids: Vec<String>,
         to: Order,
     },
+    Style {
+        from: String,
+        ids: Vec<String>,
+    },
     Shift(ShiftSpec),
     Path {
         id: String,
@@ -1834,6 +1838,19 @@ impl Op {
                     bail!("detach needs an id or ids (strokes and fills, <cel>:s<id>)");
                 }
                 Op::Detach { ids }
+            }
+            "style" => {
+                let from = take_str(&mut map, "from")?
+                    .ok_or_else(|| anyhow!("style needs from: the shape whose look to copy"))?;
+                let mut ids: Vec<String> = match map.remove("ids") {
+                    Some(v) => serde_json::from_value(v).map_err(|_| anyhow!("ids must be a list of strings"))?,
+                    None => Vec::new(),
+                };
+                ids.extend(take_str(&mut map, "id")?);
+                if ids.is_empty() {
+                    bail!("style needs the shapes to give the look to: id or ids");
+                }
+                Op::Style { from, ids }
             }
             "order" => {
                 let mut ids: Vec<String> = match map.remove("ids") {
@@ -4166,6 +4183,7 @@ pub fn apply(doc: &mut Document, op: &Op, out: &mut Applied) -> Result<()> {
             out.changed.extend(ids.iter().cloned());
         }
         Op::Order { ids, to } => order(doc, ids, *to, out)?,
+        Op::Style { from, ids } => style(doc, from, ids, out)?,
         Op::Shift(spec) => shift(doc, spec, out)?,
         Op::Move { id, place } => {
             move_item(doc, id, place).with_context(|| format!("mv {id}"))?;
@@ -4576,6 +4594,26 @@ fn shift(doc: &mut Document, spec: &ShiftSpec, out: &mut Applied) -> Result<()> 
 }
 
 type NodeList = (Vec<usize>, usize, Vec<usize>);
+
+fn style(doc: &mut Document, from: &str, ids: &[String], out: &mut Applied) -> Result<()> {
+    let look = match doc.item(from) {
+        Some(Item::Node(_, _, node)) => (node.fill.clone(), node.stroke.clone(), node.opacity),
+        _ => bail!("{from} is not a shape: style copies the fill, outline and opacity of a shape"),
+    };
+    ids.iter().try_for_each(|id| {
+        let Some(Loc::Node(layer, cel, mut path)) = doc.locate(id) else {
+            bail!("{id} is not a shape: style gives a look to shapes");
+        };
+        let index = path.pop().unwrap_or_default();
+        let node = &mut node_list(doc, &layer, cel, &path)?[index];
+        node.fill = look.0.clone();
+        node.stroke = look.1.clone();
+        node.opacity = look.2;
+        Ok::<_, anyhow::Error>(())
+    })?;
+    out.changed.extend(ids.iter().cloned());
+    Ok(())
+}
 
 fn order(doc: &mut Document, ids: &[String], to: Order, out: &mut Applied) -> Result<()> {
     let mut cels: Vec<(String, Vec<u32>)> = Vec::new();

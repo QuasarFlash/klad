@@ -238,6 +238,16 @@ impl Editor {
             }
             .or(editing),
             Cmd::BringToFront | Cmd::BringForward | Cmd::SendBackward | Cmd::SendToBack => self.can_arrange(),
+            Cmd::CopyLook => match self.selected() {
+                Some(Selected::Shape(_)) => None,
+                _ => Some("select a shape with V first: its fill, outline and opacity are copied".to_string()),
+            },
+            Cmd::PasteLook => match (self.look_from.is_some(), self.selected()) {
+                (false, _) => Some("copy a shape's look first: select it with V and press alt cmd C".to_string()),
+                (true, Some(Selected::Shape(_))) => editing,
+                _ => Some("select the shapes to give the look to with V first".to_string()),
+            },
+            Cmd::Unite | Cmd::SubtractShapes | Cmd::Intersect | Cmd::Exclude => self.can_combine().or(editing),
             Cmd::Copy | Cmd::Cut | Cmd::MoveToNewLayer => match self.selected() {
                 Some(Selected::Strokes | Selected::Shape(_)) => editing,
                 _ => Some("select strokes (S) or a shape (V) first".to_string()),
@@ -393,6 +403,7 @@ impl Editor {
                     .path_commit
                     .as_ref()
                     .map(|_| "the last edit is being written: try again in a moment".to_string())),
+            Cmd::MakePath if self.text_node().is_some() => None,
             Cmd::MakePath => match direct.and_then(|d| self.scene.bundle.doc.item(&d.node)) {
                 Some(klad_core::doc::Item::Node(_, _, n)) if matches!(n.shape, Shape::Path { .. }) => {
                     Some("it is a path already".into())
@@ -719,6 +730,7 @@ impl Editor {
             Cmd::ExportSheet => self.exporting(super::export::What::Sheet),
             Cmd::ExportGif => self.exporting(super::export::What::Gif),
             Cmd::ExportAseprite => self.exporting(super::export::What::Aseprite),
+            Cmd::ExportSvg => self.exporting(super::export::What::Svg),
             Cmd::ExportGodotWindow => self.exporting(super::export::What::Godot),
             Cmd::Pixelize => self.windows.pixels,
             Cmd::TileSize => self.windows.tiles,
@@ -1048,6 +1060,14 @@ impl Editor {
             Cmd::ExportSheet => self.open_export(super::export::What::Sheet),
             Cmd::ExportGif => self.open_export(super::export::What::Gif),
             Cmd::ExportAseprite => self.open_export(super::export::What::Aseprite),
+            Cmd::ExportSvg => self.open_export(super::export::What::Svg),
+            Cmd::CopyLook => self.copy_look(),
+            Cmd::PasteLook => self.paste_look()?,
+            Cmd::Unite | Cmd::SubtractShapes | Cmd::Intersect | Cmd::Exclude => {
+                if let Some(how) = super::outline::combine_of(cmd) {
+                    self.combine_shapes(how)?;
+                }
+            }
             Cmd::ExportGodotWindow => self.open_export(super::export::What::Godot),
             Cmd::SelectAll => self.select_all_strokes(),
             Cmd::SelectSameColour => self.select_same_colour(),
@@ -1126,7 +1146,10 @@ impl Editor {
             Cmd::Simplify => self.commit_path(PathEdit::Simplify {
                 tolerance: self.simplify_px,
             })?,
-            Cmd::MakePath => self.commit_path(PathEdit::Convert)?,
+            Cmd::MakePath => match self.text_node() {
+                Some(id) => self.text_to_path(&id)?,
+                None => self.commit_path(PathEdit::Convert)?,
+            },
             Cmd::AddSwatch => {
                 let edit = PaletteEdit::Add {
                     color: crate::color::hex(self.color),

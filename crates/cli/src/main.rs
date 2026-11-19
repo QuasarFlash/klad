@@ -28,6 +28,8 @@ mod scene;
 mod shapes;
 mod sheet;
 mod sprites;
+mod svgin;
+mod svgout;
 
 use agent::{Look, Output};
 use anyhow::{Context, Result, anyhow, bail};
@@ -136,7 +138,7 @@ impl Where {
 enum Command {
     #[command(
         about = "Open an Aseprite file or a picture as a klad pixel drawing",
-        long_about = "Make a klad drawing from an Aseprite file (.aseprite or .ase), or a pixel drawing from a picture (.png, .jpg). The drawing is written next to the file (hero.aseprite makes hero.klad) unless -o names it, and its path is printed.\n\n  klad import hero.aseprite\n  klad import hero.ase -o sprites/hero.klad\n  klad import sprite.png                      (a picture of 512 px or less a side, at its own size)\n  klad import sprite@8x.png --size 32         (shrunk to 32 px on its longest side)\n  klad import photo.jpg --size 64 --colors 16\n  klad import photo.jpg                       (larger than 512 px: a painting drawing of its size with the picture on a layer)\n  klad import --clipboard                     (the picture copied in another app: pasted.klad here)\n\nA picture larger than 512 px a side, without --size or --colors, or any picture with --painting, makes a painting drawing of its size: the picture on a layer at the bottom and a paint layer over it. Otherwise a picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.\n\nFrom an Aseprite file, what comes over: image layers as pixel layers with their name, visibility, opacity and blend mode, groups as groups, every cel as a drawing on its frame (linked cels stay linked), the palette with its names, and tags as clips. Frame times become whole frames: a file of 100 ms frames is 10 frames a second, and a frame shown for 300 ms holds for three. Indexed, grey and RGBA files all open; every pixel is bound to its palette colour, and colours a file uses outside its palette are added to it.\n\nWhat does not: tilemap layers, tilesets and slices are left out, a tag that plays backwards or back and forth becomes a clip that plays forwards, and blend modes klad does not have blend as normal. Each of these is said when it happens.\n\nklad export art.klad --aseprite writes a drawing's pixel layers back to an Aseprite file."
+        long_about = "Make a klad drawing from an Aseprite file (.aseprite or .ase), or a pixel drawing from a picture (.png, .jpg). The drawing is written next to the file (hero.aseprite makes hero.klad) unless -o names it, and its path is printed.\n\n  klad import hero.aseprite\n  klad import hero.ase -o sprites/hero.klad\n  klad import sprite.png                      (a picture of 512 px or less a side, at its own size)\n  klad import sprite@8x.png --size 32         (shrunk to 32 px on its longest side)\n  klad import photo.jpg --size 64 --colors 16\n  klad import photo.jpg                       (larger than 512 px: a painting drawing of its size with the picture on a layer)\n  klad import --clipboard                     (the picture copied in another app: pasted.klad here)\n  klad import logo.svg                        (an SVG: a drawing of its size, a vector layer for each of its groups)\n  klad import logo.svg --into art.klad        (its layers added to a drawing you have)\n\nA picture larger than 512 px a side, without --size or --colors, or any picture with --painting, makes a painting drawing of its size: the picture on a layer at the bottom and a paint layer over it. Otherwise a picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.\n\nFrom an Aseprite file, what comes over: image layers as pixel layers with their name, visibility, opacity and blend mode, groups as groups, every cel as a drawing on its frame (linked cels stay linked), the palette with its names, and tags as clips. Frame times become whole frames: a file of 100 ms frames is 10 frames a second, and a frame shown for 300 ms holds for three. Indexed, grey and RGBA files all open; every pixel is bound to its palette colour, and colours a file uses outside its palette are added to it.\n\nWhat does not: tilemap layers, tilesets and slices are left out, a tag that plays backwards or back and forth becomes a clip that plays forwards, and blend modes klad does not have blend as normal. Each of these is said when it happens.\n\nklad export art.klad --aseprite writes a drawing's pixel layers back to an Aseprite file."
     )]
     Import {
         #[arg(required_unless_present = "clipboard")]
@@ -152,6 +154,12 @@ enum Command {
             help = "A picture: a painting drawing with the picture on a layer, whatever its size (pictures larger than 512 px come in that way already)"
         )]
         painting: bool,
+        #[arg(
+            long,
+            value_name = "BUNDLE",
+            help = "An SVG: add its shapes to this drawing, a vector layer for each of its groups, instead of making a drawing"
+        )]
+        into: Option<PathBuf>,
         #[arg(
             long,
             help = "A picture: its longest side in pixels once it is pixel art, 1 to 512 (needed when the picture is larger)"
@@ -762,6 +770,37 @@ enum Command {
         flags: EditFlags,
     },
     #[command(
+        about = "Give shapes the look of another: its fill, outline and opacity",
+        long_about = "Give shapes the look of another shape: its fill (colour or gradient), its outline (colour, width, ends, joins and dashes) and its opacity. One history step.\n\n  klad style art.klad n4 n7 n9        (n7 and n9 take the look of n4)\n\nAlso a style op: {\"op\":\"style\",\"from\":\"n4\",\"ids\":[\"n7\",\"n9\"]}."
+    )]
+    Style {
+        bundle: PathBuf,
+        from: String,
+        #[arg(required = true)]
+        ids: Vec<String>,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
+        about = "Unite, subtract, intersect or exclude shapes into one path",
+        long_about = "Combine two shapes or more of one vector layer into one path, as their outlines overlap: --unite takes all of them, --subtract takes the shapes in front away from the one at the back, --intersect keeps where they all overlap, --exclude where an odd number of them do. The path takes the place, fill, outline and opacity of the shape at the back, and the shapes are gone. Rectangles, ellipses, paths and text combine; groups do not. One history step.\n\n  klad combine art.klad n3 n4 --unite\n  klad combine art.klad n3 n4 n5 --subtract"
+    )]
+    Combine {
+        bundle: PathBuf,
+        #[arg(required = true)]
+        ids: Vec<String>,
+        #[arg(long, group = "how")]
+        unite: bool,
+        #[arg(long, group = "how")]
+        subtract: bool,
+        #[arg(long, group = "how")]
+        intersect: bool,
+        #[arg(long, group = "how")]
+        exclude: bool,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
         about = "Put shapes, strokes or fills in front of or behind the others on their layer",
         long_about = "Put shapes, strokes or fills in front of or behind the others on their layer. Shapes are the nodes of a vector layer (they change places among the shapes of their drawing or group); strokes and fills are <cel>:s<id> and change places among the marks of their drawing, with the erasers and smudges attached to them. --front and --back go all the way; --up and --down go one place, past the next shape, or for marks past the next mark they overlap. Several things keep their order among themselves. One history step.\n\n  klad order art.klad n4 --front\n  klad order art.klad c9:s12 c9:s13 --down"
     )]
@@ -921,7 +960,10 @@ enum Command {
         smooth: Option<String>,
         #[arg(long, value_name = "PX")]
         simplify: Option<f32>,
-        #[arg(long, help = "Turn a rect or ellipse into a path without other changes")]
+        #[arg(
+            long,
+            help = "Turn a rect or ellipse into a path without other changes, or a text into the paths of its letters"
+        )]
         convert: bool,
         #[command(flatten)]
         flags: EditFlags,
@@ -2231,6 +2273,27 @@ enum Command {
         clipboard: bool,
         #[arg(
             long,
+            conflicts_with_all = ["sheet", "gif", "godot", "godot_scene", "godot_rig", "aseprite", "tileset", "clipboard"],
+            help = "An SVG: the vector layers as shapes, each layer a group; paint and pixel layers as pictures in it unless --vectors-only. With --frames, an SVG per frame"
+        )]
+        svg: bool,
+        #[arg(long, requires = "svg", help = "With --svg: leave paint and pixel layers out")]
+        vectors_only: bool,
+        #[arg(
+            long,
+            requires = "svg",
+            help = "With --svg: text as the paths of its letters, for apps without the font"
+        )]
+        outline_text: bool,
+        #[arg(
+            long,
+            requires = "svg",
+            value_delimiter = ',',
+            help = "With --svg: only these shapes (a selection), comma separated ids"
+        )]
+        only: Vec<String>,
+        #[arg(
+            long,
             conflicts_with_all = ["frames", "godot"],
             help = "Sprite sheet and Aseprite JSON: all, a clip or a range like 0-11"
         )]
@@ -2934,6 +2997,7 @@ fn run() -> Result<()> {
             file,
             clipboard,
             painting,
+            into,
             size,
             colors,
             out,
@@ -2947,6 +3011,25 @@ fn run() -> Result<()> {
                 (Some(file), false) => file,
                 (None, false) => return Err(anyhow!("give a file to import, or --clipboard")),
             };
+            if svgin::is_svg(&file) {
+                let quiet = Output {
+                    json: false,
+                    render: false,
+                    scale: None,
+                    frame: 0,
+                    overlay: None,
+                };
+                match into {
+                    Some(bundle) => svgin::into(&file, &bundle, &quiet)?,
+                    None => println!("{}", svgin::import(&file, out)?.display()),
+                }
+                return Ok(());
+            }
+            if into.is_some() {
+                return Err(anyhow!(
+                    "--into takes an SVG; a picture goes on a layer with klad add <bundle> layer image src=<file>"
+                ));
+            }
             let made = match (aseprite::is_file(&file), pixelise::is_picture(&file)) {
                 (true, _) if size.is_some() || colors.is_some() => {
                     return Err(anyhow!(
@@ -3412,6 +3495,32 @@ fn run() -> Result<()> {
             }
             agent::edit(&bundle, &[Op::Detach { ids }], &output(&flags, 0))?;
         }
+        Command::Style {
+            bundle,
+            from,
+            ids,
+            flags,
+        } => agent::edit(&bundle, &[Op::Style { from, ids }], &output(&flags, 0))?,
+        Command::Combine {
+            bundle,
+            ids,
+            unite,
+            subtract,
+            intersect,
+            exclude,
+            flags,
+        } => {
+            let how = match (unite, subtract, intersect, exclude) {
+                (true, ..) => klad_render::combine::Combine::Unite,
+                (_, true, ..) => klad_render::combine::Combine::Subtract,
+                (_, _, true, _) => klad_render::combine::Combine::Intersect,
+                (.., true) => klad_render::combine::Combine::Exclude,
+                _ => return Err(anyhow!("give one of --unite, --subtract, --intersect or --exclude")),
+            };
+            let doc = Bundle::open(&bundle)?.doc;
+            let ops = klad_render::combine::combine(&doc, &ids, how)?;
+            agent::edit(&bundle, &ops, &output(&flags, 0))?;
+        }
         Command::Order {
             bundle,
             ids,
@@ -3519,6 +3628,13 @@ fn run() -> Result<()> {
             convert,
             flags,
         } => {
+            if convert {
+                let doc = Bundle::open(&bundle)?.doc;
+                if let Some(ops) = klad_render::combine::text_to_path(&doc, &node)? {
+                    agent::edit(&bundle, &ops, &output(&flags, 0))?;
+                    return Ok(());
+                }
+            }
             let edits = paths::Edits {
                 move_to,
                 nudge,
@@ -4748,6 +4864,10 @@ fn run() -> Result<()> {
             background,
             references,
             clipboard,
+            svg,
+            vectors_only,
+            outline_text,
+            only,
             sheet,
             frames,
             gif,
@@ -4825,6 +4945,18 @@ fn run() -> Result<()> {
                     invert,
                 };
                 match (&sheet, &frames, &godot) {
+                    _ if svg => svgout::run(
+                        &bundle,
+                        &svgout::Export {
+                            layer: layer.clone(),
+                            frame,
+                            frames: frames.clone(),
+                            vectors_only,
+                            outline_text,
+                            only: only.clone(),
+                            out,
+                        },
+                    ),
                     _ if aseprite => aseprite::export(&bundle, out, variant.as_deref()),
                     _ if tileset.is_some() => {
                         sprites::tileset(&bundle, tileset.clone().flatten().or(out), store, &look, frame)

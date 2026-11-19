@@ -35,6 +35,8 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad set`](#klad-set): Change properties: klad set art.klad n4 fill=#ff0000 transform.rotate=15 (null removes)
 - [`klad recolour`](#klad-recolour): Recolour strokes and fills together: the group moves to the colour and each keeps its own lighter or darker shade
 - [`klad detach`](#klad-detach): Detach eraser, smudge and blender strokes from the marks they are attached to
+- [`klad style`](#klad-style): Give shapes the look of another: its fill, outline and opacity
+- [`klad combine`](#klad-combine): Unite, subtract, intersect or exclude shapes into one path
 - [`klad order`](#klad-order): Put shapes, strokes or fills in front of or behind the others on their layer
 - [`klad align`](#klad-align): Align shapes to each other, the canvas or one shape, or spread them evenly
 - [`klad rm`](#klad-rm): Remove layers, cels or nodes
@@ -111,6 +113,8 @@ Make a klad drawing from an Aseprite file (.aseprite or .ase), or a pixel drawin
   klad import photo.jpg --size 64 --colors 16
   klad import photo.jpg                       (larger than 512 px: a painting drawing of its size with the picture on a layer)
   klad import --clipboard                     (the picture copied in another app: pasted.klad here)
+  klad import logo.svg                        (an SVG: a drawing of its size, a vector layer for each of its groups)
+  klad import logo.svg --into art.klad        (its layers added to a drawing you have)
 
 A picture larger than 512 px a side, without --size or --colors, or any picture with --painting, makes a painting drawing of its size: the picture on a layer at the bottom and a paint layer over it. Otherwise a picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.
 
@@ -132,6 +136,9 @@ Options:
 
       --painting
           A picture: a painting drawing with the picture on a layer, whatever its size (pictures larger than 512 px come in that way already)
+
+      --into <BUNDLE>
+          An SVG: add its shapes to this drawing, a vector layer for each of its groups, instead of making a drawing
 
       --size <SIZE>
           A picture: its longest side in pixels once it is pixel art, 1 to 512 (needed when the picture is larger)
@@ -1363,6 +1370,90 @@ Options:
           Print help (see a summary with '-h')
 ```
 
+## klad style
+
+```text
+Give shapes the look of another shape: its fill (colour or gradient), its outline (colour, width, ends, joins and dashes) and its opacity. One history step.
+
+  klad style art.klad n4 n7 n9        (n7 and n9 take the look of n4)
+
+Also a style op: {"op":"style","from":"n4","ids":["n7","n9"]}.
+
+Usage: klad style [OPTIONS] <BUNDLE> <FROM> <IDS>...
+
+Arguments:
+  <BUNDLE>
+
+
+  <FROM>
+
+
+  <IDS>...
+
+
+Options:
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad combine
+
+```text
+Combine two shapes or more of one vector layer into one path, as their outlines overlap: --unite takes all of them, --subtract takes the shapes in front away from the one at the back, --intersect keeps where they all overlap, --exclude where an odd number of them do. The path takes the place, fill, outline and opacity of the shape at the back, and the shapes are gone. Rectangles, ellipses, paths and text combine; groups do not. One history step.
+
+  klad combine art.klad n3 n4 --unite
+  klad combine art.klad n3 n4 n5 --subtract
+
+Usage: klad combine [OPTIONS] <BUNDLE> <IDS>...
+
+Arguments:
+  <BUNDLE>
+
+
+  <IDS>...
+
+
+Options:
+      --unite
+
+
+      --subtract
+
+
+      --intersect
+
+
+      --exclude
+
+
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
 ## klad order
 
 ```text
@@ -1713,7 +1804,7 @@ Options:
 
 
       --convert
-          Turn a rect or ellipse into a path without other changes
+          Turn a rect or ellipse into a path without other changes, or a text into the paths of its letters
 
       --render
           Render a preview after the edit and print its path
@@ -3879,6 +3970,18 @@ Options:
 
       --clipboard
           Put the picture on the clipboard, for pasting in another app, instead of writing a file
+
+      --svg
+          An SVG: the vector layers as shapes, each layer a group; paint and pixel layers as pictures in it unless --vectors-only. With --frames, an SVG per frame
+
+      --vectors-only
+          With --svg: leave paint and pixel layers out
+
+      --outline-text
+          With --svg: text as the paths of its letters, for apps without the font
+
+      --only <ONLY>
+          With --svg: only these shapes (a selection), comma separated ids
 
       --sheet <SHEET>
           Sprite sheet and Aseprite JSON: all, a clip or a range like 0-11

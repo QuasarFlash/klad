@@ -1,4 +1,4 @@
-_Last updated: 2026-11-17 09:25_
+_Last updated: 2026-11-19 22:30_
 
 # Exporting
 
@@ -13,6 +13,14 @@ Export a picture, numbered frames or a sprite sheet, or send your animation stra
 A message says where the file is, and **Show the folder** in the window opens that folder.
 
 Each window shows only what that export uses. Pictures are transparent unless you tick **keep the background colour**. A sprite sheet comes with a JSON file in Aseprite's layout, with a tag per clip.
+
+## Export an SVG
+
+1. Select **File > Export > SVG…**.
+2. Leave **paint and pixel layers as pictures** on to keep everything, or turn it off for the shapes alone. Tick **text as outlines** when the SVG goes where the font is missing.
+3. Click **Export**.
+
+Each layer becomes a group with its name. With shapes selected, the SVG holds only them. To bring an SVG in, select it in **File > Import picture**, drop it on the window, or open it with **File > Open** as a drawing of its own.
 
 ## Export palette variants
 

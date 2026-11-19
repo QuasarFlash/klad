@@ -683,6 +683,7 @@ pub fn expand(text: &str) -> PathBuf {
 pub fn foreign(path: &Path) -> bool {
     path.is_file()
         && (is_picture(path)
+            || path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"))
             || path
                 .extension()
                 .and_then(|e| e.to_str())

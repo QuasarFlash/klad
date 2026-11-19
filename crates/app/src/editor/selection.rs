@@ -454,6 +454,16 @@ impl Editor {
                                 }
                             }
                         });
+                        if matches!(selected, Selected::Shape(_)) {
+                            self.check(|e| e.outline_row(ui));
+                            if self.group.len() > 1 {
+                                ui.menu_button(icon::UNITE, |ui| {
+                                    super::outline::COMBINE.iter().for_each(|cmd| self.menu_entry(ui, *cmd));
+                                })
+                                .response
+                                .hint("unite, subtract, intersect or exclude the selected shapes into one path");
+                            }
+                        }
                         if !matches!(selected, Selected::Points) {
                             let numbers = ui
                                 .menu_button(icon::NUMBERS, |ui| {

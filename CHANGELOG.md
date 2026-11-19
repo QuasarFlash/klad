@@ -10,6 +10,8 @@
 - **shift** click on a selected shape still adds or removes shapes; **shift** drag on it now moves it level.
 - **More ways to select.** Next to box and loop, the S tool selects with an **ellipse** or a **wand** that takes the area of one colour you click, with a tolerance; **alt** takes away from the selection (`klad lasso --ellipse`, `--at` with `--tolerance`).
 - **Pictures to and from other apps.** A picture copied in another app pastes with **cmd V** onto a new layer, selected, or onto a pixel layer as pixels. **cmd C** also puts a picture of the selection on the clipboard, and **shift cmd C** (Copy merged) what you see. **File > New from clipboard** and **File > Open** of a PNG or JPEG make a drawing of a picture (`klad import --clipboard`, `klad import photo.jpg`, `klad export --clipboard`, `klad add art.klad layer image src=clipboard`).
+- **SVG out and in.** **File > Export > SVG…** writes the frame as an SVG: vector layers as shapes in a group per layer, with gradients and text, paint and pixel layers as pictures unless turned off, text as outlines if asked, or the selected shapes alone. An SVG comes in through **File > Import picture**, a drop or **File > Open** (`klad export --svg`, `--vectors-only`, `--outline-text`, `--only`, `--frames`; `klad import logo.svg`, `--into`).
+- **Shapes.** The outline's width, ends and corners for the selected shapes, in the bar and in layer settings. **alt cmd C** and **alt cmd V** copy a shape's look onto others (`klad style`). **Unite**, **Subtract**, **Intersect** and **Exclude** make one path of several shapes (`klad combine`). **Make it a path** turns text into the paths of its letters (`klad path --convert`).
 
 ## 0.4.0 (2026-11-19)
 

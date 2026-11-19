@@ -689,6 +689,35 @@ impl Editor {
     }
 
     fn import_from(&mut self, path: &std::path::Path) {
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")) {
+            let name = path
+                .file_name()
+                .map_or("the SVG".to_string(), |n| n.to_string_lossy().to_string());
+            self.start_job(crate::jobs::Spec {
+                tag: crate::jobs::Tag::Edit,
+                name: format!("bring in {name}"),
+                exe: std::path::PathBuf::new(),
+                args: vec![
+                    "import".to_string(),
+                    path.to_string_lossy().to_string(),
+                    "--into".to_string(),
+                    self.scene.bundle.root.to_string_lossy().to_string(),
+                ],
+                env: Vec::new(),
+                reruns: 1,
+                summary: |_, err| {
+                    let notes: Vec<&str> = err.lines().filter_map(|l| l.trim().strip_prefix("note: ")).collect();
+                    match notes.first() {
+                        Some(note) => format!("the SVG's shapes are on new vector layers; {note}"),
+                        None => {
+                            "the SVG's shapes are on new vector layers: V moves them, A edits their points".to_string()
+                        }
+                    }
+                },
+                failure: |_, err| super::tweens::failure(err),
+            });
+            return;
+        }
         match std::fs::read(path) {
             Ok(bytes) => self.check(|e| e.import_picture(&bytes, &path.display().to_string())),
             Err(e) => self.say(

@@ -3040,3 +3040,146 @@ fn lasso_takes_an_ellipse_or_a_wand_and_pictures_go_through_the_clipboard() {
     assert!(doc["layers"].as_array().unwrap().iter().any(|l| l["name"] == "pasted"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn shapes_take_a_look_combine_and_go_to_svg_and_back() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-svg-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bundle = dir.join("a.klad");
+    let path = bundle.to_str().unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (
+            String::from_utf8_lossy(&out.stdout).to_string(),
+            String::from_utf8_lossy(&out.stderr).to_string(),
+        )
+    };
+    draw(&["new", path, "--width", "300", "--height", "200"]);
+    let ops = dir.join("shapes.jsonl");
+    std::fs::write(
+        &ops,
+        "{\"op\":\"add\",\"layer\":{\"kind\":\"vector\",\"name\":\"shapes\"}}\n",
+    )
+    .unwrap();
+    draw(&["apply", path, "--file", ops.to_str().unwrap()]);
+    let doc = || -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(bundle.join("doc.json")).unwrap()).unwrap()
+    };
+    let layer = |d: &serde_json::Value, name: &str| -> serde_json::Value {
+        d["layers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["name"] == name)
+            .unwrap()
+            .clone()
+    };
+    let id = layer(&doc(), "shapes")["id"].as_str().unwrap().to_string();
+    std::fs::write(
+        &ops,
+        format!(
+            r##"{{"op":"add","node":{{"id":"a","type":"rect","x":20,"y":20,"w":100,"h":80,"fill":"#ff0000","stroke":{{"paint":"#000000","width":4}}}},"in":"{id}","frame":0}}
+{{"op":"add","node":{{"id":"b","type":"ellipse","cx":120,"cy":60,"rx":40,"ry":40,"fill":"#00ff00"}},"in":"{id}","frame":0}}
+{{"op":"add","node":{{"id":"c","type":"rect","x":200,"y":120,"w":60,"h":50,"fill":"#0000ff"}},"in":"{id}","frame":0}}
+{{"op":"add","node":{{"id":"t","type":"text","text":"Hi","font":"Inter","x":30,"y":130,"size":40,"fill":"#222222"}},"in":"{id}","frame":0}}
+"##
+        ),
+    )
+    .unwrap();
+    draw(&["apply", path, "--file", ops.to_str().unwrap()]);
+    draw(&["style", path, "a", "c"]);
+    let shapes = |d: &serde_json::Value| layer(d, "shapes")["cels"][0]["nodes"].as_array().unwrap().clone();
+    let now = shapes(&doc());
+    assert_eq!(now[2]["fill"], "#ff0000");
+    assert_eq!(now[2]["stroke"]["width"], 4.0, "style copies the outline too");
+
+    let (svg, said) = draw(&["export", path, "--svg"]);
+    assert!(said.contains("paint 1 went in as pictures"), "{said}");
+    let file = dir.join(svg.trim());
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains("<rect id=\"a\"") && text.contains("<ellipse id=\"b\"") && text.contains("<text id=\"t\""));
+    assert!(text.contains("data-name=\"shapes\"") && text.contains("data:image/png;base64,"));
+    draw(&[
+        "export",
+        path,
+        "--svg",
+        "--vectors-only",
+        "--outline-text",
+        "-o",
+        "flat.svg",
+    ]);
+    let flat = std::fs::read_to_string(dir.join("flat.svg")).unwrap();
+    assert!(!flat.contains("<image") && !flat.contains("<text") && flat.contains("<path id=\"t\""));
+    draw(&["export", path, "--svg", "--only", "b", "-o", "alone.svg"]);
+    let (frames, _) = draw(&["export", path, "--svg", "--frames", "all"]);
+    let folder = dir.join(frames.trim());
+    assert!(
+        folder.join("a-0000.svg").is_file(),
+        "an SVG per frame in {}",
+        folder.display()
+    );
+    let alone = std::fs::read_to_string(dir.join("alone.svg")).unwrap();
+    assert!(alone.contains("<ellipse") && !alone.contains("<rect"));
+
+    let (made, _) = draw(&["import", file.to_str().unwrap(), "-o", "back.klad"]);
+    assert!(made.trim().ends_with("back.klad"));
+    let back: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("back.klad").join("doc.json")).unwrap()).unwrap();
+    assert_eq!(back["canvas"]["width"], 300);
+    let names: Vec<&str> = back["layers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|l| l["name"].as_str())
+        .collect();
+    assert_eq!(names, ["paint 1", "shapes"]);
+    let back_shapes = layer(&back, "shapes");
+    let types: Vec<&str> = back_shapes["cels"][0]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|n| n["type"].as_str())
+        .collect();
+    assert_eq!(types, ["rect", "ellipse", "rect", "text"]);
+    let (a, _) = draw(&["export", path, "-o", "a.png"]);
+    let (b, _) = draw(&["export", dir.join("back.klad").to_str().unwrap(), "-o", "b.png"]);
+    let compared = run(&["compare", a.trim(), b.trim(), "--json"]);
+    let said = String::from_utf8_lossy(&compared.stdout).to_string();
+    assert!(compared.status.success(), "{said}");
+    draw(&["import", "flat.svg", "--into", path]);
+    assert_eq!(
+        doc()["layers"].as_array().unwrap().len(),
+        3,
+        "--into adds the SVG's layers"
+    );
+
+    draw(&["combine", path, "a", "b", "--unite"]);
+    let combined = shapes(&doc());
+    assert_eq!(combined.len(), 3);
+    assert_eq!(combined[0]["type"], "path");
+    assert_eq!(
+        combined[0]["fill"], "#ff0000",
+        "the path takes the look of the shape at the back"
+    );
+    let apart = run(&["combine", path, "c", "t", "--intersect"]);
+    assert!(!apart.status.success());
+    assert!(String::from_utf8_lossy(&apart.stderr).contains("nothing is left"));
+    draw(&["path", path, "t", "--convert"]);
+    let letters = shapes(&doc());
+    assert!(letters.iter().all(|n| n["id"] != "t") && letters.iter().any(|n| n["name"] == "Hi"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -464,3 +464,124 @@ fn the_wand_on_a_pixel_layer_takes_the_joined_pixels_of_one_colour_and_leaves_th
     assert_eq!(picked_ids(&h), [marks[1]]);
     let _ = std::fs::remove_dir_all(&path);
 }
+
+#[test]
+fn shapes_take_another_look_combine_into_one_path_and_text_becomes_paths() {
+    let path = sample("shape-tools");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "shapes");
+    let ids = add_rects(&mut h);
+    h.state_mut().tool = Tool::Select;
+    h.state_mut().selection = Some(ids[0].clone());
+    h.run_steps(2);
+    h.state_mut().invoke(Cmd::CopyLook).unwrap();
+    assert!(said(&h).contains("copied the look"), "{}", said(&h));
+    h.state_mut().selection = Some(ids[1].clone());
+    h.run_steps(1);
+    h.state_mut().invoke(Cmd::PasteLook).unwrap();
+    h.run_steps(2);
+    let now = nodes(&h, "shapes");
+    assert_eq!(now[1].fill, now[0].fill, "{}", said(&h));
+
+    let widths = |h: &Harness<'static, Editor>| {
+        nodes(h, "shapes")
+            .iter()
+            .map(|n| n.stroke.as_ref().map(|s| s.width))
+            .collect::<Vec<_>>()
+    };
+    let set = |h: &mut Harness<'static, Editor>, id: &str, props: serde_json::Value| {
+        let props = props.as_object().unwrap().clone();
+        h.state_mut()
+            .apply(vec![klad_core::ops::Op::Set {
+                id: id.to_string(),
+                props,
+            }])
+            .unwrap();
+        h.run_steps(1);
+    };
+    set(
+        &mut h,
+        &ids[2],
+        serde_json::json!({"stroke.width": 6.0, "stroke.paint": "#102030"}),
+    );
+    assert_eq!(
+        widths(&h)[2],
+        Some(6.0),
+        "an outline width on a shape without one gives it an outline"
+    );
+    set(
+        &mut h,
+        &ids[2],
+        serde_json::json!({"stroke.cap": "square", "stroke.join": "bevel"}),
+    );
+    set(&mut h, &ids[2], serde_json::json!({"stroke": null}));
+    assert_eq!(widths(&h)[2], None, "width 0 takes the outline off");
+
+    h.state_mut().selection = Some(ids[1].clone());
+    h.state_mut().group = vec![ids[1].clone(), ids[2].clone()];
+    h.run_steps(1);
+    assert!(
+        h.state().can_run(Cmd::Unite).is_none(),
+        "{:?}",
+        h.state().can_run(Cmd::Unite)
+    );
+    h.state_mut().invoke(Cmd::Unite).unwrap();
+    h.run_steps(2);
+    let after = nodes(&h, "shapes");
+    assert_eq!(after.len(), 2, "two rectangles became one path: {}", said(&h));
+    let made = after
+        .iter()
+        .find(|n| matches!(n.shape, klad_core::doc::Shape::Path { .. }))
+        .unwrap();
+    assert_eq!(h.state().selection, Some(made.id.clone()));
+    assert!(said(&h).contains("united 2 shapes into one path"), "{}", said(&h));
+
+    h.state_mut().group = vec![ids[0].clone(), made.id.clone()];
+    h.state_mut().selection = Some(ids[0].clone());
+    h.run_steps(1);
+    h.state_mut().invoke(Cmd::SubtractShapes).unwrap();
+    h.run_steps(2);
+    assert_eq!(nodes(&h, "shapes").len(), 1, "{}", said(&h));
+    h.state_mut().group.clear();
+    h.run_steps(1);
+    assert!(
+        h.state()
+            .can_run(Cmd::Intersect)
+            .is_some_and(|w| w.contains("two shapes or more"))
+    );
+
+    let root = h.state().scene.bundle.root.clone();
+    klad_render::fonts::bring(&root, "Inter").unwrap();
+    let layer = layer_named(&h, "shapes").id.clone();
+    let text = parse_lines(&format!(
+        r##"{{"op":"add","node":{{"id":"words","type":"text","text":"Ab","font":"Inter.ttf","x":40,"y":200,"size":60,"fill":"#202020"}},"in":"{layer}","frame":0}}"##
+    ))
+    .unwrap();
+    h.state_mut().apply(text).unwrap();
+    h.state_mut().selection = Some("words".into());
+    h.run_steps(2);
+    assert!(h.state().can_run(Cmd::MakePath).is_none());
+    h.state_mut().invoke(Cmd::MakePath).unwrap();
+    h.run_steps(2);
+    let shapes = nodes(&h, "shapes");
+    assert!(shapes.iter().all(|n| n.id != "words"));
+    assert!(
+        shapes
+            .iter()
+            .any(|n| matches!(&n.shape, klad_core::doc::Shape::Path { d } if d.len() > 40)),
+        "the letters are a path: {}",
+        said(&h)
+    );
+
+    h.state_mut().invoke(Cmd::ExportSvg).unwrap();
+    h.run_steps(2);
+    assert!(h.state().windows.export);
+    let form = h.state().export.clone();
+    assert_eq!(form.only.len(), 1, "with a shape selected the SVG holds it alone");
+    let args = super::export::args(&root, &root, 0, &form);
+    assert!(
+        args.contains(&"--svg".to_string()) && args.contains(&"--only".to_string()),
+        "{args:?}"
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}

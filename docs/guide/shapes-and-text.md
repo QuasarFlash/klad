@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 14:00_
+_Last updated: 2026-11-19 22:30_
 
 # Shapes, paths and text
 
@@ -26,6 +26,22 @@ To move several points together, drag a box around them, then drag one of them. 
 
 The two buttons with arrows space three or more shapes evenly. With one shape selected, **Edit > Align** lines it up on the canvas.
 
+## Change the outline
+
+Select shapes with **V**. In the bar under them, drag **outline** or type a width; 0 takes the outline off. **ends** sets flat, round or square ends and sharp, round or cut corners.
+
+## Give shapes the look of another
+
+1. Select the shape whose look you like with **V** and press **alt cmd C**.
+2. Select the other shapes and press **alt cmd V**. They take its fill, outline and opacity.
+
+## Join or cut shapes
+
+1. Select two shapes or more with **V** and shift click.
+2. Pick **Unite**, **Subtract**, **Intersect** or **Exclude** from the bar's combine button, or from **Edit > Shape**.
+
+The result is one path with the look of the shape at the back. **Subtract** cuts the shapes in front out of it.
+
 ## Fill a shape with a gradient
 
 Select the shape with **V**, then in layer settings switch its fill to **linear** or **radial** and edit the stops.
@@ -33,6 +49,8 @@ Select the shape with **V**, then in layer settings switch its fill to **linear*
 ## Write text
 
 Press **T**, click and type, and press **Esc** to finish. The font picker also finds any family on Google Fonts, and the font is kept inside the drawing. On a pixel layer the text becomes pixels when you finish it (see [pixel art](pixel-art.md)).
+
+To turn text into shapes, select it and choose **Edit > Points > Make it a path**. Its letters become a path you can edit with **A**.
 
 ## Repeat a shape
 

@@ -22,6 +22,7 @@ mod make;
 mod maps;
 mod marquee;
 mod options;
+mod outline;
 mod paintover;
 mod panels;
 mod pins;
@@ -968,6 +969,7 @@ pub(crate) struct Editor {
     brush_last: Option<(String, Vec2)>,
     typed: Option<typed::Typed>,
     own_picture: Option<clip::Own>,
+    look_from: Option<String>,
     pub(crate) pixel_filled: bool,
     pub(crate) pixel_diagonal: bool,
     pub(crate) pixel_fill_all: bool,
@@ -1192,6 +1194,7 @@ impl Editor {
             brush_last: None,
             typed: None,
             own_picture: None,
+            look_from: None,
             pixel_filled: false,
             pixel_diagonal: false,
             pixel_fill_all: false,
@@ -5610,6 +5613,7 @@ impl Editor {
                 props.push(("blur".into(), json!(v)));
             }
         });
+        ui.horizontal(|ui| self.check(|e| e.outline_row(ui)));
         let mut remove = false;
         ui.horizontal(|ui| {
             let mut visible = node.visible;

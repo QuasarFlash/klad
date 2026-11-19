@@ -58,6 +58,10 @@ pub mod icon {
     pub const CUT: &str = "\u{EAE0}";
     pub const TO_FRONT: &str = "\u{E066}";
     pub const TO_BACK: &str = "\u{E05C}";
+    pub const UNITE: &str = "\u{E87E}";
+    pub const SUBTRACT: &str = "\u{EBD6}";
+    pub const INTERSECT: &str = "\u{E2D2}";
+    pub const EXCLUDE: &str = "\u{E882}";
     pub const PASTE: &str = "\u{E198}";
     pub const SELECT_ALL: &str = "\u{E746}";
     pub const LASSO: &str = "\u{EDC6}";
