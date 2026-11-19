@@ -126,7 +126,8 @@ pub fn shifted(targets: &Targets, t: &mut MarkTransform) -> Result<Shifted> {
     };
     t.pivot = Some(pivot);
     let affine = t.affine(pivot);
-    let even = (t.sx - t.sy).abs() < 1e-6;
+    let mirror = t.sx * t.sy < 0.0 && (t.sx.abs() - t.sy.abs()).abs() < 1e-6;
+    let even = (t.sx - t.sy).abs() < 1e-6 || mirror;
     let moving = t.rotate == 0.0 && t.sx == 1.0 && t.sy == 1.0;
     let keyed = |n: &Node| {
         ["x", "y", "rotate", "sx", "sy", "scale"]
@@ -150,7 +151,15 @@ pub fn shifted(targets: &Targets, t: &mut MarkTransform) -> Result<Shifted> {
                     targets.name
                 );
             }
-            Ok((n.id.clone(), moved_node(n, affine, t.sx, t.rotate)?))
+            let mut moved = moved_node(n, affine, t.sx.abs(), t.rotate)?;
+            if mirror {
+                match t.sx < 0.0 {
+                    true => moved.sx = -moved.sx,
+                    false => moved.sy = -moved.sy,
+                }
+                moved.rotate = 2.0 * t.rotate - moved.rotate;
+            }
+            Ok((n.id.clone(), moved))
         })
         .collect::<Result<_>>()?;
     let back = invert(affine).ok_or_else(|| anyhow!("that transform flattens the layer to a line"))?;

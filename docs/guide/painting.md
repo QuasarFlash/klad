@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 21:30_
+_Last updated: 2026-11-19 23:05_
 
 # Painting
 
@@ -35,6 +35,14 @@ Paint with **Smudge**, **Wet round** or **Blender** over colours that are alread
 1. Paint with **Oil** or **Loaded oil**.
 2. In layer settings, pick **relief** from **add an effect**.
 3. Drag on the light dial towards where the light comes from.
+
+## Change the canvas
+
+**Edit > Canvas** holds what changes the whole drawing; each is one step that **cmd Z** takes back.
+
+- **Canvas size…** opens a window: type the new size, click where the drawing should stay and click **change the canvas size**. The same window scales the whole drawing and sets the paper colour.
+- **Crop** (**C**): drag the area to keep and press **Return**. **Crop to selection** and **Trim** crop to the selection or to what is drawn.
+- **Turn** and **Flip** turn or mirror every layer at once.
 
 ## Paint symmetrically
 

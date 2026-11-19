@@ -699,3 +699,56 @@ fn a_right_click_on_a_layer_opens_its_menu_and_layers_merge_move_and_step_from_t
     assert!(!layer_named(&h, "rim").id.is_empty());
     let _ = std::fs::remove_dir_all(&path);
 }
+
+#[test]
+fn the_canvas_turns_crops_to_a_drag_and_takes_a_size_and_a_paper_from_its_window() {
+    use egui_kittest::kittest::{NodeT, Queryable};
+    let path = sample("canvas");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    let size = |h: &Harness<'static, Editor>| h.state().scene.size();
+    assert_eq!(size(&h), (512, 384));
+    h.state_mut().invoke(Cmd::CanvasRight).unwrap();
+    h.run_steps(4);
+    assert_eq!(size(&h), (384, 512), "{}", said(&h));
+    assert!(said(&h).contains("turned the drawing right"), "{}", said(&h));
+    chord(&mut h, Modifiers::COMMAND, Key::Z);
+    h.run_steps(4);
+    assert_eq!(size(&h), (512, 384), "one cmd Z turns it back");
+
+    h.key_press(Key::C);
+    h.run_steps(2);
+    assert!(h.state().cropping.is_some(), "C starts the crop");
+    let (a, b) = (canvas_at(&h, 50.0, 40.0), canvas_at(&h, 350.0, 240.0));
+    drag(&mut h, a, b);
+    h.key_press(Key::Enter);
+    h.run_steps(4);
+    let (w, hh) = size(&h);
+    assert!(
+        (w as i32 - 300).abs() <= 2 && (hh as i32 - 200).abs() <= 2,
+        "cropped to the drag: {w}x{hh} {}",
+        said(&h)
+    );
+    assert!(h.state().cropping.is_none());
+
+    h.state_mut().invoke(Cmd::Trim).unwrap();
+    h.run_steps(4);
+    assert!(said(&h).contains("trimmed to what is drawn"), "{}", said(&h));
+
+    h.state_mut().invoke(Cmd::CanvasWindow).unwrap();
+    h.run_steps(3);
+    h.state_mut().canvas_form.width = 400;
+    h.state_mut().canvas_form.height = 300;
+    h.run_steps(1);
+    h.get_by_label("change the canvas size").click();
+    h.run_steps(4);
+    assert_eq!(size(&h), (400, 300), "{}", said(&h));
+    let paper = h
+        .query_all_by_label_contains("use #")
+        .next()
+        .map(|n| n.accesskit_node().label().unwrap_or_default());
+    assert!(paper.is_some());
+    h.get_by_label(&paper.unwrap()).click();
+    h.run_steps(3);
+    assert!(h.state().scene.bundle.doc.canvas.background.is_some(), "{}", said(&h));
+    let _ = std::fs::remove_dir_all(&path);
+}

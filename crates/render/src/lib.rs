@@ -14,6 +14,7 @@ pub mod onion;
 pub mod overlay;
 pub mod pixelise;
 pub mod pngwrite;
+pub mod reshape;
 pub mod shaders;
 pub mod shapes;
 pub mod sheet;

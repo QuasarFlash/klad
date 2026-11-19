@@ -47,6 +47,15 @@ pub enum Cmd {
     CopyMerged,
     Cut,
     Paste,
+    CanvasWindow,
+    CropTool,
+    CropToSelection,
+    Trim,
+    CanvasRight,
+    CanvasLeft,
+    Canvas180,
+    CanvasFlipLevel,
+    CanvasFlipUpright,
     Ungroup,
     MergeDown,
     MergeSelected,
@@ -567,7 +576,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 240] = [
+    pub const ALL: [Cmd; 249] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -611,6 +620,15 @@ impl Cmd {
         Cmd::CopyMerged,
         Cmd::Cut,
         Cmd::Paste,
+        Cmd::CanvasWindow,
+        Cmd::CropTool,
+        Cmd::CropToSelection,
+        Cmd::Trim,
+        Cmd::CanvasRight,
+        Cmd::CanvasLeft,
+        Cmd::Canvas180,
+        Cmd::CanvasFlipLevel,
+        Cmd::CanvasFlipUpright,
         Cmd::Ungroup,
         Cmd::MergeDown,
         Cmd::MergeSelected,
@@ -1189,6 +1207,87 @@ impl Cmd {
                 T::Press(const { &[cmd(Key::X)] }),
                 R::No,
                 "take the selected strokes or shapes away and keep them for cmd V, in one undo step; while the timeline is in use, the selected frames",
+            ),
+            Cmd::CanvasWindow => spec(
+                "canvas.window",
+                "canvas size, scale and paper",
+                icon::SIZE,
+                G::Edit,
+                T::None,
+                R::No,
+                "a window for the canvas: its size around the drawing with an anchor, scaling the whole drawing, turns and flips, the paper colour",
+            ),
+            Cmd::CropTool => spec(
+                "canvas.crop",
+                "crop",
+                icon::CROP,
+                G::Edit,
+                T::Press(const { &[plain(Key::C)] }),
+                R::No,
+                "drag the area of the drawing to keep, then Return; Esc leaves it",
+            ),
+            Cmd::CropToSelection => spec(
+                "canvas.crop-selection",
+                "crop to the selection",
+                icon::CROP,
+                G::Edit,
+                T::None,
+                R::No,
+                "the canvas becomes the selection's box",
+            ),
+            Cmd::Trim => spec(
+                "canvas.trim",
+                "trim to what is drawn",
+                icon::CROP,
+                G::Edit,
+                T::None,
+                R::No,
+                "crop the canvas to what the visible layers hold",
+            ),
+            Cmd::CanvasRight => spec(
+                "canvas.turn-right",
+                "turn the drawing right",
+                icon::TURN,
+                G::Edit,
+                T::None,
+                R::No,
+                "the whole drawing and its canvas, a quarter turn clockwise",
+            ),
+            Cmd::CanvasLeft => spec(
+                "canvas.turn-left",
+                "turn the drawing left",
+                icon::TURN_LEFT,
+                G::Edit,
+                T::None,
+                R::No,
+                "the whole drawing and its canvas, a quarter turn anticlockwise",
+            ),
+            Cmd::Canvas180 => spec(
+                "canvas.turn-180",
+                "turn the drawing round",
+                icon::TURN,
+                G::Edit,
+                T::None,
+                R::No,
+                "the whole drawing, a half turn",
+            ),
+            Cmd::CanvasFlipLevel => spec(
+                "canvas.flip-level",
+                "flip the drawing left to right",
+                icon::FLIP_H,
+                G::Edit,
+                T::None,
+                R::No,
+                "mirror the whole drawing, every layer",
+            ),
+            Cmd::CanvasFlipUpright => spec(
+                "canvas.flip-upright",
+                "flip the drawing upside down",
+                icon::FLIP_V,
+                G::Edit,
+                T::None,
+                R::No,
+                "mirror the whole drawing top to bottom",
             ),
             Cmd::Ungroup => spec(
                 "layer.ungroup",
@@ -3030,6 +3129,15 @@ impl Cmd {
             Cmd::Copy => "Copy",
             Cmd::CopyMerged => "Copy merged",
             Cmd::Cut => "Cut",
+            Cmd::CanvasWindow => "Canvas size…",
+            Cmd::CropTool => "Crop",
+            Cmd::CropToSelection => "Crop to selection",
+            Cmd::Trim => "Trim",
+            Cmd::CanvasRight => "Turn right",
+            Cmd::CanvasLeft => "Turn left",
+            Cmd::Canvas180 => "Turn 180°",
+            Cmd::CanvasFlipLevel => "Flip horizontally",
+            Cmd::CanvasFlipUpright => "Flip vertically",
             Cmd::Ungroup => "Ungroup",
             Cmd::MergeDown => "Merge down",
             Cmd::MergeSelected => "Merge selected",
@@ -3322,6 +3430,21 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::CutLasso),
             Run(Cmd::PickAllLayers),
             Line,
+            Sub(
+                "Canvas",
+                &[
+                    Run(Cmd::CanvasWindow),
+                    Run(Cmd::CropTool),
+                    Run(Cmd::CropToSelection),
+                    Run(Cmd::Trim),
+                    Line,
+                    Run(Cmd::CanvasRight),
+                    Run(Cmd::CanvasLeft),
+                    Run(Cmd::Canvas180),
+                    Run(Cmd::CanvasFlipLevel),
+                    Run(Cmd::CanvasFlipUpright),
+                ],
+            ),
             Sub(
                 "Arrange",
                 &[
@@ -4089,7 +4212,9 @@ mod tests {
         assert!(rank("help", &[])[..2].contains(&Cmd::FirstSteps));
         assert!(rank("png", &[]).contains(&Cmd::Export));
         assert_eq!(first("merge"), Some(Cmd::MergeDown));
-        ["crop", "canvas size", "lete", "elect", "dslct"]
+        assert_eq!(first("crop"), Some(Cmd::CropTool));
+        assert_eq!(first("canvas size"), Some(Cmd::CanvasWindow));
+        ["lete", "elect", "dslct"]
             .into_iter()
             .for_each(|q| assert_eq!(rank(q, &[]), Vec::<Cmd>::new(), "{q} finds nothing"));
     }

@@ -3352,3 +3352,157 @@ fn layers_merge_frame_by_frame_without_changing_the_picture_and_groups_come_apar
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn the_canvas_grows_crops_scales_turns_and_flips_with_everything_on_it() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-canvas-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let difference = |a: &str, b: &str| {
+        let v: serde_json::Value = serde_json::from_slice(&run(&["compare", a, b, "--json"]).stdout).unwrap();
+        v["difference"].as_f64().unwrap()
+    };
+    let size = |path: &str| {
+        let d: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(path).join("doc.json")).unwrap()).unwrap();
+        (
+            d["canvas"]["width"].as_u64().unwrap(),
+            d["canvas"]["height"].as_u64().unwrap(),
+        )
+    };
+    let round_trip = |path: &str, steps: &[&[&str]]| {
+        draw(&["export", path, "-o", "before.png"]);
+        steps.iter().for_each(|step| {
+            let mut args = vec!["canvas", path];
+            args.extend_from_slice(step);
+            draw(&args);
+        });
+        draw(&["export", path, "-o", "after.png"]);
+        difference(
+            &dir.join("after.png").to_string_lossy(),
+            &dir.join("before.png").to_string_lossy(),
+        )
+    };
+
+    draw(&["new", "paint.klad", "--width", "300", "--height", "200"]);
+    draw(&[
+        "stroke",
+        "paint.klad",
+        "l1",
+        "--line",
+        "20,30,200,150",
+        "--size",
+        "10",
+        "--color",
+        "#aa2233",
+    ]);
+    draw(&["add", "paint.klad", "layer", "vector", "name=shapes", "id=vec"]);
+    std::fs::write(
+        dir.join("rect.jsonl"),
+        r##"{"op":"add","node":{"type":"rect","x":200,"y":20,"w":60,"h":40,"fill":"#2244aa","transform":{"rotate":20}},"in":"vec","frame":0}"##,
+    )
+    .unwrap();
+    draw(&["apply", "paint.klad", "--file", "rect.jsonl"]);
+    let back = round_trip(
+        "paint.klad",
+        &[
+            &["--turn", "90"],
+            &["--turn", "-90"],
+            &["--flip", "h"],
+            &["--flip", "h"],
+            &["--turn", "180"],
+            &["--turn", "180"],
+            &["--size", "400,260", "--anchor", "bottom-right"],
+            &["--crop", "100,60,300,200"],
+            &["--resize", "2"],
+            &["--resize", "0.5"],
+        ],
+    );
+    assert!(
+        back < 0.5,
+        "turns, flips, sizes, crops and scales undo each other: {back}"
+    );
+    draw(&["canvas", "paint.klad", "--turn", "90"]);
+    assert_eq!(size("paint.klad"), (200, 300));
+    draw(&["canvas", "paint.klad", "--trim", "--paper", "#f4efe6"]);
+    let (w, h) = size("paint.klad");
+    assert!(w < 200 && h < 300, "trimmed to what is drawn: {w}x{h}");
+    assert!(draw(&["canvas", "paint.klad"]).contains("background #f4efe6"));
+
+    draw(&["new", "sprite.klad", "--pixel", "32x32", "--tile", "16"]);
+    draw(&[
+        "pixel",
+        "sprite.klad",
+        "l1",
+        "--color",
+        "#2b2d42",
+        "--cells",
+        "3-12,4 3,5-9",
+    ]);
+    let refused = run(&["canvas", "sprite.klad", "--size", "40,32"]);
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("whole numbers of tiles"));
+    let refused = run(&["canvas", "sprite.klad", "--resize", "1.5"]);
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("whole numbers only"));
+    let back = round_trip(
+        "sprite.klad",
+        &[
+            &["--turn", "90"],
+            &["--turn", "-90"],
+            &["--size", "48,32", "--anchor", "left"],
+            &["--crop", "0,0,32,32"],
+            &["--flip", "v"],
+            &["--flip", "v"],
+        ],
+    );
+    assert!(back < 0.5, "a pixel sprite keeps its pixels: {back}");
+    draw(&["canvas", "sprite.klad", "--resize", "2"]);
+    assert_eq!(size("sprite.klad"), (64, 64));
+
+    draw(&["new", "rig.klad", "--width", "400", "--height", "400", "--frames", "6"]);
+    draw(&[
+        "stroke",
+        "rig.klad",
+        "l1",
+        "--path",
+        "M100 100 L100 200 L100 300",
+        "--size",
+        "6",
+    ]);
+    draw(&["add", "rig.klad", "layer", "bones", "name=bones"]);
+    draw(&[
+        "bone",
+        "rig.klad",
+        "bones",
+        "--chain",
+        "thigh,shin",
+        "--through",
+        "100,100 100,200 100,300",
+    ]);
+    draw(&["attach", "rig.klad", "l1", "--bend", "--skeleton", "bones"]);
+    draw(&["canvas", "rig.klad", "--size", "600,400", "--anchor", "right"]);
+    draw(&[
+        "pose", "rig.klad", "bones", "--from", "0", "--to", "3", "--bone", "shin=40",
+    ]);
+    let bones: serde_json::Value = serde_json::from_str(&draw(&["bones", "rig.klad", "--json"])).unwrap();
+    let text = bones.to_string();
+    assert!(text.contains("300"), "the bones moved with the canvas: {text}");
+    draw(&["export", "rig.klad", "--frame", "3", "-o", "posed.png"]);
+    let _ = std::fs::remove_dir_all(&dir);
+}

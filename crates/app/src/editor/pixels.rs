@@ -146,12 +146,16 @@ impl Editor {
             self.apply(vec![klad_core::ops::Op::Canvas {
                 wrap: None,
                 tile: Some(Some(self.tile_size)),
+                size: None,
+                background: None,
             }])?;
         }
         if clear {
             self.apply(vec![klad_core::ops::Op::Canvas {
                 wrap: None,
                 tile: Some(None),
+                size: None,
+                background: None,
             }])?;
         }
         Ok(())

@@ -3,6 +3,7 @@ mod between;
 mod bones;
 mod brushwin;
 mod buffer;
+mod canvas;
 mod cells;
 mod checks;
 mod clip;
@@ -794,6 +795,7 @@ struct Windows {
     font: bool,
     paintover: bool,
     compare: bool,
+    canvas: bool,
 }
 
 #[derive(Default)]
@@ -971,6 +973,8 @@ pub(crate) struct Editor {
     typed: Option<typed::Typed>,
     own_picture: Option<clip::Own>,
     look_from: Option<String>,
+    canvas_form: canvas::Form,
+    cropping: Option<canvas::Crop>,
     pub(crate) pixel_filled: bool,
     pub(crate) pixel_diagonal: bool,
     pub(crate) pixel_fill_all: bool,
@@ -1196,6 +1200,8 @@ impl Editor {
             typed: None,
             own_picture: None,
             look_from: None,
+            canvas_form: canvas::Form::default(),
+            cropping: None,
             pixel_filled: false,
             pixel_diagonal: false,
             pixel_fill_all: false,
@@ -3502,6 +3508,10 @@ impl Editor {
             && ctx
                 .layer_id_at(e.pos)
                 .is_none_or(|l| l.order == egui::Order::Background);
+        if self.cropping.is_some() {
+            self.crop_pen(e.phase, c, on_canvas);
+            return Ok(());
+        }
         let picking = self.modifiers.alt && !self.modifiers.command && matches!(self.tool, Tool::Brush | Tool::Fill);
         let sizing_now = self.modifiers.alt && self.modifiers.command && self.tool == Tool::Brush;
         match (e.phase, self.sizing) {
@@ -4320,6 +4330,8 @@ impl Editor {
         self.pen_keys(ui)?;
         self.bone_keys(ui);
         self.shift_keys(ui)?;
+        self.crop_keys(ui)?;
+        self.fit_buffers();
         self.command_keys(ui)?;
         let ctx = ui.ctx().clone();
         let was_focused = self.focused;
@@ -4683,6 +4695,7 @@ impl Editor {
             painter.circle_stroke(knob, HANDLE / 2.0 + 1.0, egui::Stroke::new(1.0, accent));
         }
         self.draw_pins(&painter, |c| self.screen(view, rect, c));
+        self.crop_overlay(&painter, |c| self.screen(view, rect, c));
         self.draw_checks(&painter, |c| self.screen(view, rect, c));
         if let Some(lasso) = self.lasso.as_ref().filter(|l| l.far) {
             let line: Vec<Pos2> = self

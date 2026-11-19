@@ -1006,6 +1006,14 @@ pub fn summarize(ops: &[Op]) -> String {
             ),
             Op::Timeline { origin: Some(_), .. } => "timeline origin".to_string(),
             Op::Timeline { .. } => "timeline".to_string(),
+            Op::Canvas { size: Some([w, h]), .. } => format!("the canvas, {w} by {h} px"),
+            Op::Canvas {
+                background: Some(Some(hex)),
+                ..
+            } => format!("the paper, {hex}"),
+            Op::Canvas {
+                background: Some(None), ..
+            } => "a see-through paper".to_string(),
             Op::Canvas {
                 tile: Some(Some([w, h])),
                 ..

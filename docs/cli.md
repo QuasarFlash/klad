@@ -288,7 +288,17 @@ A drawing can also be cut into tiles of one size, a tileset: --tile 16 (or 16x24
   klad pixels tiles.klad l1 --tile 2,0 --plain
   klad export tiles.klad --tileset ../game/art
 
-As an op: {"op":"canvas","wrap":true}, {"op":"canvas","tile":16}, {"op":"canvas","tile":[16,24]}, {"op":"canvas","tile":null}.
+The whole drawing, with everything tied to its canvas (strokes, shapes, pixels, bones and their weights, light maps and lights, the Godot origin), one history step each:
+
+  klad canvas art.klad --size 2400,1600 --anchor top-left   (a bigger or smaller canvas; nothing scaled)
+  klad canvas art.klad --crop 100,80,1200,900
+  klad canvas art.klad --trim                                 (to what is drawn)
+  klad canvas art.klad --resize 0.5                           (a pixel drawing by whole numbers)
+  klad canvas art.klad --turn 90                              (-90, 180)
+  klad canvas art.klad --flip h                               (v)
+  klad canvas art.klad --paper '#f4efe6'                      (none: see-through)
+
+As an op: {"op":"canvas","wrap":true}, {"op":"canvas","tile":16}, {"op":"canvas","tile":[16,24]}, {"op":"canvas","tile":null}; {"op":"canvas","size":[w,h]} and {"op":"canvas","background":"#f4efe6"} set the size alone (without moving anything) and the paper.
 
 Usage: klad canvas [OPTIONS] <BUNDLE>
 
@@ -304,6 +314,36 @@ Options:
 
       --tile <SIZE>
           Cut the drawing into tiles of this size, 16 or 16x24 (off: no tiles); the canvas has to be a whole number of tiles each way
+
+      --size <W,H>
+          A bigger or smaller canvas around the drawing, kept in place by --anchor; nothing is scaled
+
+      --anchor <ANCHOR>
+          With --size: where the drawing stays: top-left, top, top-right, left, center, right, bottom-left, bottom, bottom-right
+
+          [default: center]
+
+      --crop <X,Y,W,H>
+          Keep only this area: it becomes the canvas
+
+      --trim
+          Crop to what is drawn on the visible layers
+
+      --resize <FACTOR>
+          Scale the whole drawing, 2 or 0.5 (a pixel drawing by whole numbers): strokes and shapes stay sharp
+
+      --turn <TURN>
+          Turn the whole drawing: 90 (right), -90 (left) or 180
+
+          [possible values: 90, -90, 180]
+
+      --flip <FLIP>
+          Mirror the whole drawing: h (left to right) or v (upside down)
+
+          [possible values: h, v]
+
+      --paper <COLOUR>
+          The paper colour, #f4efe6, or none for a see-through paper
 
       --render
           Render a preview after the edit and print its path

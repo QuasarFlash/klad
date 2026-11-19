@@ -265,7 +265,7 @@ enum Command {
     },
     #[command(
         about = "The canvas: its size and background, whether it wraps at its edges, and the size of its tiles",
-        long_about = "The canvas: its size and background, and whether it wraps at its edges. On a canvas that wraps, a tile, pixels drawn past an edge come back in on the other side, and fills and outlines go round the edges, so the drawing repeats without a seam. klad render --repeat 3 shows it repeated.\n\n  klad canvas tile.klad\n  klad canvas tile.klad --wrap on\n\nA drawing can also be cut into tiles of one size, a tileset: --tile 16 (or 16x24) sets the size, which the canvas has to be a whole number of each way, and --tile off takes it away. klad pixels and klad pixel --grid then take --tile column,row to read and draw one tile at a time, the editor shows the tile lines, and klad export --tileset writes a Godot TileSet.\n\n  klad canvas tiles.klad --tile 16\n  klad pixels tiles.klad l1 --tile 2,0 --plain\n  klad export tiles.klad --tileset ../game/art\n\nAs an op: {\"op\":\"canvas\",\"wrap\":true}, {\"op\":\"canvas\",\"tile\":16}, {\"op\":\"canvas\",\"tile\":[16,24]}, {\"op\":\"canvas\",\"tile\":null}."
+        long_about = "The canvas: its size and background, and whether it wraps at its edges. On a canvas that wraps, a tile, pixels drawn past an edge come back in on the other side, and fills and outlines go round the edges, so the drawing repeats without a seam. klad render --repeat 3 shows it repeated.\n\n  klad canvas tile.klad\n  klad canvas tile.klad --wrap on\n\nA drawing can also be cut into tiles of one size, a tileset: --tile 16 (or 16x24) sets the size, which the canvas has to be a whole number of each way, and --tile off takes it away. klad pixels and klad pixel --grid then take --tile column,row to read and draw one tile at a time, the editor shows the tile lines, and klad export --tileset writes a Godot TileSet.\n\n  klad canvas tiles.klad --tile 16\n  klad pixels tiles.klad l1 --tile 2,0 --plain\n  klad export tiles.klad --tileset ../game/art\n\nThe whole drawing, with everything tied to its canvas (strokes, shapes, pixels, bones and their weights, light maps and lights, the Godot origin), one history step each:\n\n  klad canvas art.klad --size 2400,1600 --anchor top-left   (a bigger or smaller canvas; nothing scaled)\n  klad canvas art.klad --crop 100,80,1200,900\n  klad canvas art.klad --trim                                 (to what is drawn)\n  klad canvas art.klad --resize 0.5                           (a pixel drawing by whole numbers)\n  klad canvas art.klad --turn 90                              (-90, 180)\n  klad canvas art.klad --flip h                               (v)\n  klad canvas art.klad --paper '#f4efe6'                      (none: see-through)\n\nAs an op: {\"op\":\"canvas\",\"wrap\":true}, {\"op\":\"canvas\",\"tile\":16}, {\"op\":\"canvas\",\"tile\":[16,24]}, {\"op\":\"canvas\",\"tile\":null}; {\"op\":\"canvas\",\"size\":[w,h]} and {\"op\":\"canvas\",\"background\":\"#f4efe6\"} set the size alone (without moving anything) and the paper."
     )]
     Canvas {
         bundle: PathBuf,
@@ -277,6 +277,31 @@ enum Command {
             help = "Cut the drawing into tiles of this size, 16 or 16x24 (off: no tiles); the canvas has to be a whole number of tiles each way"
         )]
         tile: Option<String>,
+        #[arg(long, value_name = "W,H", conflicts_with_all = ["crop", "trim", "resize", "turn", "flip"], help = "A bigger or smaller canvas around the drawing, kept in place by --anchor; nothing is scaled")]
+        size: Option<String>,
+        #[arg(
+            long,
+            default_value = "center",
+            requires = "size",
+            help = "With --size: where the drawing stays: top-left, top, top-right, left, center, right, bottom-left, bottom, bottom-right"
+        )]
+        anchor: String,
+        #[arg(long, value_name = "X,Y,W,H", conflicts_with_all = ["trim", "resize", "turn", "flip"], help = "Keep only this area: it becomes the canvas")]
+        crop: Option<String>,
+        #[arg(long, conflicts_with_all = ["resize", "turn", "flip"], help = "Crop to what is drawn on the visible layers")]
+        trim: bool,
+        #[arg(long, value_name = "FACTOR", conflicts_with_all = ["turn", "flip"], help = "Scale the whole drawing, 2 or 0.5 (a pixel drawing by whole numbers): strokes and shapes stay sharp")]
+        resize: Option<f32>,
+        #[arg(long, allow_hyphen_values = true, value_parser = ["90", "-90", "180"], conflicts_with = "flip", help = "Turn the whole drawing: 90 (right), -90 (left) or 180")]
+        turn: Option<String>,
+        #[arg(long, value_parser = ["h", "v"], help = "Mirror the whole drawing: h (left to right) or v (upside down)")]
+        flip: Option<String>,
+        #[arg(
+            long,
+            value_name = "COLOUR",
+            help = "The paper colour, #f4efe6, or none for a see-through paper"
+        )]
+        paper: Option<String>,
         #[command(flatten)]
         flags: EditFlags,
     },
@@ -3149,6 +3174,8 @@ fn run() -> Result<()> {
                 let applied = made.apply(&[Op::Canvas {
                     wrap: wrap.then_some(true),
                     tile: cut,
+                    size: None,
+                    background: None,
                 }]);
                 if let Err(error) = applied {
                     let _ = std::fs::remove_dir_all(&bundle);
@@ -3162,7 +3189,97 @@ fn run() -> Result<()> {
             bundle,
             wrap,
             tile,
+            size,
+            anchor,
+            crop,
+            trim,
+            resize,
+            turn,
+            flip,
+            paper,
             flags,
+        } if size.is_some()
+            || crop.is_some()
+            || trim
+            || resize.is_some()
+            || turn.is_some()
+            || flip.is_some()
+            || paper.is_some() =>
+        {
+            let opened = Bundle::open(&bundle)?;
+            use klad_render::reshape::Reshape;
+            let numbers = |text: &str, n: usize, what: &str| -> Result<Vec<f32>> {
+                let v = parse_numbers(text)?;
+                match v.len() == n {
+                    true => Ok(v),
+                    false => Err(anyhow!("{what} takes {n} numbers")),
+                }
+            };
+            let shape = match (size, crop, trim, resize, turn, flip) {
+                (Some(s), ..) => {
+                    let v = numbers(&s, 2, "--size")?;
+                    Some(Reshape::Size {
+                        width: v[0] as u32,
+                        height: v[1] as u32,
+                        anchor: klad_render::reshape::anchor(&anchor)?,
+                    })
+                }
+                (_, Some(c), ..) => {
+                    let v = numbers(&c, 4, "--crop")?;
+                    Some(Reshape::Crop {
+                        x: v[0],
+                        y: v[1],
+                        width: v[2] as u32,
+                        height: v[3] as u32,
+                    })
+                }
+                (_, _, true, ..) => {
+                    let Some([x0, y0, x1, y1]) = klad_render::reshape::drawn(&opened)? else {
+                        return Err(anyhow!("nothing is drawn yet: there is nothing to trim to"));
+                    };
+                    let pixel = opened.doc.pixel_art();
+                    let (lo_x, lo_y) = if pixel {
+                        (x0.round(), y0.round())
+                    } else {
+                        (x0.floor(), y0.floor())
+                    };
+                    let (hi_x, hi_y) = if pixel {
+                        (x1.round(), y1.round())
+                    } else {
+                        (x1.ceil(), y1.ceil())
+                    };
+                    Some(Reshape::Crop {
+                        x: lo_x,
+                        y: lo_y,
+                        width: (hi_x - lo_x) as u32,
+                        height: (hi_y - lo_y) as u32,
+                    })
+                }
+                (.., Some(k), _, _) => Some(Reshape::Scale { sx: k, sy: k }),
+                (.., Some(t), _) => Some(Reshape::Turn(t.parse::<i32>()?)),
+                (.., Some(f)) => Some(Reshape::Flip { level: f == "h" }),
+                _ => None,
+            };
+            let mut ops = match shape {
+                Some(r) => klad_render::reshape::ops(&opened, &r)?,
+                None => Vec::new(),
+            };
+            if paper.is_some() || wrap.is_some() || tile.is_some() {
+                ops.push(Op::Canvas {
+                    wrap: wrap.map(|w| w == "on"),
+                    tile: tile.as_deref().map(tile_size).transpose()?,
+                    size: None,
+                    background: paper.map(|p| (p != "none").then_some(p)),
+                });
+            }
+            agent::edit(&bundle, &ops, &output(&flags, 0))?;
+        }
+        Command::Canvas {
+            bundle,
+            wrap,
+            tile,
+            flags,
+            ..
         } => match (wrap, tile) {
             (None, None) => {
                 let canvas = Bundle::open(&bundle)?.doc.canvas;
@@ -3191,6 +3308,8 @@ fn run() -> Result<()> {
                 &[Op::Canvas {
                     wrap: wrap.map(|w| w == "on"),
                     tile: tile.as_deref().map(tile_size).transpose()?,
+                    size: None,
+                    background: None,
                 }],
                 &output(&flags, 0),
             )?,

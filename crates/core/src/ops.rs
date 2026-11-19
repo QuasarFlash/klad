@@ -160,6 +160,8 @@ pub enum Op {
     Canvas {
         wrap: Option<bool>,
         tile: Option<Option<[u32; 2]>>,
+        size: Option<[u32; 2]>,
+        background: Option<Option<String>>,
     },
     Atmosphere(Option<crate::look::Atmosphere>),
     Maps(Option<crate::maps::Maps>),
@@ -1904,6 +1906,18 @@ impl Op {
                             anyhow!("tile takes a whole number of pixels, [width, height] or null")
                         })?))
                     }
+                },
+                size: match map.remove("size") {
+                    None => None,
+                    Some(v) => Some(
+                        serde_json::from_value(v).map_err(|_| anyhow!("size takes [width, height] in whole pixels"))?,
+                    ),
+                },
+                background: match map.remove("background") {
+                    None => None,
+                    Some(Value::Null) => Some(None),
+                    Some(Value::String(hex)) => Some(Some(hex)),
+                    Some(other) => bail!("background takes a colour like \"#f4efe6\" or null, not {other}"),
                 },
             },
             "timeline" => Op::Timeline {
@@ -4320,11 +4334,32 @@ pub fn apply(doc: &mut Document, op: &Op, out: &mut Applied) -> Result<()> {
             doc.maps = maps.clone();
             out.changed.push("maps".into());
         }
-        Op::Canvas { wrap, tile } => {
-            if wrap.is_none() && tile.is_none() {
+        Op::Canvas {
+            wrap,
+            tile,
+            size,
+            background,
+        } => {
+            if wrap.is_none() && tile.is_none() && size.is_none() && background.is_none() {
                 bail!(
-                    "canvas needs \"wrap\": true or false (a drawing that repeats at its edges), or \"tile\": the size of its tiles as 16 or [16, 16], null for none"
+                    "canvas needs \"wrap\": true or false (a drawing that repeats at its edges), \"tile\": the size of its tiles as 16 or [16, 16], null for none, \"size\": [width, height] or \"background\": a colour or null"
                 );
+            }
+            if let Some([w, h]) = size {
+                if *w == 0 || *h == 0 || *w > 16384 || *h > 16384 {
+                    bail!("the canvas takes 1 to 16384 px a side, not {w} by {h}");
+                }
+                doc.canvas.width = *w;
+                doc.canvas.height = *h;
+                if let Some(cut) = doc.canvas.tile.filter(|_| !matches!(tile, Some(None))) {
+                    doc.canvas.cut(cut)?;
+                }
+            }
+            if let Some(background) = background {
+                if let Some(hex) = background {
+                    parse_hex(hex)?;
+                }
+                doc.canvas.background = background.clone();
             }
             if let Some(wrap) = wrap {
                 doc.canvas.wrap = *wrap;

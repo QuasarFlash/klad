@@ -3356,8 +3356,8 @@ fn someone_looks_for_help_and_finds_their_way_back() {
         .for_each(|(word, offers)| j.note(format!("\"{word}\": {offers:?}")));
     j.key(Key::Escape);
     j.chord(CMD, Key::K);
-    j.type_into(&field, "canvas size");
-    j.look("finder-canvas-size");
+    j.type_into(&field, "spreadsheet");
+    j.look("finder-nothing");
     j.expect(
         "the-finder-says-when-it-has-nothing",
         j.shown("nothing matches"),

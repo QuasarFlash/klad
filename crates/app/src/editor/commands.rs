@@ -238,6 +238,17 @@ impl Editor {
             }
             .or(editing),
             Cmd::BringToFront | Cmd::BringForward | Cmd::SendBackward | Cmd::SendToBack => self.can_arrange(),
+            Cmd::CropToSelection => match self.selected() {
+                Some(Selected::Strokes | Selected::Shape(_)) => editing,
+                _ => Some("select strokes (S) or shapes (V) first: the canvas becomes their box".to_string()),
+            },
+            Cmd::Trim
+            | Cmd::CanvasRight
+            | Cmd::CanvasLeft
+            | Cmd::Canvas180
+            | Cmd::CanvasFlipLevel
+            | Cmd::CanvasFlipUpright
+            | Cmd::CropTool => editing.or_else(|| self.timeline_edit()),
             Cmd::Ungroup => match layer {
                 Some(l) if l.kind() == LayerKind::Group => None,
                 _ => Some("pick a group in the layers panel first".to_string()),
@@ -742,6 +753,8 @@ impl Editor {
             Cmd::ExportGif => self.exporting(super::export::What::Gif),
             Cmd::ExportAseprite => self.exporting(super::export::What::Aseprite),
             Cmd::ExportSvg => self.exporting(super::export::What::Svg),
+            Cmd::CanvasWindow => self.windows.canvas,
+            Cmd::CropTool => self.cropping.is_some(),
             Cmd::ExportGodotWindow => self.exporting(super::export::What::Godot),
             Cmd::Pixelize => self.windows.pixels,
             Cmd::TileSize => self.windows.tiles,
@@ -855,6 +868,9 @@ impl Editor {
     }
 
     fn run(&mut self, cmd: Cmd) -> Result<()> {
+        if cmd.spec().group == crate::commands::Group::Tools && self.cropping.is_some() {
+            self.cropping = None;
+        }
         let area = self.canvas_rect.size();
         let frame = self.shown_frame();
         let last = self.scene.bundle.doc.timeline.frames - 1;
@@ -1205,6 +1221,15 @@ impl Editor {
                 }
             }
             Cmd::Ungroup => self.ungroup()?,
+            Cmd::CanvasWindow
+            | Cmd::CropTool
+            | Cmd::CropToSelection
+            | Cmd::Trim
+            | Cmd::CanvasRight
+            | Cmd::CanvasLeft
+            | Cmd::Canvas180
+            | Cmd::CanvasFlipLevel
+            | Cmd::CanvasFlipUpright => self.run_canvas(cmd)?,
             Cmd::MergeDown => self.merge_down()?,
             Cmd::MergeSelected => {
                 let ids = self.chosen_layers();
@@ -1453,6 +1478,8 @@ impl Editor {
                 self.apply(vec![Op::Canvas {
                     wrap: Some(wrap),
                     tile: None,
+                    size: None,
+                    background: None,
                 }])?;
                 self.dirty.extend(self.scene.all_tiles());
             }

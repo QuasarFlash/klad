@@ -1186,6 +1186,17 @@ impl Editor {
             );
             self.windows.tiles &= open;
         }
+        if self.windows.canvas {
+            let mut open = true;
+            Self::window(
+                ctx,
+                "canvas",
+                (format!("{} Canvas", icon::SIZE), Spot::Middle),
+                &mut open,
+                |ui| self.check(|e| e.canvas_window(ui)),
+            );
+            self.windows.canvas &= open;
+        }
         if self.windows.paintover {
             let mut open = true;
             Self::window(
