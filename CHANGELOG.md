@@ -55,6 +55,8 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 - Moving strokes in a large drawing follows the pen again: while you drag, klad moves a picture of the strokes and draws them in their new place when you let go.
 - Select all (cmd A) no longer picks the eraser marks that ride on strokes, so deleting everything it picked works instead of naming a mark that was already gone.
 - The brush's **more** menu and the selection's numbers stay open while you pick and type in them; the numbers button says **numbers**, and duplicate has its own icon next to copy.
+- With **all layers** on, the wand selects on whatever layer is painted under the click, and select all takes the strokes of every layer.
+- On the Mac, the pointer no longer stays stuck as a resize arrow after you put the pen down straight from a number field or a panel edge.
 
 ## 0.4.0 (2026-11-19)
 

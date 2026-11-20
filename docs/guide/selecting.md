@@ -14,7 +14,7 @@ Press **V**, press on what you want to move and drag. Hold **alt** to drag a cop
 
 Press **S** and click a stroke. Shift click adds more. Drag a box around strokes to select them, or pick **loop** or **ellipse** in the bar over the canvas and draw around them. **wand** takes the area of one colour you click, up to its edge; its **tolerance** lets close colours in. Hold **shift** to add to the selection and **alt** to take away from it. The box or loop takes the strokes that are wholly inside it; to take the parts of strokes that cross its edge too, tick **a box or loop cuts strokes at its edge** in the bar. **cmd A** selects everything on the layer at this frame.
 
-To pick on every layer instead of only the active one, switch the bar over the canvas to **all layers**.
+To pick on every layer instead of only the active one, switch the bar over the canvas to **all layers**: a click, a loop, the wand and **cmd A** then reach every visible, unlocked layer, and the wand goes to the layer painted under the click.
 
 ## Change what you selected
 
