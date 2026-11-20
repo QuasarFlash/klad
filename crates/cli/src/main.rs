@@ -12,6 +12,7 @@ mod export;
 mod fills;
 mod flatten;
 mod fonts;
+mod formats;
 mod frames;
 mod history;
 mod inbetween;
@@ -2440,11 +2441,48 @@ enum Command {
         outline_text: bool,
         #[arg(
             long,
-            requires = "svg",
             value_delimiter = ',',
-            help = "With --svg: only these shapes (a selection), comma separated ids"
+            help = "Only these, cut to them: shapes by id, or strokes as <cel>:s<id> (a selection), comma separated; with --svg shapes only"
         )]
         only: Vec<String>,
+        #[arg(
+            long,
+            value_name = "FORMAT",
+            help = "png, jpeg, webp, tiff, pdf or mp4 (default: from the -o file's extension, else png)"
+        )]
+        format: Option<String>,
+        #[arg(
+            long,
+            value_name = "1-100",
+            help = "JPEG, WebP and MP4 quality (default 90; 80 for MP4)"
+        )]
+        quality: Option<f32>,
+        #[arg(long, help = "With --format webp: keep every pixel exactly")]
+        lossless: bool,
+        #[arg(
+            long,
+            value_name = "COLOUR",
+            help = "What shows where the picture is transparent in a JPEG or an MP4 (default white; --background gives the canvas colour)"
+        )]
+        matte: Option<String>,
+        #[arg(long, num_args = 0..=1, default_missing_value = "all", value_name = "FRAMES", help = "With --format webp: an animated WebP of these frames: all (one per clip), a clip or a range; an MP4 always plays them (default all)")]
+        animated: Option<String>,
+        #[arg(
+            long,
+            help = "With --format pdf: the drawing's pixels per inch on the page (default 72: a pixel is a point)"
+        )]
+        dpi: Option<f32>,
+        #[arg(
+            long,
+            help = "With --format pdf: fit the picture on a paper: a3, a4, a5, letter, legal or tabloid, with ,landscape"
+        )]
+        paper: Option<String>,
+        #[arg(
+            long,
+            value_name = "FRAMES",
+            help = "With --format pdf: a page for each of these frames (all, a clip, a range), or clips for a page per clip"
+        )]
+        pages: Option<String>,
         #[arg(
             long,
             conflicts_with_all = ["frames", "godot"],
@@ -5464,7 +5502,43 @@ fn run() -> Result<()> {
             occluders,
             tolerance,
             shaders,
+            format,
+            quality,
+            lossless,
+            matte,
+            animated,
+            dpi,
+            paper,
+            pages,
         } => {
+            let format = match (
+                format.as_deref(),
+                out.as_deref().and_then(klad_render::formats::Format::of_path),
+            ) {
+                (Some(f), _) => Some(klad_render::formats::Format::parse(f)?),
+                (None, found) => found,
+            };
+            let quality = klad_render::formats::Quality {
+                quality: quality.unwrap_or(90.0),
+                lossless,
+                matte: klad_render::formats::matte_of(matte.as_deref())?,
+            };
+            if let Some(q) = Some(quality.quality).filter(|q| !(1.0..=100.0).contains(q)) {
+                return Err(anyhow!("--quality takes 1 to 100, not {q}"));
+            }
+            let others = svg
+                || aseprite
+                || sheet.is_some()
+                || frames.is_some()
+                || gif.is_some()
+                || tileset.is_some()
+                || godot.is_some();
+            if let (true, Some(f)) = (others, format.filter(|f| *f != klad_render::formats::Format::Png)) {
+                return Err(anyhow!(
+                    "--format {} is for a picture, a PDF or a video: leave out --svg, --gif, --sheet, --frames, --aseprite and the Godot exports",
+                    f.extension()
+                ));
+            }
             let maps = maps.as_deref().map(Map::list).transpose()?.unwrap_or_default();
             let extras = sprites::Extras {
                 occluders: occluders.then_some(tolerance),
@@ -5534,6 +5608,36 @@ fn run() -> Result<()> {
                         },
                     ),
                     _ if aseprite => aseprite::export(&bundle, out, variant.as_deref()),
+                    _ if format == Some(klad_render::formats::Format::Pdf) => formats::pdf(
+                        &bundle,
+                        formats::PdfArgs {
+                            frame,
+                            pages: pages.clone(),
+                            dpi,
+                            paper: paper.clone(),
+                            background,
+                            references,
+                            variant: variant.clone(),
+                            out,
+                        },
+                    ),
+                    _ if format == Some(klad_render::formats::Format::Mp4) => sprites::animated(
+                        &bundle,
+                        animated.as_deref().unwrap_or("all"),
+                        &look,
+                        &sprites::Anim::Mp4(klad_render::video::Settings {
+                            quality: if quality.quality == 90.0 { 80.0 } else { quality.quality },
+                            matte: quality.matte,
+                        }),
+                        out,
+                    ),
+                    _ if format == Some(klad_render::formats::Format::Webp) && animated.is_some() => sprites::animated(
+                        &bundle,
+                        animated.as_deref().unwrap_or("all"),
+                        &look,
+                        &sprites::Anim::Webp(quality),
+                        out,
+                    ),
                     _ if tileset.is_some() => {
                         sprites::tileset(&bundle, tileset.clone().flatten().or(out), store, &look, frame)
                     }
@@ -5557,6 +5661,9 @@ fn run() -> Result<()> {
                                 out: Some(tmp.clone()),
                                 maps: maps.clone(),
                                 invert,
+                                format: klad_render::formats::Format::Png,
+                                quality,
+                                only: only.clone(),
                             },
                         )?;
                         let read = std::fs::read(&tmp);
@@ -5579,6 +5686,9 @@ fn run() -> Result<()> {
                             out,
                             maps: maps.clone(),
                             invert,
+                            format: format.unwrap_or(klad_render::formats::Format::Png),
+                            quality,
+                            only: only.clone(),
                         },
                     ),
                 }

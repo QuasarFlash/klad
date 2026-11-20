@@ -31,6 +31,8 @@ section() {
   section "libjpeg-turbo" "JPEG decoding and encoding inside Skia. IJG, BSD 3-Clause and zlib licences." libjpeg-turbo.md libjpeg-turbo-ijg.txt
   section "Expat" "XML parsing inside Skia. MIT." expat.txt
   section "Wuffs" "GIF decoding inside Skia. MIT and Apache-2.0." wuffs.txt
+  printf '## Built from C sources\n\n`libwebp-sys` compiles libwebp into klad for WebP export.\n\n'
+  section "libwebp" "WebP encoding. BSD 3-Clause, with Google's patent grant." libwebp.txt libwebp-patents.txt
   printf '## Fonts\n\nThe editor shows its interface in these fonts. Ubuntu Light (Ubuntu Font Licence) and Noto Emoji (SIL Open Font License) come with egui; their licence texts are above, under epaint_default_fonts.\n\n'
   section "Phosphor icons" "The editor's icons. MIT." phosphor.txt
   section "Hack" "egui's monospace font. MIT, with the Bitstream Vera licence for the glyphs it builds on." hack.txt

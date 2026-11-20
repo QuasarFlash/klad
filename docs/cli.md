@@ -4256,7 +4256,31 @@ Options:
           With --svg: text as the paths of its letters, for apps without the font
 
       --only <ONLY>
-          With --svg: only these shapes (a selection), comma separated ids
+          Only these, cut to them: shapes by id, or strokes as <cel>:s<id> (a selection), comma separated; with --svg shapes only
+
+      --format <FORMAT>
+          png, jpeg, webp, tiff, pdf or mp4 (default: from the -o file's extension, else png)
+
+      --quality <1-100>
+          JPEG, WebP and MP4 quality (default 90; 80 for MP4)
+
+      --lossless
+          With --format webp: keep every pixel exactly
+
+      --matte <COLOUR>
+          What shows where the picture is transparent in a JPEG or an MP4 (default white; --background gives the canvas colour)
+
+      --animated [<FRAMES>]
+          With --format webp: an animated WebP of these frames: all (one per clip), a clip or a range; an MP4 always plays them (default all)
+
+      --dpi <DPI>
+          With --format pdf: the drawing's pixels per inch on the page (default 72: a pixel is a point)
+
+      --paper <PAPER>
+          With --format pdf: fit the picture on a paper: a3, a4, a5, letter, legal or tabloid, with ,landscape
+
+      --pages <FRAMES>
+          With --format pdf: a page for each of these frames (all, a clip, a range), or clips for a page per clip
 
       --sheet <SHEET>
           Sprite sheet and Aseprite JSON: all, a clip or a range like 0-11

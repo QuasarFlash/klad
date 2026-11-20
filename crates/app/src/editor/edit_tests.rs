@@ -1029,3 +1029,84 @@ fn brushes_saved_to_yours_show_in_another_drawing_which_keeps_its_own_copy() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn the_export_window_writes_jpeg_webp_tiff_pdf_and_video_and_the_selection_alone() {
+    use super::export::{Picture, What};
+    let path = sample("formats");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "colour");
+    let (a, b) = (canvas_at(&h, 100.0, 100.0), canvas_at(&h, 200.0, 150.0));
+    drag(&mut h, a, b);
+    h.run_steps(2);
+    let (cel, id) = {
+        let ed = h.state();
+        let cel = ed.scene.active_cel().unwrap().to_string();
+        let id = ed
+            .scene
+            .active_marks()
+            .iter()
+            .rev()
+            .find_map(Mark::as_stroke)
+            .unwrap()
+            .id;
+        (cel, id)
+    };
+    h.state_mut().picked = Some(Picked {
+        cel: cel.clone(),
+        ids: vec![id],
+        cut: None,
+        more: Vec::new(),
+    });
+    h.state_mut().invoke(Cmd::Export).unwrap();
+    h.run_steps(3);
+    assert_eq!(
+        h.state().export.only,
+        [format!("{cel}:s{id}")],
+        "a stroke selection exports alone"
+    );
+    assert!(shown(&h, "only the selection"));
+    {
+        use egui_kittest::kittest::Queryable;
+        h.get_by_label("JPEG").click();
+    }
+    h.run_steps(2);
+    assert_eq!(h.state().export.picture, Picture::Jpeg);
+    assert!(shown(&h, "quality"), "a JPEG takes a quality");
+    let root = h.state().scene.bundle.root.clone();
+    let args = super::export::args(&root, &root, 0, &h.state().export).join(" ");
+    assert!(
+        args.contains("--format jpeg") && args.contains(&format!("--only {cel}:s{id}")),
+        "{args}"
+    );
+    h.state_mut().invoke(Cmd::ExportPdf).unwrap();
+    h.run_steps(8);
+    assert_eq!(h.state().export.what, What::Pdf);
+    {
+        use egui_kittest::kittest::Queryable;
+        h.get_by_label("every frame").click();
+    }
+    h.run_steps(2);
+    assert!(
+        shown(&h, "pixels per inch"),
+        "the PDF on the drawing's size takes a resolution"
+    );
+    let args = super::export::args(&root, &root, 0, &h.state().export).join(" ");
+    assert!(args.contains("--format pdf --pages all"), "{args}");
+    h.state_mut().invoke(Cmd::ExportVideo).unwrap();
+    h.run_steps(3);
+    let form = h.state().export.clone();
+    assert_eq!((form.what, form.quality), (What::Video, 80.0));
+    let args = super::export::args(&root, &root, 0, &form).join(" ");
+    assert!(args.contains("--format mp4 --animated all"), "{args}");
+    h.state_mut().invoke(Cmd::ExportGif).unwrap();
+    h.run_steps(3);
+    {
+        use egui_kittest::kittest::Queryable;
+        h.get_by_label("WebP").click();
+    }
+    h.run_steps(2);
+    let args = super::export::args(&root, &root, 0, &h.state().export).join(" ");
+    assert!(args.contains("--format webp --animated"), "{args}");
+    let _ = std::fs::remove_dir_all(&path);
+}

@@ -83,6 +83,7 @@ klad canvas art.klad --size 2400,1600 --anchor top-left        # also --crop x,y
 klad grid art.klad --every 16 --sub 4 --show on --snap on       # the grid the user sees and snaps to (--iso, --offset, --off); klad guides art.klad --x 120 --y 64 (--rm-x, --clear)
 klad guides art.klad --perspective -400,300,2400,300           # drawing guides the user's brush follows (--ruler, --ellipse, --follow off); klad stroke ... --points '...' --follow bends a stroke onto them
 klad brushes --library                                          # the user's own brushes, in every drawing; klad brushes art.klad --take <id> copies one in (klad stroke --brush <id> does it too)
+klad export art.klad -o art.jpg --quality 85                    # also .webp (--lossless), .tif (--depth 16), .pdf (vectors stay vectors; --pages all, --paper a4,landscape, --dpi 300), .mp4 (--animated run); --only n5,c3:s12 exports a selection alone
 klad show art.klad c4:s12
 klad render art.klad --focus c4:s12
 ```

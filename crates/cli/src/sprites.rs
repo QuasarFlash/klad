@@ -511,7 +511,53 @@ pub fn frames(path: &Path, spec: &str, look: &Look, out: Option<PathBuf>) -> Res
     Ok(())
 }
 
+pub enum Anim {
+    Gif { dither: bool },
+    Webp(klad_render::formats::Quality),
+    Mp4(klad_render::video::Settings),
+}
+
+impl Anim {
+    fn extension(&self) -> &'static str {
+        match self {
+            Anim::Gif { .. } => "gif",
+            Anim::Webp(_) => "webp",
+            Anim::Mp4(_) => "mp4",
+        }
+    }
+
+    fn encode(&self, w: u32, h: u32, shots: Vec<(Vec<u8>, u32)>, looping: bool) -> Result<Vec<u8>> {
+        match self {
+            Anim::Gif { dither } => {
+                let shots: Vec<klad_render::gif::Shot> = shots
+                    .into_iter()
+                    .map(|(rgba, ms)| klad_render::gif::Shot { rgba, ms })
+                    .collect();
+                klad_render::gif::encode(w, h, &shots, looping, *dither)
+            }
+            Anim::Webp(q) => {
+                let shots: Vec<klad_render::formats::Still> = shots
+                    .into_iter()
+                    .map(|(rgba, ms)| klad_render::formats::Still { rgba, ms })
+                    .collect();
+                klad_render::formats::webp_animated(w, h, &shots, *q, looping)
+            }
+            Anim::Mp4(s) => {
+                let shots: Vec<klad_render::video::Shot> = shots
+                    .into_iter()
+                    .map(|(rgba, ms)| klad_render::video::Shot { rgba, ms })
+                    .collect();
+                klad_render::video::mp4(w, h, &shots, *s)
+            }
+        }
+    }
+}
+
 pub fn gif(path: &Path, spec: &str, look: &Look, dither: bool, out: Option<PathBuf>) -> Result<()> {
+    animated(path, spec, look, &Anim::Gif { dither }, out)
+}
+
+pub fn animated(path: &Path, spec: &str, look: &Look, kind: &Anim, out: Option<PathBuf>) -> Result<()> {
     let start = Instant::now();
     let bundle = Bundle::open(path)?;
     let animations = sprites::animations(&bundle.doc, spec)?;
@@ -546,17 +592,14 @@ pub fn gif(path: &Path, spec: &str, look: &Look, dither: bool, out: Option<PathB
         fs::create_dir_all(dir).with_context(|| format!("making {}", dir.display()))?;
     }
     pics.animations.iter().try_for_each(|(animation, runs)| {
-        let shots: Vec<klad_render::gif::Shot> = runs
-            .iter()
-            .map(|r| klad_render::gif::Shot {
-                rgba: full[r.picture].clone(),
-                ms: r.ms,
-            })
-            .collect();
-        let bytes = klad_render::gif::encode(sw, sh, &shots, animation.looping, dither)?;
+        let shots: Vec<(Vec<u8>, u32)> = runs.iter().map(|r| (full[r.picture].clone(), r.ms)).collect();
+        let pictures = shots.len();
+        let total: u32 = shots.iter().map(|s| s.1).sum();
+        let bytes = kind.encode(sw, sh, shots, animation.looping)?;
+        let ext = kind.extension();
         let name = match animation.clip {
-            true => format!("{stem}-{}{}.gif", file_safe(&animation.name), scale_tag(look.scale)),
-            false => format!("{stem}{}.gif", scale_tag(look.scale)),
+            true => format!("{stem}-{}{}.{ext}", file_safe(&animation.name), scale_tag(look.scale)),
+            false => format!("{stem}{}.{ext}", scale_tag(look.scale)),
         };
         let file = match (&out, folder) {
             (_, Some(dir)) => dir.join(name),
@@ -569,9 +612,9 @@ pub fn gif(path: &Path, spec: &str, look: &Look, dither: bool, out: Option<PathB
         eprintln!(
             "{sw}x{sh}  {} frames ({} pictures), {} ms, {}  {:.1} KB",
             runs.iter().map(|r| r.frames).sum::<u32>(),
-            shots.len(),
-            shots.iter().map(|s| s.ms).sum::<u32>(),
-            match (shots.len(), animation.looping) {
+            pictures,
+            total,
+            match (pictures, animation.looping) {
                 (1, _) => "one still picture",
                 (_, true) => "loops",
                 (_, false) => "plays once",

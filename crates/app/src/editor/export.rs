@@ -20,7 +20,74 @@ pub(super) enum What {
     Aseprite,
     Godot,
     Svg,
+    Pdf,
+    Video,
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum Picture {
+    #[default]
+    Png,
+    Jpeg,
+    Webp,
+    Tiff,
+}
+
+impl Picture {
+    pub(super) const ALL: [Picture; 4] = [Picture::Png, Picture::Jpeg, Picture::Webp, Picture::Tiff];
+
+    pub(super) fn name(self) -> &'static str {
+        match self {
+            Picture::Png => "PNG",
+            Picture::Jpeg => "JPEG",
+            Picture::Webp => "WebP",
+            Picture::Tiff => "TIFF",
+        }
+    }
+
+    fn arg(self) -> &'static str {
+        match self {
+            Picture::Png => "png",
+            Picture::Jpeg => "jpeg",
+            Picture::Webp => "webp",
+            Picture::Tiff => "tiff",
+        }
+    }
+
+    fn extension(self) -> &'static str {
+        match self {
+            Picture::Png => "png",
+            Picture::Jpeg => "jpg",
+            Picture::Webp => "webp",
+            Picture::Tiff => "tif",
+        }
+    }
+
+    fn hint(self) -> &'static str {
+        match self {
+            Picture::Png => "exact pixels and transparency; the usual choice",
+            Picture::Jpeg => {
+                "small files for photos and the web; no transparency, a white or the canvas colour shows there"
+            }
+            Picture::Webp => "small files with transparency, for the web; lossless keeps every pixel",
+            Picture::Tiff => "for print and photo apps, 8 or 16 bits, with transparency",
+        }
+    }
+
+    fn squeezes(self, lossless: bool) -> bool {
+        self == Picture::Jpeg || (self == Picture::Webp && !lossless)
+    }
+}
+
+pub(super) const PAPERS: [(&str, &str); 7] = [
+    ("", "the drawing's size"),
+    ("a4", "A4"),
+    ("a3", "A3"),
+    ("a5", "A5"),
+    ("letter", "Letter"),
+    ("legal", "Legal"),
+    ("tabloid", "Tabloid"),
+];
 
 impl What {
     pub(super) fn title(self) -> &'static str {
@@ -32,6 +99,8 @@ impl What {
             What::Aseprite => "Export Aseprite file",
             What::Godot => "Export for Godot",
             What::Svg => "Export SVG",
+            What::Pdf => "Export PDF",
+            What::Video => "Export video",
         }
     }
 
@@ -50,16 +119,12 @@ impl What {
             What::Svg => {
                 "The frame on screen as an SVG: vector layers as shapes an illustration app can edit, each layer a group."
             }
-        }
-    }
-
-    fn extension(self) -> Option<&'static str> {
-        match self {
-            What::Image | What::Sheet => Some("png"),
-            What::Gif => Some("gif"),
-            What::Aseprite => Some("aseprite"),
-            What::Svg => Some("svg"),
-            What::Frames | What::Godot => None,
+            What::Pdf => {
+                "A PDF to print or send: vector layers stay shapes, sharp at any size; paint and pixel layers go in as pictures. A page for the frame on screen, or one per frame or clip."
+            }
+            What::Video => {
+                "An MP4 video of a clip or the timeline at its speed (AV1, so it plays in browsers, VLC and on newer Macs and phones). Transparency becomes white or the canvas colour."
+            }
         }
     }
 }
@@ -103,6 +168,29 @@ pub(super) struct Form {
     pub pictures: bool,
     pub outlines: bool,
     pub only: Vec<String>,
+    pub picture: Picture,
+    pub quality: f32,
+    pub lossless: bool,
+    pub webp: bool,
+    pub paper: String,
+    pub landscape: bool,
+    pub dpi: f32,
+    pub pages: String,
+}
+
+impl Form {
+    pub(super) fn extension(&self) -> Option<&'static str> {
+        match self.what {
+            What::Image => Some(self.picture.extension()),
+            What::Sheet => Some("png"),
+            What::Gif => Some(if self.webp { "webp" } else { "gif" }),
+            What::Aseprite => Some("aseprite"),
+            What::Svg => Some("svg"),
+            What::Pdf => Some("pdf"),
+            What::Video => Some("mp4"),
+            What::Frames | What::Godot => None,
+        }
+    }
 }
 
 impl Default for Form {
@@ -129,6 +217,14 @@ impl Default for Form {
             pictures: true,
             outlines: false,
             only: Vec::new(),
+            picture: Picture::Png,
+            quality: 90.0,
+            lossless: false,
+            webp: false,
+            paper: String::new(),
+            landscape: false,
+            dpi: 72.0,
+            pages: String::new(),
         }
     }
 }
@@ -187,7 +283,7 @@ pub(super) fn destination(home: &Path, form: &Form) -> Option<PathBuf> {
         true => home.to_path_buf(),
         false => resolve(home, folder),
     };
-    match (name.is_empty(), form.what.extension()) {
+    match (name.is_empty(), form.extension()) {
         (true, _) if folder.is_empty() => None,
         (true, _) => Some(base),
         (false, None) => Some(base.join(name)),
@@ -201,8 +297,8 @@ pub(super) fn destination(home: &Path, form: &Form) -> Option<PathBuf> {
     }
 }
 
-fn folder_of(what: What, target: &Path) -> PathBuf {
-    match (what.extension(), target.extension()) {
+fn folder_of(form: &Form, target: &Path) -> PathBuf {
+    match (form.extension(), target.extension()) {
         (Some(_), Some(_)) => target.parent().map_or_else(|| target.to_path_buf(), Path::to_path_buf),
         _ => target.to_path_buf(),
     }
@@ -215,10 +311,54 @@ pub(super) fn args(bundle: &Path, home: &Path, frame: u32, form: &Form) -> Vec<S
         args.extend(b);
     };
     match form.what {
-        What::Image | What::Godot => push("--frame", Some(frame.to_string())),
+        What::Godot => push("--frame", Some(frame.to_string())),
+        What::Image => {
+            push("--frame", Some(frame.to_string()));
+            if form.picture != Picture::Png {
+                push("--format", Some(form.picture.arg().into()));
+            }
+            if form.picture == Picture::Webp && form.lossless {
+                push("--lossless", None);
+            }
+            if form.picture.squeezes(form.lossless) && form.quality != 90.0 {
+                push("--quality", Some(form.quality.round().to_string()));
+            }
+            if !form.only.is_empty() {
+                push("--only", Some(form.only.join(",")));
+            }
+        }
         What::Frames => push("--frames", Some(form.range.trim().to_string())),
         What::Sheet => push("--sheet", Some(form.range.trim().to_string())),
+        What::Gif if form.webp => {
+            push("--format", Some("webp".into()));
+            push("--animated", Some(form.range.trim().to_string()));
+            if form.lossless {
+                push("--lossless", None);
+            } else if form.quality != 90.0 {
+                push("--quality", Some(form.quality.round().to_string()));
+            }
+        }
         What::Gif => push("--gif", Some(form.range.trim().to_string())),
+        What::Pdf => {
+            push("--format", Some("pdf".into()));
+            match form.pages.trim() {
+                "" => push("--frame", Some(frame.to_string())),
+                pages => push("--pages", Some(pages.to_string())),
+            }
+            match (form.paper.as_str(), form.landscape) {
+                ("", _) if form.dpi != 72.0 => push("--dpi", Some(form.dpi.round().to_string())),
+                ("", _) => {}
+                (paper, true) => push("--paper", Some(format!("{paper},landscape"))),
+                (paper, false) => push("--paper", Some(paper.to_string())),
+            }
+        }
+        What::Video => {
+            push("--format", Some("mp4".into()));
+            push("--animated", Some(form.range.trim().to_string()));
+            if form.quality != 80.0 {
+                push("--quality", Some(form.quality.round().to_string()));
+            }
+        }
         What::Aseprite => push("--aseprite", None),
         What::Svg => {
             push("--svg", None);
@@ -237,20 +377,23 @@ pub(super) fn args(bundle: &Path, home: &Path, frame: u32, form: &Form) -> Vec<S
     if let Some(layer) = form
         .layer
         .as_ref()
-        .filter(|_| !matches!(form.what, What::Frames | What::Aseprite) && form.only.is_empty())
+        .filter(|_| !matches!(form.what, What::Frames | What::Aseprite | What::Pdf) && form.only.is_empty())
     {
         push("--layer", Some(layer.clone()));
     }
-    if form.scale != 1.0 && !matches!(form.what, What::Aseprite | What::Svg) {
+    if form.scale != 1.0 && !matches!(form.what, What::Aseprite | What::Svg | What::Pdf) {
         push("--scale", Some(form.scale.to_string()));
     }
-    if form.deep && matches!(form.what, What::Image | What::Sheet) {
+    if form.deep
+        && (form.what == What::Sheet
+            || (form.what == What::Image && matches!(form.picture, Picture::Png | Picture::Tiff)))
+    {
         push("--depth", Some("16".into()));
     }
-    if form.background && matches!(form.what, What::Image | What::Gif) {
+    if form.background && matches!(form.what, What::Image | What::Gif | What::Pdf | What::Video) {
         push("--background", None);
     }
-    if form.dither && form.what == What::Gif {
+    if form.dither && form.what == What::Gif && !form.webp {
         push("--dither", None);
     }
     match form.variant.as_str() {
@@ -262,7 +405,13 @@ pub(super) fn args(bundle: &Path, home: &Path, frame: u32, form: &Form) -> Vec<S
         push("--padding", Some(form.padding.to_string()));
         push("--max", Some(form.max.to_string()));
     }
-    if !form.maps.is_empty() && form.layer.is_none() && matches!(form.what, What::Image | What::Frames | What::Sheet) {
+    let png = form.what != What::Image || form.picture == Picture::Png;
+    if !form.maps.is_empty()
+        && form.layer.is_none()
+        && png
+        && form.only.is_empty()
+        && matches!(form.what, What::Image | What::Frames | What::Sheet)
+    {
         push("--maps", Some(listed(&form.maps, |m| m.name())));
     }
     if let Some(target) = destination(home, form) {
@@ -319,9 +468,31 @@ impl Editor {
         self.export.switch_to(what);
         self.export.only = match what {
             What::Svg => self.shapes(),
+            What::Image => self.selection_refs(),
             _ => Vec::new(),
         };
+        if what == What::Video && self.export.quality == 90.0 {
+            self.export.quality = 80.0;
+        }
         self.windows.export = !again;
+    }
+
+    fn selection_refs(&self) -> Vec<String> {
+        let shapes = self.shapes();
+        if !shapes.is_empty() {
+            return shapes;
+        }
+        self.picked.as_ref().map_or_else(Vec::new, |p| {
+            p.ids
+                .iter()
+                .map(|id| format!("{}:s{id}", p.cel))
+                .chain(
+                    p.more
+                        .iter()
+                        .flat_map(|part| part.ids.iter().map(move |id| format!("{}:s{id}", part.cel))),
+                )
+                .collect()
+        })
     }
 
     pub(super) fn exporting(&self, what: What) -> bool {
@@ -334,12 +505,12 @@ impl Editor {
 
     pub(super) fn export(&mut self) -> Result<()> {
         let form = self.export.clone();
-        if !matches!(form.what, What::Image | What::Aseprite | What::Svg) && form.range.trim().is_empty() {
+        if !matches!(form.what, What::Image | What::Aseprite | What::Svg | What::Pdf) && form.range.trim().is_empty() {
             bail!("say which frames: all, a clip's name or a range like 0-11");
         }
         let home = self.bundle_home();
         if let Some(target) = destination(&home, &form) {
-            let folder = folder_of(form.what, &target);
+            let folder = folder_of(&form, &target);
             std::fs::create_dir_all(&folder).map_err(|e| {
                 anyhow::anyhow!(
                     "the folder {} could not be made: {}",
@@ -353,7 +524,13 @@ impl Editor {
             What::Image | What::Godot => format!("export frame {}", self.scene.frame),
             What::Frames => format!("export frames {}", form.range.trim()),
             What::Sheet => format!("export the sheet of {}", form.range.trim()),
+            What::Gif if form.webp => format!("export an animated WebP of {}", form.range.trim()),
             What::Gif => format!("export a GIF of {}", form.range.trim()),
+            What::Pdf => match form.pages.trim() {
+                "" => format!("export a PDF of frame {}", self.scene.frame),
+                pages => format!("export a PDF of {pages}"),
+            },
+            What::Video => format!("export a video of {}", form.range.trim()),
             What::Aseprite => "export an Aseprite file".to_string(),
             What::Svg => format!("export an SVG of frame {}", self.scene.frame),
         };
@@ -517,7 +694,88 @@ impl Editor {
             .num_columns(2)
             .spacing(egui::vec2(14.0, 10.0))
             .show(ui, |ui| {
-                if !matches!(what, What::Image | What::Aseprite | What::Svg) {
+                if what == What::Image {
+                    label(ui, "format");
+                    ui.horizontal_wrapped(|ui| {
+                        Picture::ALL.iter().for_each(|p| {
+                            if ui.selectable_label(form.picture == *p, p.name()).hint(p.hint()).clicked() {
+                                form.picture = *p;
+                            }
+                        });
+                    });
+                    ui.end_row();
+                }
+                if what == What::Gif {
+                    label(ui, "format");
+                    ui.horizontal(|ui| {
+                        if ui.selectable_label(!form.webp, "GIF").hint("plays everywhere; 255 colours").clicked() {
+                            form.webp = false;
+                        }
+                        if ui
+                            .selectable_label(form.webp, "WebP")
+                            .hint("an animated WebP: full colour and soft edges, smaller, for the web")
+                            .clicked()
+                        {
+                            form.webp = true;
+                        }
+                    });
+                    ui.end_row();
+                }
+                if what == What::Pdf {
+                    let pages = label(ui, "pages");
+                    ui.horizontal_wrapped(|ui| {
+                        [("", "this frame"), ("all", "every frame")]
+                            .into_iter()
+                            .chain((!clips.is_empty()).then_some(("clips", "a page per clip")))
+                            .for_each(|(value, text)| {
+                                if ui.selectable_label(form.pages == value, text).clicked() {
+                                    form.pages = value.to_string();
+                                }
+                            });
+                        clips.iter().for_each(|c| {
+                            if ui.selectable_label(form.pages == *c, c).hint("a page for each frame of this clip").clicked() {
+                                form.pages = c.clone();
+                            }
+                        });
+                    })
+                    .response
+                    .labelled_by(pages.id);
+                    ui.end_row();
+                    label(ui, "paper");
+                    ui.horizontal(|ui| {
+                        let shown = PAPERS.iter().find(|(v, _)| *v == form.paper).map_or("the drawing's size", |(_, t)| t);
+                        egui::ComboBox::from_id_salt("export paper")
+                            .selected_text(shown)
+                            .show_ui(ui, |ui| {
+                                PAPERS.iter().for_each(|(value, text)| {
+                                    ui.selectable_value(&mut form.paper, value.to_string(), *text);
+                                });
+                            })
+                            .response
+                            .hint("the page: the drawing's own size, or a paper with the picture fitted on it");
+                        if !form.paper.is_empty() {
+                            ui.checkbox(&mut form.landscape, "landscape");
+                        }
+                    });
+                    ui.end_row();
+                    if form.paper.is_empty() {
+                        label(ui, "resolution");
+                        ui.horizontal(|ui| {
+                            ui.add(egui::Slider::new(&mut form.dpi, 36.0..=600.0).logarithmic(true).text("pixels per inch"))
+                                .hint("how many of the drawing's pixels make an inch on the page; 72 makes a pixel a point");
+                            ui.label(
+                                RichText::new(format!(
+                                    "{:.0} x {:.0} mm",
+                                    width as f32 / form.dpi * 25.4,
+                                    height as f32 / form.dpi * 25.4
+                                ))
+                                .color(theme::WEAK),
+                            );
+                        });
+                        ui.end_row();
+                    }
+                }
+                if !matches!(what, What::Image | What::Aseprite | What::Svg | What::Pdf) {
                     let frames = label(ui, "frames");
                     ui.horizontal(|ui| {
                         ui.add(
@@ -535,7 +793,7 @@ impl Editor {
                     });
                     ui.end_row();
                 }
-                if !matches!(what, What::Frames | What::Aseprite) {
+                if !matches!(what, What::Frames | What::Aseprite | What::Pdf) && !(what == What::Image && !form.only.is_empty()) {
                     label(ui, "what");
                     let shown = form
                         .layer
@@ -574,7 +832,19 @@ impl Editor {
                     });
                     ui.end_row();
                 }
-                if !matches!(what, What::Aseprite | What::Svg) {
+                if what == What::Image && !form.only.is_empty() {
+                    label(ui, "what");
+                    let mut alone = true;
+                    if ui
+                        .checkbox(&mut alone, format!("only the selection ({} {})", form.only.len(), if form.only.len() == 1 { "thing" } else { "things" }))
+                        .hint("the selected strokes or shapes alone, cut to them; off: the whole image")
+                        .changed()
+                    {
+                        form.only.clear();
+                    }
+                    ui.end_row();
+                }
+                if !matches!(what, What::Aseprite | What::Svg | What::Pdf) {
                     label(ui, "size");
                     ui.horizontal(|ui| {
                         match pixel {
@@ -618,18 +888,34 @@ impl Editor {
                     });
                     ui.end_row();
                 }
-                if matches!(what, What::Image | What::Sheet | What::Gif) {
+                if matches!(what, What::Image | What::Sheet | What::Gif | What::Pdf | What::Video) {
                     label(ui, "options");
                     ui.vertical(|ui| {
-                        if matches!(what, What::Image | What::Sheet) {
+                        let deep = what == What::Sheet || (what == What::Image && matches!(form.picture, Picture::Png | Picture::Tiff));
+                        if deep {
                             ui.checkbox(&mut form.deep, "16 bits per channel")
-                                .hint("16-bit PNGs; 8-bit ones are dithered so gradients do not band");
+                                .hint("16 bits per channel; 8-bit pictures are dithered so gradients do not band");
                         }
-                        if matches!(what, What::Image | What::Gif) {
-                            ui.checkbox(&mut form.background, "keep the background colour")
-                                .hint("off: a transparent picture");
+                        let webp = (what == What::Image && form.picture == Picture::Webp) || (what == What::Gif && form.webp);
+                        if webp {
+                            ui.checkbox(&mut form.lossless, "lossless")
+                                .hint("every pixel exactly; off makes a smaller file that may soften fine detail");
                         }
-                        if what == What::Gif && !pixel {
+                        let squeezed = (what == What::Image && form.picture.squeezes(form.lossless))
+                            || (what == What::Gif && form.webp && !form.lossless)
+                            || what == What::Video;
+                        if squeezed {
+                            ui.add(egui::Slider::new(&mut form.quality, 1.0..=100.0).fixed_decimals(0).text("quality"))
+                                .hint("higher keeps more detail and makes a bigger file");
+                        }
+                        if matches!(what, What::Image | What::Gif | What::Pdf | What::Video) {
+                            let off = match (what, form.picture) {
+                                (What::Video, _) | (What::Image, Picture::Jpeg) => "off: white where the picture is transparent",
+                                _ => "off: a transparent picture",
+                            };
+                            ui.checkbox(&mut form.background, "keep the background colour").hint(off);
+                        }
+                        if what == What::Gif && !pixel && !form.webp {
                             ui.checkbox(&mut form.dither, "dither")
                                 .hint("a GIF holds 255 colours: mix them in a fine pattern so soft gradients do not band; off keeps flat areas of one colour");
                         }
@@ -703,16 +989,17 @@ impl Editor {
                 });
                 ui.end_row();
                 let name = label(ui, "save as");
+                let extension = form.extension();
                 ui.add(
                     egui::TextEdit::singleline(&mut form.name)
                         .desired_width(260.0)
-                        .hint_text(match what.extension() {
+                        .hint_text(match extension {
                             Some(_) => "named after the drawing",
                             None => "a folder named after the drawing",
                         }),
                 )
                 .labelled_by(name.id)
-                .hint(match what.extension() {
+                .hint(match extension {
                     Some(_) => "the file's name; empty names it after the drawing",
                     None => "the name of the folder the frames go into; empty names it after the drawing",
                 });
@@ -784,6 +1071,90 @@ mod tests {
                 "export /w/art.klad --frame 3 --scale 2 --background -o {}",
                 home.join("out/hero.png").display()
             )
+        );
+        let jpeg = Form {
+            picture: Picture::Jpeg,
+            quality: 75.0,
+            deep: true,
+            name: "hero".into(),
+            ..Form::default()
+        };
+        assert_eq!(
+            args(bundle, home, 0, &jpeg).join(" "),
+            format!(
+                "export /w/art.klad --frame 0 --format jpeg --quality 75 -o {}",
+                home.join("hero.jpg").display()
+            ),
+            "a JPEG has no 16 bits and takes its own extension"
+        );
+        let alone = Form {
+            picture: Picture::Webp,
+            lossless: true,
+            only: vec!["c1:s4".into(), "c1:s9".into()],
+            layer: Some("l2".into()),
+            ..Form::default()
+        };
+        assert_eq!(
+            args(bundle, home, 2, &alone).join(" "),
+            "export /w/art.klad --frame 2 --format webp --lossless --only c1:s4,c1:s9"
+        );
+        let tiff = Form {
+            picture: Picture::Tiff,
+            deep: true,
+            ..Form::default()
+        };
+        assert_eq!(
+            args(bundle, home, 0, &tiff).join(" "),
+            "export /w/art.klad --frame 0 --format tiff --depth 16"
+        );
+        let pdf = Form {
+            what: What::Pdf,
+            pages: "walk".into(),
+            paper: "a4".into(),
+            landscape: true,
+            scale: 2.0,
+            layer: Some("l2".into()),
+            ..Form::default()
+        };
+        assert_eq!(
+            args(bundle, home, 0, &pdf).join(" "),
+            "export /w/art.klad --format pdf --pages walk --paper a4,landscape"
+        );
+        let print = Form {
+            what: What::Pdf,
+            dpi: 300.0,
+            background: true,
+            ..Form::default()
+        };
+        assert_eq!(
+            args(bundle, home, 5, &print).join(" "),
+            "export /w/art.klad --format pdf --frame 5 --dpi 300 --background"
+        );
+        let video = Form {
+            what: What::Video,
+            range: "walk".into(),
+            quality: 80.0,
+            scale: 2.0,
+            name: "walk".into(),
+            ..Form::default()
+        };
+        assert_eq!(
+            args(bundle, home, 0, &video).join(" "),
+            format!(
+                "export /w/art.klad --format mp4 --animated walk --scale 2 -o {}",
+                home.join("walk.mp4").display()
+            )
+        );
+        let moving = Form {
+            what: What::Gif,
+            webp: true,
+            range: "all".into(),
+            dither: true,
+            ..Form::default()
+        };
+        assert_eq!(
+            args(bundle, home, 0, &moving).join(" "),
+            "export /w/art.klad --format webp --animated all"
         );
         let sheet = Form {
             what: What::Sheet,

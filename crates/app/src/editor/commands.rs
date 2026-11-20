@@ -757,6 +757,8 @@ impl Editor {
             Cmd::ExportGif => self.exporting(super::export::What::Gif),
             Cmd::ExportAseprite => self.exporting(super::export::What::Aseprite),
             Cmd::ExportSvg => self.exporting(super::export::What::Svg),
+            Cmd::ExportPdf => self.exporting(super::export::What::Pdf),
+            Cmd::ExportVideo => self.exporting(super::export::What::Video),
             Cmd::CanvasWindow => self.windows.canvas,
             Cmd::ShowGrid => {
                 let g = &self.scene.bundle.doc.guides;
@@ -1106,6 +1108,8 @@ impl Editor {
             Cmd::ExportGif => self.open_export(super::export::What::Gif),
             Cmd::ExportAseprite => self.open_export(super::export::What::Aseprite),
             Cmd::ExportSvg => self.open_export(super::export::What::Svg),
+            Cmd::ExportPdf => self.open_export(super::export::What::Pdf),
+            Cmd::ExportVideo => self.open_export(super::export::What::Video),
             Cmd::CopyLook => self.copy_look(),
             Cmd::PasteLook => self.paste_look()?,
             Cmd::Unite | Cmd::SubtractShapes | Cmd::Intersect | Cmd::Exclude => {

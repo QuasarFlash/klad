@@ -81,6 +81,8 @@ pub enum Cmd {
     Intersect,
     Exclude,
     ExportSvg,
+    ExportPdf,
+    ExportVideo,
     BringToFront,
     BringForward,
     SendBackward,
@@ -586,7 +588,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 258] = [
+    pub const ALL: [Cmd; 260] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -664,6 +666,8 @@ impl Cmd {
         Cmd::Intersect,
         Cmd::Exclude,
         Cmd::ExportSvg,
+        Cmd::ExportPdf,
+        Cmd::ExportVideo,
         Cmd::BringToFront,
         Cmd::BringForward,
         Cmd::SendBackward,
@@ -1532,6 +1536,24 @@ impl Cmd {
                 T::None,
                 R::No,
                 "the frame on screen as an SVG an illustration app can edit: vector layers as shapes, paint and pixel layers as pictures, or the selected shapes alone",
+            ),
+            Cmd::ExportPdf => spec(
+                "file.export-pdf",
+                "export a PDF",
+                icon::EXPORT,
+                G::File,
+                T::None,
+                R::No,
+                "a PDF to print or send: vector layers stay sharp shapes, paint and pixel layers go in as pictures; on the drawing's size or a paper, a page per frame or clip",
+            ),
+            Cmd::ExportVideo => spec(
+                "file.export-video",
+                "export a video",
+                icon::EXPORT,
+                G::File,
+                T::None,
+                R::No,
+                "an MP4 video of a clip or the timeline, at its speed",
             ),
             Cmd::BringToFront => spec(
                 "edit.front",
@@ -3263,6 +3285,8 @@ impl Cmd {
             Cmd::Intersect => "Intersect",
             Cmd::Exclude => "Exclude",
             Cmd::ExportSvg => "SVG…",
+            Cmd::ExportPdf => "PDF…",
+            Cmd::ExportVideo => "Video…",
             Cmd::BringToFront => "Bring to front",
             Cmd::BringForward => "Bring forward",
             Cmd::SendBackward => "Send backward",
@@ -3506,6 +3530,8 @@ pub const MENUS: [Menu; 9] = [
                     Run(Cmd::ExportGif),
                     Run(Cmd::ExportAseprite),
                     Run(Cmd::ExportSvg),
+                    Run(Cmd::ExportPdf),
+                    Run(Cmd::ExportVideo),
                     Run(Cmd::ExportLayer),
                     Line,
                     Run(Cmd::ExportGodotWindow),

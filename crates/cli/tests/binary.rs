@@ -3720,3 +3720,161 @@ fn drawing_guides_bend_strokes_and_your_brushes_follow_you_into_other_drawings()
     assert!(draw(&["brushes", "--library"]).contains("[inks]"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn exports_write_jpeg_webp_tiff_pdf_with_shapes_kept_video_and_the_selection_alone() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-formats-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("a.klad");
+    let path = path.to_str().unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let refused = |args: &[&str]| {
+        let out = run(args);
+        assert!(!out.status.success(), "{args:?} should be refused");
+        String::from_utf8_lossy(&out.stderr).to_string()
+    };
+    draw(&["new", path, "--width", "120", "--height", "80", "--frames", "6"]);
+    draw(&[
+        "stroke",
+        path,
+        "l1",
+        "--line",
+        "10,60,110,60",
+        "--size",
+        "6",
+        "--color",
+        "#204080",
+    ]);
+    let ops = dir.join("shapes.jsonl");
+    std::fs::write(
+        &ops,
+        "{\"op\":\"add\",\"layer\":{\"kind\":\"vector\",\"name\":\"shapes\"}}\n",
+    )
+    .unwrap();
+    draw(&["apply", path, "--file", ops.to_str().unwrap()]);
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("a.klad/doc.json")).unwrap()).unwrap();
+    let layers = doc["layers"].as_array().unwrap();
+    let shapes = layers.iter().find(|l| l["name"] == "shapes").unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let cel = layers.iter().find(|l| l["id"] == "l1").unwrap()["cels"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    std::fs::write(
+        &ops,
+        format!("{{\"op\":\"add\",\"node\":{{\"id\":\"box\",\"type\":\"rect\",\"x\":20,\"y\":10,\"w\":50,\"h\":30,\"fill\":\"#c0392b\"}},\"in\":\"{shapes}\",\"frame\":0}}\n"),
+    )
+    .unwrap();
+    draw(&["apply", path, "--file", ops.to_str().unwrap()]);
+    let bytes = |name: &str| std::fs::read(dir.join(name)).unwrap();
+
+    assert!(draw(&["export", path, "-o", "pic.jpg", "--quality", "80"]).ends_with("pic.jpg"));
+    assert_eq!(&bytes("pic.jpg")[..3], &[0xFF, 0xD8, 0xFF]);
+    assert!(draw(&["export", path, "--format", "webp", "--lossless"]).ends_with("a-f0.webp"));
+    assert_eq!(&bytes("a-f0.webp")[8..16], b"WEBPVP8L");
+    draw(&["export", path, "--format", "webp", "-o", "small.webp"]);
+    assert_eq!(&bytes("small.webp")[8..15], b"WEBPVP8");
+    draw(&["export", path, "--format", "tiff", "--depth", "16", "-o", "deep.tif"]);
+    assert!(matches!(&bytes("deep.tif")[..4], b"II*\0" | b"MM\0*"));
+    assert!(refused(&["export", path, "--format", "jpeg", "--depth", "16"]).contains("PNG and TIFF"));
+    assert!(refused(&["export", path, "--format", "jpeg", "--gif"]).contains("for a picture"));
+    assert!(refused(&["export", path, "--format", "bmp"]).contains("not a format"));
+    assert!(refused(&["export", path, "--format", "jpeg", "--quality", "0"]).contains("1 to 100"));
+
+    draw(&["export", path, "--format", "pdf", "-o", "one.pdf"]);
+    let pdf = String::from_utf8_lossy(&bytes("one.pdf")).to_string();
+    assert!(
+        pdf.starts_with("%PDF-") && pdf.contains("/MediaBox [0 0 120 80]"),
+        "{}",
+        &pdf[..300.min(pdf.len())]
+    );
+    assert!(pdf.contains("/Subtype /Image"), "the paint layer is a picture");
+    draw(&["set", path, "l1", "visible=false"]);
+    draw(&["export", path, "--format", "pdf", "-o", "shapes.pdf"]);
+    let shapes_only = String::from_utf8_lossy(&bytes("shapes.pdf")).to_string();
+    assert!(
+        !shapes_only.contains("/Subtype /Image"),
+        "the shape is a path, not a picture"
+    );
+    draw(&["set", path, "l1", "visible=true"]);
+    draw(&[
+        "export",
+        path,
+        "--format",
+        "pdf",
+        "--pages",
+        "all",
+        "--paper",
+        "a4,landscape",
+        "-o",
+        "all.pdf",
+    ]);
+    let all = String::from_utf8_lossy(&bytes("all.pdf")).to_string();
+    assert!(all.contains("/Count 6") && all.contains("/MediaBox [0 0 842 595]"));
+    draw(&["export", path, "--format", "pdf", "--dpi", "144", "-o", "half.pdf"]);
+    assert!(String::from_utf8_lossy(&bytes("half.pdf")).contains("/MediaBox [0 0 60 40]"));
+    assert!(refused(&["export", path, "--format", "pdf", "--pages", "clips"]).contains("no clips"));
+
+    draw(&["key", path, "l1", "--frame", "0", "x=0"]);
+    draw(&["key", path, "l1", "--frame", "3", "x=30"]);
+    assert!(draw(&["export", path, "--format", "mp4"]).ends_with("a.mp4"));
+    let mp4 = bytes("a.mp4");
+    assert_eq!(&mp4[4..8], b"ftyp");
+    assert!(mp4.windows(4).any(|w| w == b"av01") && mp4.windows(4).any(|w| w == b"mdat"));
+    draw(&["export", path, "--format", "webp", "--animated", "-o", "moving.webp"]);
+    assert!(bytes("moving.webp").windows(4).any(|w| w == b"ANIM"));
+
+    assert!(draw(&["export", path, "--only", "box"]).ends_with("a-selection-f0.png"));
+    let png = bytes("a-selection-f0.png");
+    let size = |png: &[u8]| {
+        (
+            u32::from_be_bytes(png[16..20].try_into().unwrap()),
+            u32::from_be_bytes(png[20..24].try_into().unwrap()),
+        )
+    };
+    assert_eq!(size(&png), (50, 30), "cut to the shape");
+    let strokes: serde_json::Value = serde_json::from_str(&draw(&["strokes", path, "l1", "--json"])).unwrap();
+    let id = strokes["strokes"][0]["id"].as_u64().unwrap();
+    let only = format!("{cel}:s{id}");
+    draw(&[
+        "export",
+        path,
+        "--only",
+        &only,
+        "--format",
+        "webp",
+        "--lossless",
+        "-o",
+        "stroke.webp",
+    ]);
+    let w = webp_size(&bytes("stroke.webp"));
+    assert!(w.0 >= 100 && w.0 <= 112 && w.1 <= 12, "cut to the stroke: {w:?}");
+    assert!(refused(&["export", path, "--only", "nothing"]).contains("no shape nothing"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn webp_size(data: &[u8]) -> (u32, u32) {
+    let at = data.windows(4).position(|w| w == b"VP8L").unwrap() + 9;
+    let bits = u32::from_le_bytes(data[at..at + 4].try_into().unwrap());
+    ((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1)
+}
