@@ -2763,7 +2763,7 @@ impl Cmd {
             Cmd::DuplicateInPlace => spec(
                 "edit.duplicate",
                 "duplicate the selection in place",
-                icon::COPY,
+                icon::DUPLICATE,
                 G::Edit,
                 T::Press(const { &[cmd(Key::D)] }),
                 R::No,
@@ -2817,7 +2817,7 @@ impl Cmd {
             Cmd::DuplicateLayer => spec(
                 "layer.duplicate",
                 "duplicate the layer",
-                icon::COPY,
+                icon::DUPLICATE,
                 G::Layers,
                 T::None,
                 R::No,

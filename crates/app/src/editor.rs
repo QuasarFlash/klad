@@ -5376,12 +5376,16 @@ impl Editor {
     }
 
     fn select_all_strokes(&mut self) {
-        let ids: Vec<u32> = self.scene.active_marks().iter().map(Mark::id).collect();
+        let pickable = |marks: &[Mark]| -> Vec<u32> {
+            let riding = klad_core::attach::following(marks);
+            marks.iter().map(Mark::id).filter(|id| !riding.contains(id)).collect()
+        };
+        let ids = pickable(self.scene.active_marks());
         let more: Vec<Part> = self
             .also_cels()
             .into_iter()
             .map(|(layer, cel)| Part {
-                ids: self.scene.marks_of(&cel).iter().map(Mark::id).collect(),
+                ids: pickable(self.scene.marks_of(&cel)),
                 layer,
                 cel,
             })

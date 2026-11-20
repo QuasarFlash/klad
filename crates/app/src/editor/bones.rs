@@ -1478,7 +1478,7 @@ impl Editor {
                 .hint(
                     "the weight a dab paints toward, or adds and takes away (alt I picks it up from under the pointer)",
                 );
-                ui.menu_button(icon::MORE, |ui| {
+                theme::held_menu(ui, icon::MORE, |ui| {
                     ui.add(
                         egui::Slider::new(&mut self.bones.flow, 0.0..=1.0)
                             .fixed_decimals(2)
@@ -1620,7 +1620,7 @@ impl Editor {
         };
         let on = layers.iter().filter(|l| mine(&l.2)).count();
         let mut chosen = None;
-        ui.menu_button(format!("layers: {on}"), |ui| {
+        theme::held_menu(ui, format!("layers: {on}"), |ui| {
             layers.iter().for_each(|(id, name, link)| {
                 let mut checked = mine(link);
                 let label = match link.as_ref().filter(|_| !checked) {

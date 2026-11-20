@@ -70,7 +70,7 @@ pub(super) fn span_menu(ui: &mut egui::Ui, span: &Span, keys: Option<(u32, u32)>
         span.to,
         span.rows.join(", ")
     ));
-    ui.menu_button("retime the selected frames", |ui| {
+    crate::theme::held_menu(ui, "retime the selected frames", |ui| {
         ui.checkbox(&mut ask.every_layer, "on every layer (later frames and clips move too)");
         [(1, "on ones"), (2, "on twos"), (3, "on threes")]
             .iter()

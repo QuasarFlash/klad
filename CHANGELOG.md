@@ -52,6 +52,9 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 - On Windows, a drawing whose folder is renamed while it is open is followed, as on the Mac and Linux.
 - A new layer made while a layer inside a hidden group was picked was hidden with the group, so nothing could be painted on it; it now goes above the hidden group.
 - Going to the layer above or below past the top or the bottom, and pasting a look onto the shape it came from, now say why nothing happened.
+- Moving strokes in a large drawing follows the pen again: while you drag, klad moves a picture of the strokes and draws them in their new place when you let go.
+- Select all (cmd A) no longer picks the eraser marks that ride on strokes, so deleting everything it picked works instead of naming a mark that was already gone.
+- The brush's **more** menu and the selection's numbers stay open while you pick and type in them; the numbers button says **numbers**, and duplicate has its own icon next to copy.
 
 ## 0.4.0 (2026-11-19)
 

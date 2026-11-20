@@ -3183,7 +3183,7 @@ fn a_right_click_on_the_canvas_moves_what_is_selected_to_a_new_layer() {
     activate(&mut h, "lines");
     let layers = |h: &Harness<'static, Editor>| h.state().scene.bundle.doc.all_layers().len();
     let before = layers(&h);
-    let spot = canvas_at(&h, 450.0, 350.0);
+    let spot = canvas_at(&h, 470.0, 30.0);
     right_click(&mut h, spot);
     let item = h
         .query_all_by_label("Move to new layer")
@@ -6797,12 +6797,16 @@ fn a_bones_layer_takes_any_layers_in_the_drawing() {
     assert_eq!(skeleton(&h).bones.len(), 1, "the bone goes on the bones layer");
     h.state_mut().pick_bone(Some("bone 1".into()));
     h.run_steps(2);
-    ["colour", "lines"].into_iter().enumerate().for_each(|(n, layer)| {
-        h.get_by_role_and_label(Role::Button, &format!("layers: {n}")).click();
-        h.run_steps(2);
+    h.get_by_role_and_label(Role::Button, "layers: 0").click();
+    h.run_steps(2);
+    ["colour", "lines"].into_iter().for_each(|layer| {
         h.get_by_role_and_label(Role::CheckBox, layer).click();
         h.run_steps(3);
     });
+    assert!(
+        h.query_by_role_and_label(Role::Button, "layers: 2").is_some(),
+        "the layers menu stays open for the second layer"
+    );
     let doc = &h.state().scene.bundle.doc;
     ["colour", "lines"].into_iter().for_each(|name| {
         let layer = doc.find_layer(name).unwrap();

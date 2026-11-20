@@ -465,12 +465,11 @@ impl Editor {
                             }
                         }
                         if !matches!(selected, Selected::Points) {
-                            let numbers = ui
-                                .menu_button(icon::NUMBERS, |ui| {
-                                    self.check(|e| e.typed_menu(ui));
-                                })
-                                .response
-                                .hint("position, size and angle as numbers");
+                            let numbers = theme::held_menu(ui, format!("{} numbers", icon::TYPED), |ui| {
+                                self.check(|e| e.typed_menu(ui));
+                            })
+                            .response
+                            .hint("position, size and angle as numbers");
                             if numbers.clicked() {
                                 self.typed = None;
                             }

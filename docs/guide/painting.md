@@ -18,7 +18,7 @@ An eraser stroke stays with the strokes it erased, like a mask that travels with
 
 Hold **shift** and click: klad paints a straight line from the end of your last stroke. Hold **shift** while you drag to keep the line level, upright or at 45 degrees.
 
-For a line, a rectangle or an ellipse in paint, click **more** in the brush bar, pick it next to **draws** and drag. **shift** makes a square or a circle, **alt** draws from the middle. While it is on, the bar shows it; pick **free** to paint by hand again.
+For a line, a rectangle or an ellipse in paint, click **more** in the brush bar, pick it next to **draws** (the menu stays open while you set it up) and drag. **shift** makes a square or a circle, **alt** draws from the middle. While it is on, the bar shows it; pick **free** to paint by hand again.
 
 ## Pick a brush and a colour
 

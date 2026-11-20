@@ -310,7 +310,10 @@ impl Editor {
     fn brush_more(&mut self, ui: &mut egui::Ui) -> Result<()> {
         ui.horizontal(|ui| {
             ui.label("draws");
-            self.figure_choice(ui);
+            super::straight::Figure::ALL.iter().for_each(|(f, label)| {
+                ui.selectable_value(&mut self.brush_figure, *f, *label)
+                    .hint(super::straight::HINT);
+            });
         });
         let current = self.brush.clone();
         let erasing = self.is_on(Cmd::Eraser) == Some(true);
@@ -419,7 +422,7 @@ impl Editor {
                 }
                 Tool::Brush => {
                     self.brush_main(ui);
-                    ui.menu_button(format!("{} more", icon::MORE), |ui| {
+                    theme::held_menu(ui, format!("{} more", icon::MORE), |ui| {
                         self.check(|e| e.brush_more(ui));
                     })
                     .response

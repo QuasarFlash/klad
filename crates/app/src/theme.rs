@@ -66,7 +66,7 @@ pub mod icon {
     pub const PERSPECTIVE: &str = "\u{EBE6}";
     pub const STAR: &str = "\u{E46A}";
     pub const RENAME: &str = "\u{E7D8}";
-    pub const DUPLICATE: &str = "\u{E1CC}";
+    pub const DUPLICATE: &str = "\u{EDF6}";
     pub const DROP: &str = "\u{E210}";
     pub const SUBTRACT: &str = "\u{EBD6}";
     pub const INTERSECT: &str = "\u{E2D2}";
@@ -116,6 +116,7 @@ pub mod icon {
     pub const HISTORY: &str = "\u{E1A0}";
     pub const TIMELINE: &str = "\u{E792}";
     pub const NUMBERS: &str = "\u{E628}";
+    pub const TYPED: &str = "\u{E2A2}";
     pub const LOG: &str = "\u{E2F0}";
     pub const UP: &str = "\u{E08E}";
     pub const DOWN: &str = "\u{E03E}";
@@ -287,6 +288,17 @@ pub fn hint_parts(ctx: &egui::Context) -> Vec<(Rect, Rect, String)> {
         d.get_temp::<Vec<(Rect, Rect, String)>>(hint_parts_id())
             .unwrap_or_default()
     })
+}
+
+pub fn held_menu<'a, R>(
+    ui: &mut egui::Ui,
+    atoms: impl egui::IntoAtoms<'a>,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<Option<R>> {
+    let (response, inner) = egui::containers::menu::MenuButton::new(atoms)
+        .config(egui::containers::menu::MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside))
+        .ui(ui, add);
+    egui::InnerResponse::new(inner.map(|i| i.inner), response)
 }
 
 pub fn select_all(ctx: &egui::Context, field: Id, text: &str) {

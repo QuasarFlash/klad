@@ -278,7 +278,7 @@ impl Editor {
             ui.separator();
             let span = self.timeline.span.is_some();
             ui.add_enabled_ui(span, |ui| {
-                ui.menu_button(format!("{} retime", icon::RETIME), |ui| {
+                theme::held_menu(ui, format!("{} retime", icon::RETIME), |ui| {
                     [Cmd::OnOnes, Cmd::OnTwos, Cmd::OnThrees].into_iter().for_each(|cmd| {
                         if self.command_button(ui, cmd, Some(cmd.spec().name)).clicked() {
                             ui.close();

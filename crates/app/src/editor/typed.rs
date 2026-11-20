@@ -71,9 +71,10 @@ impl Editor {
                 let Some(typed) = self.typed.as_mut() else {
                     return;
                 };
-                ui.label(*label);
+                let name = ui.label(*label);
                 let field = ui
                     .add(egui::TextEdit::singleline(&mut typed.text[i]).desired_width(64.0))
+                    .labelled_by(name.id)
                     .hint(*hint);
                 let entered = field.lost_focus();
                 if entered

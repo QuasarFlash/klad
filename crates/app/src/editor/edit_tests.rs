@@ -1426,3 +1426,102 @@ fn stepping_past_the_last_layer_and_pasting_a_look_onto_its_own_shape_say_why() 
     assert!(said(&h).contains("this is the bottom layer"), "{}", said(&h));
     let _ = std::fs::remove_dir_all(&path);
 }
+
+#[test]
+fn select_all_leaves_out_the_eraser_riding_on_a_stroke_and_delete_takes_both() {
+    let path = sample("select-all-eraser");
+    let mut h = harness(editor(&path), vec2(1440.0, 900.0));
+    activate(&mut h, "lines");
+    h.state_mut()
+        .apply(
+            parse_lines(r#"{"op":"stroke","layer":"l6","path":"M120 60 L180 140","size":24,"brush":"eraser"}"#)
+                .unwrap(),
+        )
+        .unwrap();
+    h.run_steps(3);
+    let marks = h.state().scene.active_marks().to_vec();
+    let eraser = marks.last().and_then(Mark::as_stroke).unwrap().clone();
+    assert!(!eraser.on.is_empty(), "the eraser rides on the line it crosses");
+    h.state_mut().tool = Tool::Strokes;
+    chord(&mut h, Modifiers::COMMAND, Key::A);
+    let picked = picked_ids(&h);
+    assert!(
+        !picked.contains(&eraser.id),
+        "select all leaves the riding eraser out: {picked:?}"
+    );
+    assert_eq!(picked.len(), marks.len() - 1, "and picks every stroke: {picked:?}");
+    chord(&mut h, Modifiers::NONE, Key::Backspace);
+    assert!(!said(&h).contains("does not exist"), "{}", said(&h));
+    assert!(
+        h.state().scene.active_marks().is_empty(),
+        "delete takes the strokes and the eraser on them: {}",
+        said(&h)
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn duplicate_has_its_own_icon_beside_copy() {
+    assert_ne!(Cmd::Copy.spec().icon, Cmd::DuplicateInPlace.spec().icon);
+    assert_eq!(Cmd::DuplicateInPlace.spec().icon, Cmd::DuplicateLayer.spec().icon);
+    assert_eq!(Cmd::DuplicateInPlace.spec().icon, crate::theme::icon::DUPLICATE);
+}
+
+#[test]
+fn the_brush_menu_and_the_numbers_menu_stay_open_while_they_are_used() {
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::Queryable;
+    let path = sample("held-menus");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "lines");
+    h.state_mut().tool = Tool::Brush;
+    h.run_steps(2);
+    let more: &'static str = Box::leak(format!("{} more", crate::theme::icon::MORE).into_boxed_str());
+    h.get_by_role_and_label(Role::Button, more).click();
+    h.run_steps(2);
+    h.get_by_label("rectangle").click();
+    h.run_steps(2);
+    assert_eq!(
+        h.state().brush_figure,
+        super::straight::Figure::Rect,
+        "draws: rectangle"
+    );
+    assert!(
+        h.query_all_by_label_contains("lightest size").next().is_some(),
+        "the menu stays open after the pick"
+    );
+    h.get_by_label("free").click();
+    h.run_steps(2);
+    assert_eq!(h.state().brush_figure, super::straight::Figure::Free);
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+
+    activate(&mut h, "shapes");
+    h.state_mut().tool = Tool::Select;
+    let inside = canvas_at(&h, 120.0, 30.0);
+    click(&mut h, inside);
+    h.run_steps(3);
+    assert!(h.state().selection.is_some(), "{}", said(&h));
+    let numbers: &'static str = Box::leak(format!("{} numbers", crate::theme::icon::TYPED).into_boxed_str());
+    h.get_by_role_and_label(Role::Button, numbers).click();
+    h.run_steps(2);
+    h.get_by_role_and_label(Role::TextInput, "x").click();
+    h.run_steps(2);
+    assert!(
+        h.query_by_role_and_label(Role::TextInput, "x").is_some(),
+        "a click in a field leaves the numbers open"
+    );
+    h.key_press(Key::End);
+    (0..6).for_each(|_| h.key_press(Key::Backspace));
+    h.get_by_role_and_label(Role::TextInput, "x").type_text("100");
+    h.run_steps(1);
+    h.key_press(Key::Enter);
+    h.run_steps(4);
+    let corners = h.state().handles().map(|(_, c)| c).unwrap();
+    assert!(
+        (corners[0].x - 100.0).abs() < 1.0,
+        "x typed in the numbers moves the shape's left edge: {corners:?} {}",
+        said(&h)
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
