@@ -382,6 +382,9 @@ impl Editor {
     pub(super) fn tool_options(&mut self, ui: &mut egui::Ui) -> Result<()> {
         let narrow = (ui.available_width() / BAR_SLIDERS).max(BAR_SLIDER_LEAST);
         ui.spacing_mut().slider_width = ui.spacing().slider_width.min(narrow);
+        if self.cropping.is_some() {
+            return ui.horizontal_wrapped(|ui| self.crop_bar(ui)).inner;
+        }
         ui.horizontal_wrapped(|ui| {
             let (cmd, name) = match self.tool {
                 Tool::Brush if self.is_on(Cmd::Eraser) == Some(true) => (Cmd::Eraser, "eraser"),

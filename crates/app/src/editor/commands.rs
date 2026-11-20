@@ -804,7 +804,9 @@ impl Editor {
             Cmd::Link => self.windows.link,
             _ => return None,
         };
-        Some(on)
+        let other_tool =
+            self.cropping.is_some() && cmd != Cmd::CropTool && cmd.spec().group == crate::commands::Group::Tools;
+        Some(on && !other_tool)
     }
 
     fn mask_of_active(&self) -> Option<&klad_core::doc::Layer> {
@@ -901,7 +903,7 @@ impl Editor {
     }
 
     fn run(&mut self, cmd: Cmd) -> Result<()> {
-        if cmd.spec().group == crate::commands::Group::Tools && self.cropping.is_some() {
+        if cmd.spec().group == crate::commands::Group::Tools && cmd != Cmd::CropTool && self.cropping.is_some() {
             self.cropping = None;
         }
         let area = self.canvas_rect.size();

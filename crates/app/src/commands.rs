@@ -1358,10 +1358,10 @@ impl Cmd {
                 "canvas.crop",
                 "crop",
                 icon::CROP,
-                G::Edit,
+                G::Tools,
                 T::Press(const { &[plain(Key::C)] }),
                 R::No,
-                "drag the area of the drawing to keep, then Return; Esc leaves it",
+                "the crop tool: a box round the canvas with handles; drag them, the box or a new box over the area to keep, then Return",
             ),
             Cmd::CropToSelection => spec(
                 "canvas.crop-selection",
@@ -3718,7 +3718,6 @@ pub const MENUS: [Menu; 9] = [
                 "Canvas",
                 &[
                     Run(Cmd::CanvasWindow),
-                    Run(Cmd::CropTool),
                     Run(Cmd::CropToSelection),
                     Run(Cmd::Trim),
                     Line,
@@ -3819,6 +3818,7 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::Shapes),
             Run(Cmd::Strokes),
             Run(Cmd::Points),
+            Run(Cmd::CropTool),
             Run(Cmd::Pen),
             Run(Cmd::ShapeTool),
             Run(Cmd::TextTool),

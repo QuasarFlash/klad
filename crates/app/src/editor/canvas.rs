@@ -30,13 +30,117 @@ impl Default for Form {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Grip {
+    New,
+    Move,
+    Sides(i8, i8),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Crop {
     pub from: Vec2,
     pub to: Vec2,
-    pub dragging: bool,
+    pub whole: bool,
+    pub held: Option<(Grip, Vec2, Vec2, Vec2)>,
 }
 
+const GRIP: f32 = 8.0;
+
 impl Crop {
+    pub(super) fn new(lo: Vec2, hi: Vec2) -> Self {
+        Self {
+            from: lo,
+            to: hi,
+            whole: false,
+            held: None,
+        }
+    }
+
+    fn span(&self) -> (Vec2, Vec2) {
+        (self.from.min(self.to), self.from.max(self.to))
+    }
+
+    fn handles(&self) -> [(Grip, Vec2); 8] {
+        let (lo, hi) = self.span();
+        let mid = (lo + hi) / 2.0;
+        [
+            (Grip::Sides(-1, -1), lo),
+            (Grip::Sides(0, -1), vec2(mid.x, lo.y)),
+            (Grip::Sides(1, -1), vec2(hi.x, lo.y)),
+            (Grip::Sides(1, 0), vec2(hi.x, mid.y)),
+            (Grip::Sides(1, 1), hi),
+            (Grip::Sides(0, 1), vec2(mid.x, hi.y)),
+            (Grip::Sides(-1, 1), vec2(lo.x, hi.y)),
+            (Grip::Sides(-1, 0), vec2(lo.x, mid.y)),
+        ]
+    }
+
+    fn grip_at(&self, at: Vec2, slack: f32) -> Grip {
+        let nearest = self
+            .handles()
+            .into_iter()
+            .filter(|(_, p)| (*p - at).length() <= slack)
+            .min_by(|a, b| (a.1 - at).length().total_cmp(&(b.1 - at).length()));
+        let (lo, hi) = self.span();
+        let inside = at.x > lo.x && at.x < hi.x && at.y > lo.y && at.y < hi.y;
+        match (nearest, inside && !self.whole) {
+            (Some((grip, _)), _) => grip,
+            (None, true) => Grip::Move,
+            (None, false) => Grip::New,
+        }
+    }
+
+    fn dragged(&mut self, at: Vec2, size: Vec2, keep: bool, centred: bool) {
+        let Some((grip, start, lo, hi)) = self.held else {
+            return;
+        };
+        let (a, b) = match grip {
+            Grip::New => {
+                let mut half = at - start;
+                if keep {
+                    let side = half.x.abs().max(half.y.abs());
+                    half = vec2(side * half.x.signum(), side * half.y.signum());
+                }
+                match centred {
+                    true => (start - half, start + half),
+                    false => (start, start + half),
+                }
+            }
+            Grip::Move => {
+                let d = at - start;
+                let d = vec2(d.x.clamp(-lo.x, size.x - hi.x), d.y.clamp(-lo.y, size.y - hi.y));
+                (lo + d, hi + d)
+            }
+            Grip::Sides(sx, sy) => {
+                let pick = |s: i8, low: f32, high: f32| if s < 0 { low } else { high };
+                let anchor = match centred {
+                    true => (lo + hi) / 2.0,
+                    false => vec2(pick(-sx, lo.x, hi.x), pick(-sy, lo.y, hi.y)),
+                };
+                let mut half = vec2(pick(sx, lo.x, hi.x), pick(sy, lo.y, hi.y)) + (at - start) - anchor;
+                let (w, h) = (hi.x - lo.x, hi.y - lo.y);
+                if keep && sx != 0 && sy != 0 && w > 0.0 && h > 0.0 {
+                    let ratio = w / h;
+                    match half.x.abs() > half.y.abs() * ratio {
+                        true => half.y = half.y.signum() * half.x.abs() / ratio,
+                        false => half.x = half.x.signum() * half.y.abs() * ratio,
+                    }
+                }
+                let side = |s: i8, low: f32, high: f32, a: f32, h: f32| match (s, centred) {
+                    (0, _) => (low, high),
+                    (_, true) => (a - h, a + h),
+                    (_, false) => (a, a + h),
+                };
+                let (x0, x1) = side(sx, lo.x, hi.x, anchor.x, half.x);
+                let (y0, y1) = side(sy, lo.y, hi.y, anchor.y, half.y);
+                (vec2(x0, y0), vec2(x1, y1))
+            }
+        };
+        let inside = |v: Vec2| vec2(v.x.clamp(0.0, size.x), v.y.clamp(0.0, size.y));
+        self.from = inside(a.min(b));
+        self.to = inside(a.max(b));
+    }
+
     fn area(&self, pixel: bool) -> (f32, f32, u32, u32) {
         let (lo, hi) = (self.from.min(self.to), self.from.max(self.to));
         let (lo, hi) = match pixel {
@@ -46,6 +150,8 @@ impl Crop {
         (lo.x, lo.y, (hi.x - lo.x).max(0.0) as u32, (hi.y - lo.y).max(0.0) as u32)
     }
 }
+
+const CROP_HINT: &str = "drag the handles, the box or a new box over the area to keep, then Return; shift keeps the shape, alt sizes from the middle, Esc leaves";
 
 pub(super) const COMMANDS: [Cmd; 5] = [
     Cmd::CanvasRight,
@@ -102,22 +208,12 @@ impl Editor {
                 let (lo, hi) = corners
                     .iter()
                     .fold((corners[0], corners[0]), |(lo, hi), c| (lo.min(*c), hi.max(*c)));
-                let crop = Crop {
-                    from: lo,
-                    to: hi,
-                    dragging: false,
-                };
-                let (x, y, width, height) = crop.area(self.scene.on_grid());
+                let (x, y, width, height) = Crop::new(lo, hi).area(self.scene.on_grid());
                 self.reshape(Reshape::Crop { x, y, width, height }, "cropped to the selection")
             }
             Cmd::Trim => match klad_render::reshape::drawn(&self.scene.bundle)? {
                 Some([x0, y0, x1, y1]) => {
-                    let crop = Crop {
-                        from: vec2(x0, y0),
-                        to: vec2(x1, y1),
-                        dragging: false,
-                    };
-                    let (x, y, width, height) = crop.area(self.scene.on_grid());
+                    let (x, y, width, height) = Crop::new(vec2(x0, y0), vec2(x1, y1)).area(self.scene.on_grid());
                     self.reshape(Reshape::Crop { x, y, width, height }, "trimmed to what is drawn")
                 }
                 None => {
@@ -131,17 +227,13 @@ impl Editor {
                     None => {
                         let (w, h) = self.scene.size();
                         Some(Crop {
-                            from: Vec2::ZERO,
-                            to: vec2(w as f32, h as f32),
-                            dragging: false,
+                            whole: true,
+                            ..Crop::new(Vec2::ZERO, vec2(w as f32, h as f32))
                         })
                     }
                 };
                 if self.cropping.is_some() {
-                    self.say(
-                        Tone::Info,
-                        "drag the area to keep, then press Return; Esc leaves the crop",
-                    );
+                    self.say(Tone::Info, CROP_HINT);
                 }
                 Ok(())
             }
@@ -155,29 +247,48 @@ impl Editor {
 
     pub(super) fn crop_pen(&mut self, phase: Phase, at: Vec2, on_canvas: bool) {
         let (w, h) = self.scene.size();
-        let at = vec2(at.x.clamp(0.0, w as f32), at.y.clamp(0.0, h as f32));
+        let size = vec2(w as f32, h as f32);
+        let slack = GRIP / self.view.map_or(1.0, |v| v.zoom);
+        let (keep, centred) = (self.modifiers.shift, self.modifiers.alt);
         let Some(crop) = self.cropping.as_mut() else {
             return;
         };
         match phase {
             Phase::Down if on_canvas => {
-                crop.from = at;
-                crop.to = at;
-                crop.dragging = true;
+                let grip = crop.grip_at(at, slack);
+                let start = match grip {
+                    Grip::New => vec2(at.x.clamp(0.0, size.x), at.y.clamp(0.0, size.y)),
+                    _ => at,
+                };
+                let (lo, hi) = crop.span();
+                crop.held = Some((grip, start, lo, hi));
             }
-            Phase::Move if crop.dragging => crop.to = at,
-            Phase::Up if crop.dragging => {
-                crop.to = at;
-                crop.dragging = false;
+            Phase::Move if crop.held.is_some() => {
+                crop.dragged(at, size, keep, centred);
+                crop.whole = false;
+            }
+            Phase::Up => {
+                let Some((grip, _, lo, hi)) = crop.held else {
+                    return;
+                };
+                crop.dragged(at, size, keep, centred);
+                crop.held = None;
+                let (a, b) = crop.span();
+                if grip == Grip::New && ((b.x - a.x) < 1.0 || (b.y - a.y) < 1.0) {
+                    crop.from = lo;
+                    crop.to = hi;
+                } else {
+                    crop.whole = false;
+                }
             }
             _ => {}
         }
     }
 
     pub(super) fn crop_keys(&mut self, ui: &mut egui::Ui) -> Result<()> {
-        let Some(crop) = self.cropping else {
+        if self.cropping.is_none() {
             return Ok(());
-        };
+        }
         let (enter, escape) = ui.input_mut(|i| {
             (
                 i.consume_key(Modifiers::NONE, Key::Enter),
@@ -185,21 +296,88 @@ impl Editor {
             )
         });
         if escape {
-            self.cropping = None;
-            self.say(Tone::Info, "left the crop; nothing changed");
+            self.leave_crop();
         }
         if enter {
-            self.cropping = None;
-            let (x, y, width, height) = crop.area(self.scene.on_grid());
-            if width == 0 || height == 0 {
-                self.say(
-                    Tone::Refused,
-                    "drag an area on the canvas first: the crop keeps what is inside it",
-                );
-                return Ok(());
-            }
-            self.reshape(Reshape::Crop { x, y, width, height }, "cropped")?;
+            self.apply_crop()?;
         }
+        Ok(())
+    }
+
+    fn leave_crop(&mut self) {
+        self.cropping = None;
+        self.say(Tone::Info, "left the crop; nothing changed");
+    }
+
+    fn apply_crop(&mut self) -> Result<()> {
+        let Some(crop) = self.cropping.take() else {
+            return Ok(());
+        };
+        let (x, y, width, height) = crop.area(self.scene.on_grid());
+        if width == 0 || height == 0 {
+            self.say(
+                Tone::Refused,
+                "drag an area on the canvas first: the crop keeps what is inside it",
+            );
+            return Ok(());
+        }
+        self.reshape(Reshape::Crop { x, y, width, height }, "cropped")
+    }
+
+    pub(super) fn crop_bar(&mut self, ui: &mut egui::Ui) -> Result<()> {
+        let Some(crop) = self.cropping else {
+            return Ok(());
+        };
+        let pixel = self.scene.on_grid();
+        let (w, h) = self.scene.size();
+        let (_, _, mut width, mut height) = crop.area(pixel);
+        ui.label(RichText::new(format!("{} crop", Cmd::CropTool.spec().icon)).strong());
+        ui.separator();
+        let mut sized = false;
+        [("w", &mut width, w), ("h", &mut height, h)]
+            .into_iter()
+            .for_each(|(name, value, most)| {
+                let label = ui.label(name);
+                sized |= ui
+                    .add(egui::DragValue::new(value).range(1..=most).suffix(" px"))
+                    .labelled_by(label.id)
+                    .hint("the size of the area to keep, in canvas px; it grows to the right and down")
+                    .changed();
+            });
+        if sized && let Some(crop) = self.cropping.as_mut() {
+            let (lo, _) = crop.span();
+            crop.to = vec2(
+                (lo.x + width as f32).min(w as f32),
+                (lo.y + height as f32).min(h as f32),
+            );
+            crop.from = lo;
+            crop.whole = false;
+        }
+        if ui
+            .button("crop to the box")
+            .hint("keep the area inside the box (Return); cmd Z takes it back")
+            .clicked()
+        {
+            return self.apply_crop();
+        }
+        if ui
+            .button("whole canvas")
+            .hint("the box around the whole canvas again")
+            .clicked()
+        {
+            self.cropping = Some(Crop {
+                whole: true,
+                ..Crop::new(Vec2::ZERO, vec2(w as f32, h as f32))
+            });
+        }
+        if ui
+            .button("cancel")
+            .hint("leave the crop; nothing changes (Esc)")
+            .clicked()
+        {
+            self.leave_crop();
+        }
+        ui.label(RichText::new(CROP_HINT).color(theme::WEAK));
         Ok(())
     }
 
@@ -208,7 +386,7 @@ impl Editor {
             return;
         };
         let (w, h) = self.scene.size();
-        let (lo, hi) = (crop.from.min(crop.to), crop.from.max(crop.to));
+        let (lo, hi) = crop.span();
         let canvas = Rect::from_two_pos(to_screen(Vec2::ZERO), to_screen(vec2(w as f32, h as f32)));
         let keep = Rect::from_two_pos(to_screen(lo), to_screen(hi));
         let shade = Color32::from_black_alpha(140);
@@ -229,6 +407,52 @@ impl Editor {
             egui::Stroke::new(1.5, theme::ACCENT),
             egui::StrokeKind::Middle,
         );
+        if crop.held.is_some() {
+            [1.0 / 3.0, 2.0 / 3.0].into_iter().for_each(|t| {
+                let x = keep.min.x + keep.width() * t;
+                let y = keep.min.y + keep.height() * t;
+                let thin = egui::Stroke::new(1.0, Color32::from_white_alpha(110));
+                painter.line_segment([egui::pos2(x, keep.min.y), egui::pos2(x, keep.max.y)], thin);
+                painter.line_segment([egui::pos2(keep.min.x, y), egui::pos2(keep.max.x, y)], thin);
+            });
+        }
+        let handles = crop.handles().map(|(grip, at)| (grip, to_screen(at)));
+        handles.iter().for_each(|(_, at)| {
+            let r = Rect::from_center_size(*at, Vec2::splat(GRIP));
+            painter.rect_filled(r, 1.0, Color32::WHITE);
+            painter.rect_stroke(r, 1.0, egui::Stroke::new(1.5, theme::ACCENT), egui::StrokeKind::Middle);
+        });
+        let ctx = painter.ctx();
+        let Some(hover) = ctx
+            .pointer_hover_pos()
+            .filter(|p| painter.clip_rect().contains(*p))
+            .filter(|p| ctx.layer_id_at(*p).is_none_or(|l| l.order == egui::Order::Background))
+        else {
+            return;
+        };
+        let grip = match crop.held {
+            Some((grip, ..)) => grip,
+            None => handles
+                .iter()
+                .filter(|(_, at)| at.distance(hover) <= GRIP)
+                .min_by(|a, b| a.1.distance(hover).total_cmp(&b.1.distance(hover)))
+                .map_or_else(
+                    || match keep.contains(hover) && !crop.whole {
+                        true => Grip::Move,
+                        false => Grip::New,
+                    },
+                    |(grip, _)| *grip,
+                ),
+        };
+        ctx.set_cursor_icon(match grip {
+            Grip::New => egui::CursorIcon::Crosshair,
+            Grip::Move if crop.held.is_some() => egui::CursorIcon::Grabbing,
+            Grip::Move => egui::CursorIcon::Grab,
+            Grip::Sides(0, _) => egui::CursorIcon::ResizeVertical,
+            Grip::Sides(_, 0) => egui::CursorIcon::ResizeHorizontal,
+            Grip::Sides(x, y) if x == y => egui::CursorIcon::ResizeNwSe,
+            Grip::Sides(..) => egui::CursorIcon::ResizeNeSw,
+        });
     }
 
     pub(super) fn canvas_window(&mut self, ui: &mut egui::Ui) -> Result<()> {

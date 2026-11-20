@@ -1583,3 +1583,76 @@ fn with_all_layers_the_wand_and_select_all_reach_every_layer() {
     );
     let _ = std::fs::remove_dir_all(&path);
 }
+
+#[test]
+fn the_crop_tool_is_in_the_strip_with_handles_a_box_that_moves_and_its_bar() {
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::Queryable;
+    let path = sample("crop-tool");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    let size = |h: &Harness<'static, Editor>| h.state().scene.size();
+    let span = |h: &Harness<'static, Editor>| {
+        let c = h.state().cropping.unwrap();
+        (c.from, c.to)
+    };
+    h.get_by_role_and_label(Role::Button, Cmd::CropTool.spec().icon).click();
+    h.run_steps(2);
+    assert!(h.state().cropping.is_some(), "the strip's crop button starts the crop");
+    assert_eq!(h.state().is_on(Cmd::CropTool), Some(true));
+    assert_eq!(
+        h.state().is_on(Cmd::Brush),
+        Some(false),
+        "only the crop is lit in the strip"
+    );
+    assert!(
+        h.query_by_role_and_label(Role::SpinButton, "w").is_some(),
+        "the bar has the crop's size"
+    );
+
+    let (a, b) = (canvas_at(&h, 512.0, 192.0), canvas_at(&h, 412.0, 192.0));
+    drag(&mut h, a, b);
+    let (lo, hi) = span(&h);
+    assert!(
+        (hi.x - 412.0).abs() < 2.0 && lo.x.abs() < 0.5 && (hi.y - 384.0).abs() < 0.5,
+        "the right handle moves the right edge only: {lo:?} {hi:?}"
+    );
+
+    hold(&mut h, Modifiers::SHIFT);
+    let (a, b) = (canvas_at(&h, 0.0, 0.0), canvas_at(&h, 100.0, 10.0));
+    drag(&mut h, a, b);
+    hold(&mut h, Modifiers::NONE);
+    let (lo, hi) = span(&h);
+    let ratio = (hi.x - lo.x) / (hi.y - lo.y);
+    assert!(
+        (ratio - 412.0 / 384.0).abs() < 0.02 && lo.x > 5.0 && lo.y > 5.0,
+        "shift on a corner keeps the box's shape: {lo:?} {hi:?}"
+    );
+
+    let middle = (lo + hi) / 2.0;
+    let (a, b) = (
+        canvas_at(&h, middle.x, middle.y),
+        canvas_at(&h, middle.x - 4.0, middle.y),
+    );
+    drag(&mut h, a, b);
+    let (moved, _) = span(&h);
+    assert!(
+        (moved.x - (lo.x - 4.0)).abs() < 1.5 && (moved.y - lo.y).abs() < 1.0,
+        "a drag inside moves the box: {moved:?} from {lo:?}"
+    );
+
+    let (_, hi) = span(&h);
+    let expect = ((hi.x - moved.x).round() as i32, (hi.y - moved.y).round() as i32);
+    h.get_by_label("crop to the box").click();
+    h.run_steps(4);
+    let (w, hh) = size(&h);
+    assert!(
+        (w as i32 - expect.0).abs() <= 2 && (hh as i32 - expect.1).abs() <= 2,
+        "the bar's crop button keeps the box: {w}x{hh}, the box was {expect:?} {}",
+        said(&h)
+    );
+    assert!(h.state().cropping.is_none());
+    chord(&mut h, Modifiers::COMMAND, Key::Z);
+    h.run_steps(4);
+    assert_eq!(size(&h), (512, 384), "cmd Z takes the crop back");
+    let _ = std::fs::remove_dir_all(&path);
+}

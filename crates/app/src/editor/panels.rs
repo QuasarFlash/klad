@@ -76,13 +76,14 @@ fn ago(at: Instant, now: Instant) -> String {
     }
 }
 
-const STRIP_TOOLS: [Cmd; 11] = [
+const STRIP_TOOLS: [Cmd; 12] = [
     Cmd::Brush,
     Cmd::Eraser,
     Cmd::Fill,
     Cmd::Strokes,
     Cmd::Shapes,
     Cmd::Points,
+    Cmd::CropTool,
     Cmd::Pen,
     Cmd::ShapeTool,
     Cmd::TextTool,
