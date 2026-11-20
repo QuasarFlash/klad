@@ -307,6 +307,12 @@ impl Editor {
                     .is_empty()
                     .then(|| "this drawing has no pixels yet".to_string()),
             },
+            Cmd::SelectAll if self.settings.pick_all_layers => (self.scene.active_marks().is_empty()
+                && self
+                    .pick_cels(true)
+                    .iter()
+                    .all(|(_, cel)| self.scene.marks_of(cel).is_empty()))
+            .then(|| "no visible, unlocked layer has strokes on this frame".to_string()),
             Cmd::SelectAll => (!self.active_paint() || self.scene.active_marks().is_empty())
                 .then(|| "the active layer has no strokes on this frame".to_string()),
             Cmd::Thinner | Cmd::Thicker if self.scene.on_grid() => {
@@ -1138,7 +1144,7 @@ impl Editor {
                 }
             }
             Cmd::ExportGodotWindow => self.open_export(super::export::What::Godot),
-            Cmd::SelectAll => self.select_all_strokes(),
+            Cmd::SelectAll => self.select_all_strokes()?,
             Cmd::SelectSameColour => self.select_same_colour(),
             Cmd::TransformLayer => self.start_shift()?,
             Cmd::CutLasso if self.scene.on_grid() => self.cut_pixels = !self.cut_pixels,

@@ -511,7 +511,7 @@ fn every_control_is_pen_sized_and_has_a_hover_hint() {
         checked += audit(&h, &format!("{tool:?}"));
     });
     h.state_mut().tool = Tool::Strokes;
-    h.state_mut().select_all_strokes();
+    h.state_mut().select_all_strokes().unwrap();
     h.run_steps(2);
     assert!(h.state().picked.is_some());
     checked += audit(&h, "strokes selected");
@@ -997,7 +997,7 @@ fn panel_pictures() {
     h.state_mut().settings.layout.numbers = false;
     h.state_mut().windows.settings = false;
     h.state_mut().tool = Tool::Strokes;
-    h.state_mut().select_all_strokes();
+    h.state_mut().select_all_strokes().unwrap();
     shot(&mut h, "6-selection-bar");
     h.state_mut().picked = None;
     h.state_mut().tabs.push(false);
@@ -5141,7 +5141,7 @@ fn strokes_select_move_and_copy_across_cmd_clicked_layers() {
             .collect()
     };
     let had = counts(&h);
-    h.state_mut().select_all_strokes();
+    h.state_mut().select_all_strokes().unwrap();
     h.state_mut().invoke(Cmd::DuplicateInPlace).unwrap();
     h.run_steps(3);
     assert_eq!(
@@ -7289,7 +7289,7 @@ fn guide_pictures() {
         }),
         ("selection", "lantern/lantern.klad", "lines", |ed| {
             ed.tool = Tool::Strokes;
-            ed.select_all_strokes();
+            ed.select_all_strokes().unwrap();
             Ok(())
         }),
     ];

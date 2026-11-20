@@ -1525,3 +1525,61 @@ fn the_brush_menu_and_the_numbers_menu_stay_open_while_they_are_used() {
     );
     let _ = std::fs::remove_dir_all(&path);
 }
+
+#[test]
+fn with_all_layers_the_wand_and_select_all_reach_every_layer() {
+    use super::marquee::Marquee;
+    let path = sample("all-layers");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "colour");
+    let colour = layer_named(&h, "colour").id.clone();
+    h.state_mut()
+        .apply(
+            parse_lines(&format!(
+                r#"{{"op":"stroke","layer":"{colour}","path":"M380 330 L460 330","size":10}}"#
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+    h.run_steps(3);
+    h.key_press(Key::S);
+    h.run_steps(2);
+    h.state_mut().settings.pick_all_layers = true;
+    h.state_mut().marquee = Marquee::Wand;
+    let on_lines = canvas_at(&h, 170.0, 120.0);
+    click(&mut h, on_lines);
+    assert_eq!(
+        h.state().scene.active_layer().unwrap().name,
+        "lines",
+        "the wand goes to the layer painted under the click: {}",
+        said(&h)
+    );
+    assert!(!picked_ids(&h).is_empty(), "and selects there: {}", said(&h));
+
+    chord(&mut h, Modifiers::NONE, Key::Escape);
+    activate(&mut h, "shapes");
+    h.state_mut().tool = Tool::Select;
+    h.run_steps(2);
+    chord(&mut h, Modifiers::COMMAND, Key::A);
+    let picked = h.state().picked.clone().expect("cmd A picks strokes");
+    let layers: Vec<String> = std::iter::once(picked.cel.clone())
+        .chain(picked.more.iter().map(|p| p.cel.clone()))
+        .collect();
+    let cel_of = |h: &Harness<'static, Editor>, name: &str| layer_named(h, name).cels()[0].id.clone();
+    assert!(
+        layers.contains(&cel_of(&h, "lines")) && layers.contains(&cel_of(&h, "colour")),
+        "cmd A with all layers takes the strokes of every paint layer: {layers:?} {}",
+        said(&h)
+    );
+
+    chord(&mut h, Modifiers::NONE, Key::Escape);
+    h.state_mut().settings.pick_all_layers = false;
+    activate(&mut h, "lines");
+    chord(&mut h, Modifiers::COMMAND, Key::A);
+    let picked = h.state().picked.clone().unwrap();
+    assert!(
+        picked.more.is_empty(),
+        "with this layer, only the active layer's strokes"
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}

@@ -424,7 +424,7 @@ fn tools(out: &mut Vec<String>) {
         &TOOL,
         |h| {
             h.state_mut().tool = Tool::Strokes;
-            h.state_mut().select_all_strokes();
+            h.state_mut().select_all_strokes().unwrap();
         },
     );
     shot(
@@ -435,7 +435,7 @@ fn tools(out: &mut Vec<String>) {
         &TOOL,
         |h| {
             h.state_mut().tool = Tool::Strokes;
-            h.state_mut().select_all_strokes();
+            h.state_mut().select_all_strokes().unwrap();
         },
     );
     shot(
@@ -612,7 +612,7 @@ fn panes(out: &mut Vec<String>) {
         |h| {
             only(h, Pane::Inspector);
             h.state_mut().tool = Tool::Strokes;
-            h.state_mut().select_all_strokes();
+            h.state_mut().select_all_strokes().unwrap();
         },
     );
     shot(

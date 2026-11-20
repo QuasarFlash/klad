@@ -2570,10 +2570,6 @@ impl Editor {
         Ok(())
     }
 
-    fn also_cels(&self) -> Vec<(String, String)> {
-        self.pick_cels(false)
-    }
-
     fn pick_cels(&self, every: bool) -> Vec<(String, String)> {
         let doc = &self.scene.bundle.doc;
         let active = self.scene.active_id();
@@ -2620,7 +2616,8 @@ impl Editor {
         let zoom = self.view.map_or(1.0, |v| v.zoom);
         let wand = self.marquee_here() == marquee::Marquee::Wand;
         let click = !wand && (!lasso.far || lasso.points.len() < 3);
-        if click
+        let reaches = click || (wand && self.settings.pick_all_layers && !self.modifiers.alt);
+        if reaches
             && !self.modifiers.shift
             && let Some((path, _)) = self.mark_at(lasso.points[0], 5.0 / zoom)
             && path != self.scene.active
@@ -2661,7 +2658,10 @@ impl Editor {
         if wand && polygon.is_none() {
             self.say(
                 Tone::Refused,
-                "the wand takes an area of one colour: click on what is painted on this layer",
+                match self.settings.pick_all_layers {
+                    true => "the wand takes an area of one colour: click on something painted",
+                    false => "the wand takes an area of one colour: click on what is painted on this layer",
+                },
             );
             return Ok(());
         }
@@ -5375,14 +5375,25 @@ impl Editor {
         Ok(())
     }
 
-    fn select_all_strokes(&mut self) {
+    fn select_all_strokes(&mut self) -> Result<()> {
         let pickable = |marks: &[Mark]| -> Vec<u32> {
             let riding = klad_core::attach::following(marks);
             marks.iter().map(Mark::id).filter(|id| !riding.contains(id)).collect()
         };
+        let every = self.settings.pick_all_layers;
+        if every
+            && pickable(self.scene.active_marks()).is_empty()
+            && let Some((layer, _)) = self
+                .pick_cels(true)
+                .into_iter()
+                .find(|(_, cel)| !pickable(self.scene.marks_of(cel)).is_empty())
+            && let Some(klad_core::doc::Loc::Layer(path)) = self.scene.bundle.doc.locate(&layer)
+        {
+            self.activate(path)?;
+        }
         let ids = pickable(self.scene.active_marks());
         let more: Vec<Part> = self
-            .also_cels()
+            .pick_cels(every)
             .into_iter()
             .map(|(layer, cel)| Part {
                 ids: pickable(self.scene.marks_of(&cel)),
@@ -5400,6 +5411,7 @@ impl Editor {
                 ..Picked::whole(cel, ids)
             });
         }
+        Ok(())
     }
 
     fn strokes_inspector(&mut self, ui: &mut egui::Ui) -> Result<()> {
