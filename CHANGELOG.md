@@ -59,6 +59,7 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 - With **all layers** on, the wand selects on whatever layer is painted under the click, and select all takes the strokes of every layer.
 - On the Mac, the pointer no longer stays stuck as a resize arrow after you put the pen down straight from a number field or a panel edge.
 - A brush taken out of your brushes in one drawing no longer gives an error in another drawing that still listed it; that drawing keeps its own copy.
+- Merging layers painted with lock alpha no longer lets the strokes of one layer paint over the other: each stroke stays on the paint of the layer it came from, so the picture looks as it did before the merge.
 
 ## 0.4.0 (2026-11-19)
 

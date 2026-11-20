@@ -84,13 +84,14 @@ impl Editor {
     }
 
     pub(super) fn merge_layers(&mut self, ids: Vec<String>) -> Result<()> {
-        let merged = match klad_core::merge::merge(&self.scene.bundle, &ids) {
+        let mut merged = match klad_core::merge::merge(&self.scene.bundle, &ids) {
             Ok(merged) => merged,
             Err(e) => {
                 self.say(Tone::Refused, format!("{e:#}"));
                 return Ok(());
             }
         };
+        klad_render::keep::merged(&self.scene.bundle, &self.brushes, &mut merged.ops)?;
         let into = merged.into.clone();
         if self.timeline_apply(merged.ops)?.is_none() {
             return Ok(());

@@ -9,6 +9,7 @@ pub mod fonts;
 pub mod form;
 pub mod formats;
 pub mod gif;
+pub mod keep;
 pub mod library;
 pub mod maps;
 pub mod occluders;

@@ -922,7 +922,7 @@ enum Command {
     },
     #[command(
         about = "Merge layers into the lowest of them, or every visible layer into one picture",
-        long_about = "Merge layers of one kind into the lowest of them, frame by frame: paint into paint keeps the strokes and fills as they are, pixel into pixel the pixels, vector into vector the shapes (in a group that keeps the layer's opacity). A see-through upper layer's opacity goes onto each of its strokes, so where they overlap they look a little stronger. Layers of different kinds, with masks, clipping, blend modes, effects or animated keys, or in different groups, are refused with the reason. One history step.\n\n  klad merge art.klad lines ink            (ink merges into lines, the lower of the two)\n  klad merge art.klad --down ink           (ink merges into the layer under it)\n  klad merge art.klad --visible            (every visible layer: merged as above when they can be, else one picture on a vector layer named merged)"
+        long_about = "Merge layers of one kind into the lowest of them, frame by frame: paint into paint keeps the strokes and fills as they are, pixel into pixel the pixels, vector into vector the shapes (in a group that keeps the layer's opacity). A see-through upper layer's opacity goes onto each of its strokes, so where they overlap they look a little stronger. Strokes and fills painted with lock alpha stay on the paint of their own layer: where one would now reach the paint of a layer under it, it gets a cut along its layer's edge. Layers of different kinds, with masks, clipping, blend modes, effects or animated keys, or in different groups, are refused with the reason. One history step.\n\n  klad merge art.klad lines ink            (ink merges into lines, the lower of the two)\n  klad merge art.klad --down ink           (ink merges into the layer under it)\n  klad merge art.klad --visible            (every visible layer: merged as above when they can be, else one picture on a vector layer named merged)"
     )]
     Merge {
         bundle: PathBuf,
@@ -4304,9 +4304,16 @@ fn run() -> Result<()> {
                 (None, false) => layers,
             };
             match klad_core::merge::merge(&opened, &keys) {
-                Ok(merged) => {
+                Ok(mut merged) => {
+                    let brushes = klad_brush::BrushSet::for_bundle(&opened)?;
+                    let kept = klad_render::keep::merged(&opened, &brushes, &mut merged.ops)?;
                     agent::edit(&bundle, &merged.ops, &output(&flags, 0))?;
                     eprintln!("merged {} layers into {}", merged.count, merged.into);
+                    if kept > 0 {
+                        eprintln!(
+                            "note: {kept} alpha-locked marks keep to the paint of their own layer (cut along its edge), so the picture stays as it was"
+                        );
+                    }
                     if !merged.baked.is_empty() {
                         eprintln!(
                             "note: the opacity of {} went onto each of its strokes",

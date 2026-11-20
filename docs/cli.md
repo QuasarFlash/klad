@@ -1592,7 +1592,7 @@ Options:
 ## klad merge
 
 ```text
-Merge layers of one kind into the lowest of them, frame by frame: paint into paint keeps the strokes and fills as they are, pixel into pixel the pixels, vector into vector the shapes (in a group that keeps the layer's opacity). A see-through upper layer's opacity goes onto each of its strokes, so where they overlap they look a little stronger. Layers of different kinds, with masks, clipping, blend modes, effects or animated keys, or in different groups, are refused with the reason. One history step.
+Merge layers of one kind into the lowest of them, frame by frame: paint into paint keeps the strokes and fills as they are, pixel into pixel the pixels, vector into vector the shapes (in a group that keeps the layer's opacity). A see-through upper layer's opacity goes onto each of its strokes, so where they overlap they look a little stronger. Strokes and fills painted with lock alpha stay on the paint of their own layer: where one would now reach the paint of a layer under it, it gets a cut along its layer's edge. Layers of different kinds, with masks, clipping, blend modes, effects or animated keys, or in different groups, are refused with the reason. One history step.
 
   klad merge art.klad lines ink            (ink merges into lines, the lower of the two)
   klad merge art.klad --down ink           (ink merges into the layer under it)

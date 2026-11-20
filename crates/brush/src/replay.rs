@@ -172,6 +172,18 @@ fn put(raster: &mut Raster, index: usize, tile: &Tile) {
     raster.restore(index, tile);
 }
 
+pub fn painted_over(base: &Raster, marks: &[Mark], brushes: &BrushSet) -> Result<Raster> {
+    let (width, height) = (base.width, base.height);
+    let mut raster = base.clone();
+    let mut buffer = StrokeBuffer::new(width, height);
+    let mut scope = Scope::plan(width, height, marks, brushes);
+    marks
+        .iter()
+        .enumerate()
+        .try_for_each(|(at, mark)| painted(&mut raster, &mut buffer, brushes, mark, &mut scope, at).map(|_| ()))?;
+    Ok(raster)
+}
+
 impl CelReplay {
     pub fn new(width: u32, height: u32) -> Self {
         let tiles = Raster::new(width, height);

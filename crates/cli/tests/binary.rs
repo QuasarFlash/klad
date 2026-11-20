@@ -3185,6 +3185,51 @@ fn shapes_take_a_look_combine_and_go_to_svg_and_back() {
 }
 
 #[test]
+fn merging_the_lemons_keeps_each_lemons_alpha_locked_strokes_on_that_lemon() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-lemons-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let sample = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../samples/lemons/lemons.klad");
+    let bundle = dir.join("lemons.klad");
+    let copied = Command::new("cp").arg("-R").arg(&sample).arg(&bundle).status().unwrap();
+    assert!(copied.success());
+    let path = bundle.to_str().unwrap();
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stderr).to_string()
+    };
+    run(&["render", path, "-o", "before.png"]);
+    let said = run(&["merge", path, "lemon-a", "lemon-b"]);
+    assert!(
+        said.contains("alpha-locked marks keep to the paint of their own layer"),
+        "{said}"
+    );
+    run(&["render", path, "-o", "after.png"]);
+    let out = Command::new(env!("CARGO_BIN_EXE_klad"))
+        .args(["compare", "before.png", "after.png", "--json"])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let difference = v["difference"].as_f64().unwrap();
+    assert!(
+        difference < 0.002,
+        "lemon-b's strokes stay off lemon-a: {difference} (0.0096 before the fix)"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn layers_merge_frame_by_frame_without_changing_the_picture_and_groups_come_apart() {
     let dir = std::env::temp_dir().join(format!("draw-binary-merge-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
