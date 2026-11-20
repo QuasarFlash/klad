@@ -853,6 +853,10 @@ fn shapes_snap_to_the_grid_guides_and_other_shapes_and_guides_come_out_of_the_ru
     let _ = std::fs::remove_dir_all(&path);
 }
 
+fn theme_icon_plus() -> &'static str {
+    crate::theme::icon::PLUS
+}
+
 fn last_points(h: &Harness<'static, Editor>) -> Vec<(f32, f32)> {
     h.state()
         .scene
@@ -1272,4 +1276,85 @@ fn a_drawing_is_saved_as_a_copy_renamed_duplicated_and_reverted_to_how_it_opened
     [copy, second, duplicate, renamed].iter().for_each(|p| {
         let _ = std::fs::remove_dir_all(p);
     });
+}
+
+#[test]
+fn the_weight_brush_adds_takes_away_with_strength_and_reads_the_weight_under_the_pointer() {
+    use klad_core::rig::Mode as W;
+    let path = sample("weights");
+    {
+        let mut bundle = klad_core::bundle::Bundle::open(&path).unwrap();
+        let colour = bundle.doc.find_layer("colour").unwrap().id.clone();
+        let ops = parse_lines(&format!(
+            r#"{{"op":"add","layer":{{"id":"bones","kind":"bones","name":"bones"}}}}
+{{"op":"bone","layer":"bones","add":"thigh","head":[150,60],"tail":[150,180]}}
+{{"op":"bone","layer":"bones","add":"shin","parent":"thigh","head":[150,180],"tail":[150,330]}}
+{{"op":"attach","layer":"{colour}","skeleton":"bones"}}"#
+        ))
+        .unwrap();
+        bundle.apply(&ops).unwrap();
+    }
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    h.state_mut().tool = Tool::Bone;
+    h.state_mut().bones.mode = super::bones::Mode::Weights;
+    h.state_mut().bones.selected = Some("shin".into());
+    h.run_steps(3);
+    assert!(
+        shown(&h, "weight") && shown(&h, theme_icon_plus()),
+        "the bar has the modes and the weight"
+    );
+    h.key_press_modifiers(Modifiers::SHIFT, Key::Num2);
+    h.run_steps(2);
+    assert_eq!(h.state().bones.wmode, W::Add, "shift 2 adds weight");
+    h.state_mut().bones.flow = 0.5;
+    h.state_mut().bones.strength = 1.0;
+    let (a, b) = (canvas_at(&h, 200.0, 250.0), canvas_at(&h, 204.0, 252.0));
+    drag(&mut h, a, b);
+    h.run_steps(2);
+    let skeleton = h.state().scene.bundle.doc.find_layer("bones").unwrap().id.clone();
+    let painted = |h: &Harness<'static, Editor>| {
+        h.state()
+            .scene
+            .bundle
+            .read_weights(&skeleton)
+            .unwrap()
+            .value_at("shin", [200.0, 250.0])
+    };
+    let added = painted(&h);
+    assert!(
+        added > 0.3 && added < 0.95,
+        "half strength adds part of the weight: {added}"
+    );
+    h.state_mut().invoke(Cmd::WeightRemove).unwrap();
+    h.state_mut().bones.flow = 1.0;
+    h.state_mut().bones.strength = 0.2;
+    drag(&mut h, a, b);
+    h.run_steps(2);
+    let removed = painted(&h);
+    assert!(
+        removed < added - 0.1,
+        "remove takes weight away: {added} then {removed}"
+    );
+    h.hover_at(a);
+    h.run_steps(2);
+    let (under, used) = h.state_mut().weight_under(vec2(200.0, 250.0)).unwrap();
+    assert!(
+        (under - removed).abs() < 0.02 && used > 0.0,
+        "the readout has the weight under the pointer"
+    );
+    h.state_mut().invoke(Cmd::PickWeight).unwrap();
+    assert!(
+        (h.state().bones.strength - removed).abs() < 0.02,
+        "alt I picks it up into the weight: {}",
+        said(&h)
+    );
+    h.key_press_modifiers(Modifiers::SHIFT, Key::Num1);
+    h.run_steps(2);
+    assert_eq!(h.state().bones.wmode, W::Paint);
+    h.state_mut().tool = Tool::Brush;
+    assert!(
+        h.state().can_run(Cmd::WeightAdd).is_some(),
+        "the weight keys are for the bone tool's weights"
+    );
+    let _ = std::fs::remove_dir_all(&path);
 }

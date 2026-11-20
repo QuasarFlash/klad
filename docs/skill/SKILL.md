@@ -87,6 +87,7 @@ klad export art.klad -o art.jpg --quality 85                    # also .webp (--
 klad export art.klad -o art.psd                                 # layers for Photoshop/Krita/Affinity; klad import art.psd opens one with its layers and groups
 klad import sheet.png --cell 32x32 --padding 1 --to art.klad    # a sprite sheet as frames on a new layer with a clip (--grid 8x4; a folder or several pictures: a frame each)
 klad save-as art.klad art-v2                                    # a copy with ids of its own (no undo history); klad rename art.klad hero renames the folder, an open editor follows
+klad weights art.klad bones --bone shin --set 300,420,24,1 --mode add --strength 0.3   # weight dabs: --mode paint|add|remove|smooth, --hardness; --at x,y reads the weight there
 klad show art.klad c4:s12
 klad render art.klad --focus c4:s12
 ```

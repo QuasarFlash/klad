@@ -3786,7 +3786,13 @@ impl Editor {
             (Tool::Text, Phase::Move) if self.text_pressing => self.text_drag(c),
             (Tool::Text, Phase::Up) => self.text_pressing = false,
             (Tool::Bone, Phase::Down) => self.bone_down(c),
-            (Tool::Bone, Phase::Move) => self.bone_move(c),
+            (Tool::Bone, Phase::Move) => {
+                self.bones.pen = match e.tablet {
+                    true => e.pressure,
+                    false => 1.0,
+                };
+                self.bone_move(c)
+            }
             (Tool::Bone, Phase::Up) => self.bone_up()?,
             (Tool::Pen, Phase::Down) => self.pen_down(view, rect, e.pos, c)?,
             (Tool::Pen, Phase::Move) => self.pen_move(c),

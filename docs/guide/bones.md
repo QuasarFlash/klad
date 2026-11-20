@@ -1,4 +1,4 @@
-_Last updated: 2026-11-08_
+_Last updated: 2026-11-20 01:50_
 
 # Posing with bones
 
@@ -28,8 +28,12 @@ Draw each part that stays stiff, like an upper arm, a forearm or the head, on it
 Optional, for a part drawn in one piece over a joint, like a sleeve or a tail.
 
 1. In the layers panel, click the layer's bone button and pick **bends with bones**.
-2. Pick **weights** in the bar and click **automatic**.
-3. Cmd click a bone, then paint where it should move the drawing. Alt paints weight away.
+2. Pick **weights** in the bar, then **⋯ > automatic**.
+3. Cmd click a bone, then paint where it should move the drawing.
+
+The weight brush has four modes in the bar: **paint** (toward the weight, **shift 1**), **add** (**shift 2**), **remove** (**shift 3**) and **smooth** (**shift 4**). Alt swaps add and remove while you paint. **weight** is the value a dab paints toward, adds or takes away. Under **⋯** in the bar, **strength** is how far one dab goes, so 0.1 builds a soft joint up over a few strokes and 1 sets it at once; the pen's pressure scales it. **⋯** also has the brush's **hardness**.
+
+The number by the pointer is the picked bone's weight there, as the drawing uses it after every bone's share. **alt I** picks it up as the brush's weight. The overlay's colours run from none to all of it, as the legend under **⋯** shows; **show every bone's weight** there colours each bone in its own colour.
 
 ## Pose it
 

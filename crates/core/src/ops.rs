@@ -1051,8 +1051,36 @@ pub struct WeightsSpec {
     pub value: f32,
     #[serde(default)]
     pub smooth: bool,
+    #[serde(default)]
+    pub mode: crate::rig::Mode,
+    #[serde(default = "full")]
+    pub strength: f32,
+    #[serde(default)]
+    pub hardness: f32,
+    #[serde(default)]
+    pub pressures: Vec<f32>,
     #[serde(skip)]
     pub resolved: Option<crate::rig::Weights>,
+}
+
+impl Default for WeightsSpec {
+    fn default() -> Self {
+        Self {
+            layer: String::new(),
+            frame: 0,
+            auto: false,
+            bone: None,
+            set: Vec::new(),
+            part: None,
+            value: 1.0,
+            smooth: false,
+            mode: crate::rig::Mode::Paint,
+            strength: 1.0,
+            hardness: 0.0,
+            pressures: Vec::new(),
+            resolved: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

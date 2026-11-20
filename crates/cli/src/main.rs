@@ -2054,6 +2054,18 @@ enum Command {
         value: f32,
         #[arg(long)]
         smooth: bool,
+        #[arg(long, value_parser = ["paint", "add", "remove", "smooth"], help = "What --set dabs do: paint toward the weight (the default), add it, remove it, or smooth under the brush")]
+        mode: Option<String>,
+        #[arg(
+            long,
+            default_value_t = 1.0,
+            help = "How far one dab moves toward its weight, 0 to 1 (0.1 builds up over dabs)"
+        )]
+        strength: f32,
+        #[arg(long, default_value_t = 0.0, help = "How hard the dab's edge is, 0 (soft) to 1")]
+        hardness: f32,
+        #[arg(long, value_name = "X,Y", value_parser = parse_pair, allow_hyphen_values = true, help = "With --bone: print that bone's weight at this point (painted and used)")]
+        at: Option<[f32; 2]>,
         #[arg(long, default_value_t = 0)]
         frame: u32,
         #[command(flatten)]
@@ -5217,9 +5229,37 @@ fn run() -> Result<()> {
             part,
             value,
             smooth,
+            mode,
+            strength,
+            hardness,
+            at,
             frame,
             flags,
         } => {
+            if let Some(p) = at {
+                let opened = Bundle::open(&bundle)?;
+                let owner = layer_id(&bundle, &layer)?;
+                let found = opened.doc.find_layer(&owner)?;
+                let bones = match &found.content {
+                    klad_core::doc::LayerContent::Bones {} => found.bones.clone(),
+                    _ => bail!("{layer} is not a bones layer"),
+                };
+                let bone = bone.ok_or_else(|| anyhow!("--at reads one bone's weight: give --bone"))?;
+                let index = bones
+                    .iter()
+                    .position(|b| b.name == bone)
+                    .ok_or_else(|| anyhow!("no bone {bone} on {layer}"))?;
+                let weights = opened.read_weights(&owner)?;
+                let used = weights.at(&bones, p)[index];
+                println!(
+                    "{bone} at {},{}: painted {:.2}, used {:.2}",
+                    p[0],
+                    p[1],
+                    weights.value_at(&bone, p),
+                    used
+                );
+                return Ok(());
+            }
             let set = set
                 .as_deref()
                 .map(|text| {
@@ -5245,7 +5285,14 @@ fn run() -> Result<()> {
                 part,
                 value,
                 smooth,
-                resolved: None,
+                mode: mode
+                    .as_deref()
+                    .map(klad_core::rig::Mode::parse)
+                    .transpose()?
+                    .unwrap_or_default(),
+                strength,
+                hardness,
+                ..WeightsSpec::default()
             };
             agent::edit(&bundle, &[Op::Weights(spec)], &output(&flags, frame))?;
         }

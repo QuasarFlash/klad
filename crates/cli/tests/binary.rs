@@ -4190,3 +4190,196 @@ fn canvases_too_big_for_the_machine_are_refused_and_running_out_of_memory_says_s
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_posed_fill_keeps_a_smooth_edge_where_its_bone_does_not_move() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-posed-edge-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    draw(&["new", "a.klad", "--width", "400", "--height", "400", "--layers", "0"]);
+    let ellipse = |cx: f32, cy: f32, rx: f32, ry: f32| -> String {
+        let pts: Vec<String> = (0..40)
+            .map(|k| {
+                let t = std::f32::consts::TAU * k as f32 / 40.0;
+                format!("[{:.1},{:.1}]", cx + rx * t.cos(), cy + ry * t.sin())
+            })
+            .collect();
+        format!("[{}]", pts.join(","))
+    };
+    let ops = [
+        r#"{"op":"timeline","frames":4}"#.to_string(),
+        r#"{"op":"add","layer":{"id":"colour","kind":"paint","name":"colour"}}"#.to_string(),
+        r#"{"op":"add","layer":{"id":"bones","kind":"bones","name":"bones"}}"#.to_string(),
+        format!(r##"{{"op":"fill","layer":"colour","polygon":{},"color":"#3f6f8f","part":"body"}}"##, ellipse(200.0, 235.0, 45.0, 65.0)),
+        r##"{"op":"stroke","layer":"colour","brush":"round-bristle","size":22,"color":"#2c4f66","path":"M226 195 L 280 180","part":"arm"}"##.to_string(),
+        r#"{"op":"bone","layer":"bones","add":"body","head":[200,295],"tail":[200,180]}"#.to_string(),
+        r#"{"op":"bone","layer":"bones","add":"arm","parent":"body","head":[226,196],"tail":[280,180]}"#.to_string(),
+        r#"{"op":"attach","layer":"colour","skeleton":"bones"}"#.to_string(),
+        r#"{"op":"weights","layer":"bones","auto":true}"#.to_string(),
+        r#"{"op":"weights","layer":"bones","bone":"body","part":"body"}"#.to_string(),
+        r#"{"op":"pose","layer":"bones","from":0,"to":2,"bones":{"arm":-50}}"#.to_string(),
+    ];
+    [&ops[..5], &ops[5..8], &ops[8..10], &ops[10..]]
+        .iter()
+        .for_each(|stage| {
+            std::fs::write(dir.join("rig.jsonl"), stage.join("\n")).unwrap();
+            draw(&["apply", "a.klad", "--file", "rig.jsonl"]);
+        });
+    let hashed = |frame: &str, region: &str| -> String {
+        let out = run(&["render", "a.klad", "--frame", frame, "--region", region, "-o", "x.png"]);
+        let said = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let words: Vec<&str> = said.split_whitespace().collect();
+        let at = words.iter().position(|w| *w == "hash").expect("render says its hash");
+        words[at + 1].to_string()
+    };
+    let hash = |frame: &str| hashed(frame, "150,200,50,100");
+    assert_eq!(
+        hash("0"),
+        hash("2"),
+        "the body's left side, which its bone does not move, renders as it does at rest"
+    );
+    let arm = |frame: &str| hashed(frame, "230,140,80,70");
+    assert_ne!(arm("0"), arm("2"), "while the arm moves");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_pose_in_a_batch_with_a_fill_is_refused_with_what_to_do() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-pose-batch-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    assert!(
+        run(&["new", "a.klad", "--width", "200", "--height", "200", "--layers", "0"])
+            .status
+            .success()
+    );
+    let stage = |text: &str| {
+        std::fs::write(dir.join("ops.jsonl"), text).unwrap();
+        run(&["apply", "a.klad", "--file", "ops.jsonl"])
+    };
+    assert!(stage("{\"op\":\"add\",\"layer\":{\"id\":\"colour\",\"kind\":\"paint\",\"name\":\"colour\"}}\n{\"op\":\"add\",\"layer\":{\"id\":\"bones\",\"kind\":\"bones\",\"name\":\"bones\"}}\n{\"op\":\"bone\",\"layer\":\"bones\",\"add\":\"arm\",\"head\":[50,100],\"tail\":[150,100]}\n{\"op\":\"attach\",\"layer\":\"colour\",\"skeleton\":\"bones\"}").status.success());
+    let mixed = stage(
+        "{\"op\":\"fill\",\"layer\":\"colour\",\"polygon\":[[40,90],[160,90],[160,110],[40,110]],\"color\":\"#336699\"}\n{\"op\":\"pose\",\"layer\":\"bones\",\"from\":0,\"to\":0,\"bones\":{\"arm\":20}}",
+    );
+    let said = String::from_utf8_lossy(&mixed.stderr).to_string();
+    assert!(!mixed.status.success());
+    assert!(
+        said.contains("op 2: a pose needs a batch of its own") && said.contains("apply the drawing first"),
+        "{said}"
+    );
+    assert!(
+        !said.contains("computed by klad pose"),
+        "the old message sent people to the command they ran"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn weights_are_added_taken_away_with_strength_and_read_at_a_point() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-weights-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    draw(&["new", "a.klad", "--width", "200", "--height", "300"]);
+    std::fs::write(
+        dir.join("rig.jsonl"),
+        "{\"op\":\"add\",\"layer\":{\"id\":\"bones\",\"kind\":\"bones\",\"name\":\"bones\"}}\n{\"op\":\"bone\",\"layer\":\"bones\",\"add\":\"thigh\",\"head\":[100,40],\"tail\":[100,150]}\n{\"op\":\"bone\",\"layer\":\"bones\",\"add\":\"shin\",\"parent\":\"thigh\",\"head\":[100,150],\"tail\":[100,270]}\n{\"op\":\"attach\",\"layer\":\"l1\",\"skeleton\":\"bones\"}",
+    )
+    .unwrap();
+    draw(&["apply", "a.klad", "--file", "rig.jsonl"]);
+    let read = |at: &str| -> f32 {
+        let said = draw(&["weights", "a.klad", "bones", "--bone", "shin", "--at", at]);
+        let painted = said.split("painted ").nth(1).unwrap().split(',').next().unwrap();
+        painted.trim().parse().unwrap()
+    };
+    assert!(read("100,200") < 0.01);
+    draw(&[
+        "weights",
+        "a.klad",
+        "bones",
+        "--bone",
+        "shin",
+        "--set",
+        "100,200,30,1",
+        "--mode",
+        "add",
+        "--strength",
+        "0.4",
+    ]);
+    let once = read("100,200");
+    assert!((0.3..0.5).contains(&once), "a dab at strength 0.4 adds 0.4: {once}");
+    draw(&[
+        "weights",
+        "a.klad",
+        "bones",
+        "--bone",
+        "shin",
+        "--set",
+        "100,200,30,0.25",
+        "--mode",
+        "remove",
+    ]);
+    assert!((read("100,200") - (once - 0.25)).abs() < 0.03);
+    let said = draw(&["weights", "a.klad", "bones", "--bone", "shin", "--at", "100,200"]);
+    assert!(
+        said.starts_with("shin at 100,200: painted") && said.contains("used"),
+        "{said}"
+    );
+    let bad = run(&[
+        "weights",
+        "a.klad",
+        "bones",
+        "--bone",
+        "shin",
+        "--set",
+        "100,200,30,1",
+        "--strength",
+        "2",
+    ]);
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("0 to 1"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

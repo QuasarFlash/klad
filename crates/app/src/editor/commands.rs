@@ -284,6 +284,10 @@ impl Editor {
                 _ => None,
             },
             Cmd::Save => None,
+            Cmd::WeightPaint | Cmd::WeightAdd | Cmd::WeightRemove | Cmd::WeightSmooth | Cmd::PickWeight => {
+                (self.tool != Tool::Bone || self.bones.mode != super::bones::Mode::Weights)
+                    .then(|| "these are for the bone tool's weights: press the bone tool, then weights".to_string())
+            }
             Cmd::RevertDrawing => (!klad_core::drawings::has_opened(&self.scene.bundle.root))
                 .then(|| "klad has no copy of how the drawing was when it was opened".to_string()),
             Cmd::SelectAllFrames => self.timeline_edit(),
@@ -1112,6 +1116,11 @@ impl Editor {
             }
             Cmd::RevertDrawing => self.revert_drawing()?,
             Cmd::NextOpen => self.wants = Some(super::Want::Cycle(1)),
+            Cmd::WeightPaint => self.weight_mode(klad_core::rig::Mode::Paint),
+            Cmd::WeightAdd => self.weight_mode(klad_core::rig::Mode::Add),
+            Cmd::WeightRemove => self.weight_mode(klad_core::rig::Mode::Remove),
+            Cmd::WeightSmooth => self.weight_mode(klad_core::rig::Mode::Smooth),
+            Cmd::PickWeight => self.pick_weight(),
             Cmd::PreviousOpen => self.wants = Some(super::Want::Cycle(-1)),
             Cmd::SelectAllFrames => self.select_all_frames(),
             Cmd::ExportFrames => self.open_export(super::export::What::Frames),

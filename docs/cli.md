@@ -3553,6 +3553,24 @@ Options:
       --smooth
 
 
+      --mode <MODE>
+          What --set dabs do: paint toward the weight (the default), add it, remove it, or smooth under the brush
+
+          [possible values: paint, add, remove, smooth]
+
+      --strength <STRENGTH>
+          How far one dab moves toward its weight, 0 to 1 (0.1 builds up over dabs)
+
+          [default: 1]
+
+      --hardness <HARDNESS>
+          How hard the dab's edge is, 0 (soft) to 1
+
+          [default: 0]
+
+      --at <X,Y>
+          With --bone: print that bone's weight at this point (painted and used)
+
       --frame <FRAME>
           [default: 0]
 

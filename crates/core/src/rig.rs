@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const CELL: u32 = 4;
+const FADE: f32 = 0.2;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -610,6 +611,55 @@ pub fn tips(bones: &[Bone], ik: &[Ik], pose: &Pose) -> Vec<([f32; 2], [f32; 2])>
         .collect()
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    #[default]
+    Paint,
+    Add,
+    Remove,
+    Smooth,
+}
+
+impl Mode {
+    pub const ALL: [Mode; 4] = [Mode::Paint, Mode::Add, Mode::Remove, Mode::Smooth];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Mode::Paint => "paint",
+            Mode::Add => "add",
+            Mode::Remove => "remove",
+            Mode::Smooth => "smooth",
+        }
+    }
+
+    pub fn parse(text: &str) -> anyhow::Result<Self> {
+        Mode::ALL
+            .into_iter()
+            .find(|m| m.name() == text.trim())
+            .ok_or_else(|| anyhow::anyhow!("a weight dab is paint, add, remove or smooth, not {text:?}"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Dab {
+    pub mode: Mode,
+    pub value: f32,
+    pub strength: f32,
+    pub hardness: f32,
+}
+
+impl Default for Dab {
+    fn default() -> Self {
+        Self {
+            mode: Mode::Paint,
+            value: 1.0,
+            strength: 1.0,
+            hardness: 0.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Weights {
     pub width: u32,
@@ -713,6 +763,63 @@ impl Weights {
         });
     }
 
+    pub fn dab_with(&mut self, bone: &str, at: [f32; 2], radius: f32, d: &Dab) {
+        let (w, h) = (self.width, self.height);
+        let r = (radius / CELL as f32).max(0.5);
+        let (cx, cy) = (at[0] / CELL as f32, at[1] / CELL as f32);
+        let (x0, x1) = ((cx - r).floor().max(0.0) as u32, ((cx + r).ceil() as u32).min(w));
+        let (y0, y1) = ((cy - r).floor().max(0.0) as u32, ((cy + r).ceil() as u32).min(h));
+        let before = self.map(bone).clone();
+        let get = |x: i64, y: i64| {
+            before[(y.clamp(0, h as i64 - 1) * w as i64 + x.clamp(0, w as i64 - 1)) as usize] as f32 / 255.0
+        };
+        let hard = d.hardness.clamp(0.0, 0.99);
+        let strength = d.strength.clamp(0.0, 1.0);
+        let value = d.value.clamp(0.0, 1.0);
+        let map = self.map(bone);
+        (y0..y1).for_each(|y| {
+            (x0..x1).for_each(|x| {
+                let dist = (x as f32 + 0.5 - cx).hypot(y as f32 + 0.5 - cy) / r;
+                if dist >= 1.0 {
+                    return;
+                }
+                let t = ((dist - hard) / (1.0 - hard)).clamp(0.0, 1.0);
+                let k = (1.0 - t * t * (3.0 - 2.0 * t)) * strength;
+                let now = before[(y * w + x) as usize] as f32 / 255.0;
+                let next = match d.mode {
+                    Mode::Paint => now + (value - now) * k,
+                    Mode::Add => now + value * k,
+                    Mode::Remove => now - value * k,
+                    Mode::Smooth => {
+                        let (xi, yi) = (x as i64, y as i64);
+                        let mean = (-1..=1)
+                            .flat_map(|dy| (-1..=1).map(move |dx| (dx, dy)))
+                            .map(|(dx, dy)| get(xi + dx, yi + dy))
+                            .sum::<f32>()
+                            / 9.0;
+                        now + (mean - now) * k
+                    }
+                };
+                map[(y * w + x) as usize] = (next.clamp(0.0, 1.0) * 255.0).round() as u8;
+            })
+        });
+    }
+
+    pub fn value_at(&self, bone: &str, p: [f32; 2]) -> f32 {
+        let Some(map) = self.maps.get(bone) else {
+            return 0.0;
+        };
+        let (gx, gy) = (p[0] / CELL as f32 - 0.5, p[1] / CELL as f32 - 0.5);
+        let (x0, y0) = (gx.floor(), gy.floor());
+        let (tx, ty) = (gx - x0, gy - y0);
+        let (w, h) = (self.width as i64, self.height as i64);
+        let get = |x: i64, y: i64| map[(y.clamp(0, h - 1) * w + x.clamp(0, w - 1)) as usize] as f32 / 255.0;
+        let (x0, y0) = (x0 as i64, y0 as i64);
+        let top = get(x0, y0) * (1.0 - tx) + get(x0 + 1, y0) * tx;
+        let bottom = get(x0, y0 + 1) * (1.0 - tx) + get(x0 + 1, y0 + 1) * tx;
+        top * (1.0 - ty) + bottom * ty
+    }
+
     pub fn fill(&mut self, bone: &str, cells: &[(u32, u32)], value: f32) {
         let w = self.width;
         let v = (value.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -757,17 +864,23 @@ impl Weights {
             })
             .collect();
         let sum: f32 = raw.iter().sum();
-        match sum > 1e-4 {
-            true => raw.iter().map(|r| r / sum).collect(),
-            false => {
-                let nearest = bones
-                    .iter()
-                    .enumerate()
-                    .min_by(|a, b| a.1.distance(p).total_cmp(&b.1.distance(p)))
-                    .map_or(0, |(i, _)| i);
-                (0..bones.len()).map(|i| if i == nearest { 1.0 } else { 0.0 }).collect()
+        let painted = (sum / FADE).clamp(0.0, 1.0);
+        let painted = painted * painted * (3.0 - 2.0 * painted);
+        let near: Vec<f32> = match painted < 1.0 {
+            true => {
+                let pull: Vec<f32> = bones.iter().map(|b| 1.0 / (b.distance(p).powi(4) + 1e-3)).collect();
+                let total: f32 = pull.iter().sum();
+                pull.iter().map(|v| v / total.max(1e-12)).collect()
             }
-        }
+            false => vec![0.0; bones.len()],
+        };
+        raw.iter()
+            .zip(&near)
+            .map(|(r, n)| {
+                let share = if sum > 1e-6 { r / sum } else { 0.0 };
+                share * painted + n * (1.0 - painted)
+            })
+            .collect()
     }
 }
 
@@ -1035,7 +1148,18 @@ pub fn weights_for(
     };
     if !spec.set.is_empty() {
         let b = bone()?;
-        spec.set.iter().for_each(|d| w.dab(&b, [d[0], d[1]], d[2], d[3]));
+        if !(0.0..=1.0).contains(&spec.strength) || !(0.0..=1.0).contains(&spec.hardness) {
+            bail!("strength and hardness take 0 to 1");
+        }
+        spec.set.iter().enumerate().for_each(|(i, d)| {
+            let dab = Dab {
+                mode: spec.mode,
+                value: d[3],
+                strength: spec.strength * spec.pressures.get(i).copied().unwrap_or(1.0).clamp(0.0, 1.0),
+                hardness: spec.hardness,
+            };
+            w.dab_with(&b, [d[0], d[1]], d[2], &dab);
+        });
     }
     if let Some(part) = &spec.part {
         let b = bone()?;
@@ -1063,7 +1187,12 @@ pub fn weights_for(
                         (c.x..c.x + c.width)
                             .step_by(CELL as usize / 2)
                             .filter(|&x| c.at(x, y) > 0)
-                            .for_each(|x| cells.push(((x / CELL) as i64, (y / CELL) as i64)));
+                            .for_each(|x| {
+                                let (cx, cy) = ((x / CELL) as i64, (y / CELL) as i64);
+                                (-1..=1)
+                                    .flat_map(|dy| (-1..=1).map(move |dx| (cx + dx, cy + dy)))
+                                    .for_each(|c| cells.push(c));
+                            });
                     });
                 }
             });
@@ -1568,6 +1697,124 @@ mod tests {
         assert!(((joint[0] + joint[1]) - 1.0).abs() < 1e-3);
         let back = Weights::decode(&w.encode().unwrap()).unwrap();
         assert_eq!(back, w);
+    }
+
+    #[test]
+    fn weights_fade_into_the_nearest_bone_without_a_step_where_little_is_painted() {
+        let bones = leg();
+        let mut w = Weights::new((200, 400));
+        w.dab_with(
+            "shin",
+            [100.0, 120.0],
+            10.0,
+            &Dab {
+                value: 0.05,
+                ..Dab::default()
+            },
+        );
+        let line: Vec<f32> = (0..80)
+            .map(|i| w.at(&bones, [80.0 + i as f32 * 0.5, 120.0])[1])
+            .collect();
+        let jump = line.windows(2).map(|p| (p[1] - p[0]).abs()).fold(0.0f32, f32::max);
+        assert!(
+            jump < 0.15,
+            "the shin's share grows smoothly from nothing, no jump: {jump} in {line:?}"
+        );
+        assert!(line.iter().all(|v| (0.0..=1.0).contains(v)));
+        let far = w.at(&bones, [100.0, 300.0]);
+        let nearest = far.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map(|(i, _)| i);
+        assert_eq!(
+            nearest,
+            Some(1),
+            "where nothing is painted the nearest bone takes the most: {far:?}"
+        );
+        assert!((far.iter().sum::<f32>() - 1.0).abs() < 1e-3);
+        let across: Vec<Vec<f32>> = (0..120).map(|i| w.at(&bones, [20.0 + i as f32 * 1.5, 330.0])).collect();
+        let step = across
+            .windows(2)
+            .map(|p| {
+                p[0].iter()
+                    .zip(&p[1])
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0.0f32, f32::max)
+            })
+            .fold(0.0f32, f32::max);
+        assert!(
+            step < 0.2,
+            "and the share moves smoothly where the nearest bone changes: {step}"
+        );
+        let full = Weights::auto(&bones, (200, 400));
+        let sum: f32 = full.at(&bones, [100.0, 200.0]).iter().sum();
+        assert!((sum - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn weight_dabs_paint_add_remove_and_smooth_with_strength_and_hardness() {
+        let mut w = Weights::new((200, 200));
+        let cell = |w: &Weights| w.value_at("thigh", [100.0, 100.0]);
+        let soft = Dab {
+            strength: 0.1,
+            ..Dab::default()
+        };
+        w.dab_with("thigh", [100.0, 100.0], 20.0, &soft);
+        let once = cell(&w);
+        assert!(
+            once > 0.05 && once < 0.2,
+            "a weak dab only goes part of the way: {once}"
+        );
+        (0..10).for_each(|_| w.dab_with("thigh", [100.0, 100.0], 20.0, &soft));
+        assert!(cell(&w) > 0.6, "dabs build up: {}", cell(&w));
+        w.dab_with(
+            "thigh",
+            [100.0, 100.0],
+            20.0,
+            &Dab {
+                mode: Mode::Remove,
+                value: 0.3,
+                ..Dab::default()
+            },
+        );
+        let removed = cell(&w);
+        assert!(removed < 0.5, "remove takes weight away: {removed}");
+        w.dab_with(
+            "thigh",
+            [100.0, 100.0],
+            20.0,
+            &Dab {
+                mode: Mode::Add,
+                value: 0.2,
+                ..Dab::default()
+            },
+        );
+        assert!((cell(&w) - removed - 0.2).abs() < 0.02, "add adds the weight");
+        let mut edge = Weights::new((200, 200));
+        let hard = Dab {
+            hardness: 0.9,
+            ..Dab::default()
+        };
+        edge.dab_with("thigh", [100.0, 100.0], 40.0, &hard);
+        let mut gentle = Weights::new((200, 200));
+        gentle.dab_with("thigh", [100.0, 100.0], 40.0, &Dab::default());
+        let at = |w: &Weights| w.value_at("thigh", [130.0, 100.0]);
+        assert!(
+            at(&edge) > at(&gentle) + 0.2,
+            "a hard dab keeps its strength further out"
+        );
+        let mut spot = Weights::new((200, 200));
+        spot.dab_with("thigh", [100.0, 100.0], 8.0, &Dab::default());
+        let peak = spot.value_at("thigh", [100.0, 100.0]);
+        spot.dab_with(
+            "thigh",
+            [100.0, 100.0],
+            30.0,
+            &Dab {
+                mode: Mode::Smooth,
+                ..Dab::default()
+            },
+        );
+        assert!(spot.value_at("thigh", [100.0, 100.0]) < peak, "smooth softens a peak");
+        assert_eq!(Mode::parse("remove").unwrap(), Mode::Remove);
+        assert!(Mode::parse("erase").is_err());
     }
 
     #[test]
