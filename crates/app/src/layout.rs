@@ -399,6 +399,25 @@ impl Layout {
     }
 }
 
+pub fn take_ctrl_tabs(raw: &mut egui::RawInput) -> i32 {
+    let mut by = 0;
+    raw.events.retain(|e| match e {
+        egui::Event::Key {
+            key: egui::Key::Tab,
+            pressed,
+            modifiers,
+            ..
+        } if modifiers.ctrl && !modifiers.alt => {
+            if *pressed {
+                by += if modifiers.shift { -1 } else { 1 };
+            }
+            false
+        }
+        _ => true,
+    });
+    by
+}
+
 pub fn take_tabs(raw: &mut egui::RawInput) -> Vec<bool> {
     let mut shifts = Vec::new();
     raw.events.retain(|e| match e {

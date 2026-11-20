@@ -284,6 +284,8 @@ impl Editor {
                 _ => None,
             },
             Cmd::Save => None,
+            Cmd::RevertDrawing => (!klad_core::drawings::has_opened(&self.scene.bundle.root))
+                .then(|| "klad has no copy of how the drawing was when it was opened".to_string()),
             Cmd::SelectAllFrames => self.timeline_edit(),
             Cmd::TransformLayer => self
                 .scene
@@ -1103,6 +1105,14 @@ impl Editor {
             Cmd::Paste => self.paste()?,
             Cmd::MoveToNewLayer => self.move_to_new_layer()?,
             Cmd::Save => self.say_saved(),
+            Cmd::SaveCopy => self.ask_name(super::drawingfile::Ask::SaveCopy),
+            Cmd::RenameDrawing => self.ask_name(super::drawingfile::Ask::Rename),
+            Cmd::DuplicateDrawing => {
+                self.duplicate_drawing()?;
+            }
+            Cmd::RevertDrawing => self.revert_drawing()?,
+            Cmd::NextOpen => self.wants = Some(super::Want::Cycle(1)),
+            Cmd::PreviousOpen => self.wants = Some(super::Want::Cycle(-1)),
             Cmd::SelectAllFrames => self.select_all_frames(),
             Cmd::ExportFrames => self.open_export(super::export::What::Frames),
             Cmd::ExportSheet => self.open_export(super::export::What::Sheet),

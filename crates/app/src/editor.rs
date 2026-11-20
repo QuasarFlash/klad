@@ -13,6 +13,7 @@ mod commands;
 mod compare;
 mod copy;
 mod depth;
+mod drawingfile;
 mod export;
 mod first;
 mod framesin;
@@ -821,6 +822,7 @@ pub(crate) enum Want {
     Close,
     Gone,
     Path(std::path::PathBuf),
+    Cycle(i32),
 }
 
 pub(crate) struct Editor {
@@ -952,6 +954,7 @@ pub(crate) struct Editor {
     cells_last: bool,
     focus: Focus,
     shape_clip: Option<Vec<serde_json::Value>>,
+    shape_from: Option<std::path::PathBuf>,
     twist: Option<(f32, f64)>,
     key_filter: String,
     selection: Option<String>,
@@ -987,6 +990,7 @@ pub(crate) struct Editor {
     assist_drag: Option<(usize, usize, [f32; 2])>,
     yours: yours::Yours,
     frames_in: framesin::FramesIn,
+    naming: Option<drawingfile::Naming>,
     snap_lines: Option<(Option<f32>, Option<f32>)>,
     pub(crate) pixel_filled: bool,
     pub(crate) pixel_diagonal: bool,
@@ -1025,6 +1029,9 @@ impl Editor {
         let scene = Scene::open_lazy(path)?;
         let brushes = BrushSet::for_bundle(&scene.bundle)?;
         let embedded = scene.bundle.brushes()?;
+        if let Err(e) = klad_core::drawings::keep_opened(&scene.bundle.root) {
+            crate::report::log(&format!("no copy of the drawing as opened, so Revert is off: {e:#}"));
+        }
         let ink = brushes
             .def("ink")
             .ok_or_else(|| crate::report::bug("the ink brush is missing from the library"))?;
@@ -1184,6 +1191,7 @@ impl Editor {
             cells_last: false,
             focus: Focus::Canvas,
             shape_clip: None,
+            shape_from: None,
             twist: None,
             key_filter: String::new(),
             selection: None,
@@ -1218,6 +1226,7 @@ impl Editor {
             guide_drag: None,
             assist_drag: None,
             frames_in: framesin::FramesIn::fresh(),
+            naming: None,
             yours: yours::Yours::at(match cfg!(test) {
                 true => None,
                 false => klad_render::library::Library::home().ok(),
@@ -6432,6 +6441,24 @@ impl Editor {
 
     pub(crate) fn clear(&self) -> [f32; 4] {
         crate::theme::surround(self.settings.defaults.surround)
+    }
+
+    pub(crate) fn hand_over(&self, to: &mut Editor) {
+        to.clipboard.clone_from(&self.clipboard);
+        to.shape_clip.clone_from(&self.shape_clip);
+        to.shape_from.clone_from(&self.shape_from);
+        to.cells_last = self.cells_last;
+    }
+
+    pub(crate) fn hand_settings(&self, to: &mut Editor) {
+        to.settings = self.settings.clone();
+        to.settings_dirty = true;
+    }
+
+    pub(crate) fn reshown(&mut self) {
+        self.dirty = self.scene.all_tiles().into_iter().collect();
+        self.frames.forget_all();
+        self.external.get_or_insert(now_ms());
     }
 
     pub(crate) fn take_tabs(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {

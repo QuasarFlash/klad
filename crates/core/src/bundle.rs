@@ -242,7 +242,10 @@ impl Bundle {
         if Folder::at(&self.root) == Some(folder) {
             return Whereabouts::Here;
         }
-        if let Some(to) = folder.beside(&self.root) {
+        if let Some(to) = folder
+            .beside(&self.root)
+            .or_else(|| crate::drawings::renamed(&self.root, &self.doc))
+        {
             return Whereabouts::Renamed(to);
         }
         let same = here::read(&self.root).is_some_and(|state| state.tag == self.doc.here.tag);

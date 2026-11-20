@@ -49,6 +49,7 @@ impl PartialEq for Document {
             && self.export == other.export
             && self.atmosphere == other.atmosphere
             && self.maps == other.maps
+            && self.guides == other.guides
     }
 }
 

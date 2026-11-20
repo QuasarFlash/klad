@@ -6,6 +6,7 @@ pub mod color;
 pub mod contact;
 pub mod cut;
 pub mod doc;
+pub mod drawings;
 pub mod fill;
 pub mod generators;
 pub mod guides;

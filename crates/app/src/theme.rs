@@ -65,6 +65,8 @@ pub mod icon {
     pub const RULER: &str = "\u{E6B8}";
     pub const PERSPECTIVE: &str = "\u{EBE6}";
     pub const STAR: &str = "\u{E46A}";
+    pub const RENAME: &str = "\u{E7D8}";
+    pub const DUPLICATE: &str = "\u{E1CC}";
     pub const SUBTRACT: &str = "\u{EBD6}";
     pub const INTERSECT: &str = "\u{E2D2}";
     pub const EXCLUDE: &str = "\u{E882}";

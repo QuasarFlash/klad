@@ -1,4 +1,4 @@
-_Last updated: 2026-11-18 11:47_
+_Last updated: 2026-11-20 01:00_
 
 # Getting started
 
@@ -18,6 +18,19 @@ Keys are written the way a Mac shows them. On Windows and Linux, cmd is ctrl.
 2. Type a name and click **Create**.
 
 There's nothing to save: klad writes every change to the drawing as you make it. **cmd S** says so, and where the drawing is.
+
+## Save a copy, rename or go back
+
+- **File > Save a copy…** (**shift cmd S**) writes a copy under a new name next to the drawing. Choose **Save and go on in the copy**, or **Save, stay here**.
+- **File > Rename…** gives the drawing a new name. klad goes on in it.
+- **File > Duplicate** makes a copy next to it and keeps you in this one.
+- **File > Revert** takes the drawing back to how it was when you opened it. **cmd Z** takes that back.
+
+In the start window, right click a drawing to **Duplicate** it or **Move to the Trash**. You can get it back from the Trash.
+
+## Keep several drawings open
+
+Open another drawing with **cmd O**, **cmd N** or the start window: the one you were in stays open. A tab for each open drawing shows above the canvas. Click a tab, or press **ctrl Tab** and **ctrl shift Tab**, to go between them. Strokes and shapes you copy in one drawing paste into another, with their brushes and pictures.
 
 ## Paint, then change a stroke
 

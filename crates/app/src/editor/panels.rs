@@ -1208,6 +1208,7 @@ impl Editor {
             );
             self.windows.assists &= open;
         }
+        self.naming_window(ctx);
         if self.windows.frames {
             let mut open = true;
             Self::window(

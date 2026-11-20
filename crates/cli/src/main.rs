@@ -2702,6 +2702,25 @@ enum Command {
         #[command(flatten)]
         flags: EditFlags,
     },
+    #[command(
+        name = "save-as",
+        about = "Save a copy of a drawing under a new name (everything but its undo history); the copy gets its own ids",
+        long_about = "Save a copy of a drawing under a new name, next to it unless the name has a folder. Everything outside .cache is copied; the copy starts with no undo history and gets ids of its own when it is first opened, so the two can be edited side by side and merged in git.\n\n  klad save-as art.klad art-v2\n  klad save-as art.klad ../shared/art.klad"
+    )]
+    SaveAs {
+        bundle: PathBuf,
+        #[arg(help = "The copy's name or path (.klad is added)")]
+        to: PathBuf,
+    },
+    #[command(
+        about = "Rename a drawing (its folder); an editor that has it open goes on in it",
+        long_about = "Rename a drawing's folder, next to it unless the name has a folder. The undo history and pinned notes go with it. An editor that has it open follows it.\n\n  klad rename art.klad hero"
+    )]
+    Rename {
+        bundle: PathBuf,
+        #[arg(help = "The new name or path (.klad is added)")]
+        to: PathBuf,
+    },
     #[command(about = "Undo the last change (from the CLI or the editor)")]
     Undo {
         bundle: PathBuf,
@@ -5763,6 +5782,16 @@ fn run() -> Result<()> {
                 }
             })?;
         }
+        Command::SaveAs { bundle, to } => {
+            let to = match to.parent().is_none_or(|p| p.as_os_str().is_empty()) {
+                true => bundle.with_file_name(klad_core::drawings::with_extension(&to)),
+                false => to,
+            };
+            let made = klad_core::drawings::copy(&bundle, &to)?;
+            Bundle::open(&made)?;
+            println!("{}", made.display());
+        }
+        Command::Rename { bundle, to } => println!("{}", klad_core::drawings::rename(&bundle, &to)?.display()),
         Command::Brushes {
             bundle,
             show,

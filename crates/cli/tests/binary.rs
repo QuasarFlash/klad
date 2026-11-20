@@ -4069,3 +4069,53 @@ fn a_psd_goes_out_with_its_layers_and_comes_back_and_frames_come_in_from_a_sheet
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_drawing_is_saved_as_a_copy_with_its_own_ids_and_renamed() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-save-as-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    draw(&["new", "a.klad", "--width", "64", "--height", "64"]);
+    draw(&["stroke", "a.klad", "l1", "--line", "4,4,60,60"]);
+    let made = draw(&["save-as", "a.klad", "b"]);
+    assert!(made.ends_with("b.klad"), "{made}");
+    assert!(dir.join("b.klad/doc.json").is_file());
+    let tag = |name: &str| -> String {
+        let state: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(name).join(".cache/copy.json")).unwrap()).unwrap();
+        state["tag"].as_str().unwrap_or("").to_string()
+    };
+    assert_ne!(tag("a.klad"), tag("b.klad"), "the copy makes ids of its own");
+    draw(&["stroke", "b.klad", "l1", "--line", "60,4,4,60"]);
+    let strokes = |name: &str| -> usize {
+        let v: serde_json::Value = serde_json::from_str(&draw(&["strokes", name, "l1", "--json"])).unwrap();
+        v["strokes"].as_array().map_or(0, |a| a.len())
+    };
+    assert_eq!(
+        (strokes("a.klad"), strokes("b.klad")),
+        (1, 2),
+        "the two are separate drawings"
+    );
+    assert!(String::from_utf8_lossy(&run(&["save-as", "a.klad", "b"]).stderr).contains("there already"));
+    assert!(draw(&["rename", "b.klad", "hero"]).ends_with("hero.klad"));
+    assert!(!dir.join("b.klad").exists() && dir.join("hero.klad/doc.json").is_file());
+    assert!(String::from_utf8_lossy(&run(&["rename", "nothing.klad", "x"]).stderr).contains("not a klad drawing"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

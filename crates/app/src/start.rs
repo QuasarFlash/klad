@@ -39,6 +39,8 @@ pub enum Section {
 enum Card {
     Open(PathBuf),
     Forget,
+    Duplicate(PathBuf),
+    Trash(PathBuf),
     Idle,
 }
 
@@ -68,6 +70,8 @@ pub struct Start {
     pub repaired: Option<String>,
     pub section: Section,
     pub changed: bool,
+    pub open: Option<PathBuf>,
+    pub trash_to: Option<PathBuf>,
     pub samples: Vec<Sample>,
     pub tour: bool,
     focused: bool,
@@ -107,6 +111,8 @@ impl Start {
             repaired: None,
             section,
             changed: false,
+            open: None,
+            trash_to: None,
             samples: samples::shipped(),
             tour: false,
             focused: false,
@@ -524,6 +530,33 @@ impl Start {
                             settings.forget(doc);
                             self.changed = true;
                         }
+                        Card::Duplicate(path) => {
+                            match klad_core::drawings::copy(&path, &klad_core::drawings::copy_name(&path)) {
+                                Ok(made) => {
+                                    settings.opened(&made);
+                                    self.changed = true;
+                                }
+                                Err(e) => self.error = Some(format!("{e:#}")),
+                            }
+                        }
+                        Card::Trash(path) => match self.open.as_ref().is_some_and(|o| same_drawing(o, &path)) {
+                            true => {
+                                self.error =
+                                    Some("that drawing is open: close it first, then move it to the Trash".into())
+                            }
+                            false => match klad_core::drawings::trash_to(
+                                &path,
+                                self.trash_to
+                                    .clone()
+                                    .or_else(|| std::env::var_os("KLAD_TRASH").map(PathBuf::from)),
+                            ) {
+                                Ok(_) => {
+                                    settings.forget(doc);
+                                    self.changed = true;
+                                }
+                                Err(e) => self.error = Some(format!("{e:#}")),
+                            },
+                        },
                         Card::Idle => {}
                     }
                 });
@@ -582,6 +615,28 @@ impl Start {
             .parent()
             .and_then(Path::file_name)
             .map_or_else(String::new, |s| s.to_string_lossy().to_string());
+        let mut asked = None;
+        if there {
+            response.context_menu(|ui| {
+                if ui.button(format!("{} Duplicate", icon::DUPLICATE)).clicked() {
+                    asked = Some(Card::Duplicate(path.clone()));
+                    ui.close();
+                }
+                if ui
+                    .button(format!("{} Move to the Trash", icon::TRASH))
+                    .on_hover_text(
+                        "the drawing goes to the Trash (the recycle bin on Windows), where you can get it back",
+                    )
+                    .clicked()
+                {
+                    asked = Some(Card::Trash(path.clone()));
+                    ui.close();
+                }
+            });
+        }
+        if let Some(card) = asked {
+            return card;
+        }
         let clicked = there && response.on_hover_text(doc).clicked();
         ui.add(egui::Label::new(RichText::new(format!("in {folder}")).color(theme::WEAK).size(11.0)).truncate());
         if clicked {
@@ -677,6 +732,13 @@ pub fn expand(text: &str) -> PathBuf {
     match (text.strip_prefix("~/"), crate::places::home()) {
         (Some(rest), Some(home)) => home.join(rest),
         _ => PathBuf::from(text),
+    }
+}
+
+pub fn same_drawing(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
     }
 }
 

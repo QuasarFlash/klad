@@ -1156,3 +1156,120 @@ fn frames_come_in_from_a_sheet_cut_in_the_import_frames_window_with_a_preview() 
     let _ = std::fs::remove_file(&sheet);
     let _ = std::fs::remove_dir_all(&path);
 }
+
+#[test]
+fn strokes_copied_in_one_drawing_paste_into_another_with_their_brush() {
+    let (pa, pb) = (sample("across-a"), sample("across-b"));
+    let mut a = harness(editor(&pa), vec2(1440.0, 1000.0));
+    let mut b = harness(editor(&pb), vec2(1440.0, 1000.0));
+    let mut def = klad_core::brushes::library("ink").unwrap();
+    def.name = "wet ink".into();
+    def.spacing = 0.3;
+    a.state().scene.bundle.embed_brush("wet-ink", &def).unwrap();
+    a.state_mut().embedded.insert("wet-ink".into(), def.clone());
+    a.state_mut().brushes.insert("wet-ink", def.clone());
+    activate(&mut a, "colour");
+    a.state_mut().pick("wet-ink");
+    let (p, q) = (canvas_at(&a, 100.0, 100.0), canvas_at(&a, 220.0, 160.0));
+    drag(&mut a, p, q);
+    a.run_steps(2);
+    let (cel, id) = {
+        let ed = a.state();
+        let s = ed
+            .scene
+            .active_marks()
+            .iter()
+            .rev()
+            .find_map(Mark::as_stroke)
+            .unwrap()
+            .clone();
+        assert_eq!(s.brush, "wet-ink", "{}", said(&a));
+        (ed.scene.active_cel().unwrap().to_string(), s.id)
+    };
+    a.state_mut().picked = Some(Picked {
+        cel,
+        ids: vec![id],
+        cut: None,
+        more: Vec::new(),
+    });
+    a.state_mut().tool = Tool::Strokes;
+    a.state_mut().invoke(Cmd::Copy).unwrap();
+    a.run_steps(2);
+    a.state().hand_over(b.state_mut());
+    activate(&mut b, "colour");
+    let before = b.state().scene.active_marks().len();
+    b.state_mut().invoke(Cmd::Paste).unwrap();
+    b.run_steps(2);
+    let after = b.state().scene.active_marks().to_vec();
+    assert_eq!(after.len(), before + 1, "{}", said(&b));
+    assert!(after.iter().filter_map(Mark::as_stroke).any(|s| s.brush == "wet-ink"));
+    assert_eq!(
+        b.state().scene.bundle.brush("wet-ink").unwrap().unwrap().spacing,
+        0.3,
+        "the other drawing gets its own copy of the brush"
+    );
+    let _ = std::fs::remove_dir_all(&pa);
+    let _ = std::fs::remove_dir_all(&pb);
+}
+
+#[test]
+fn a_drawing_is_saved_as_a_copy_renamed_duplicated_and_reverted_to_how_it_opened() {
+    let path = sample("files");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    let home = path.parent().unwrap().to_path_buf();
+    let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+    let copy = h.state_mut().save_copy("kept copy", false).unwrap();
+    assert_eq!(copy, home.join("kept copy.klad"));
+    assert!(
+        copy.join("doc.json").is_file() && h.state().wants.is_none(),
+        "staying here: {}",
+        said(&h)
+    );
+    let second = h.state_mut().save_copy("go copy", true).unwrap();
+    assert!(
+        matches!(&h.state().wants, Some(super::Want::Path(p)) if *p == second),
+        "going on in the copy"
+    );
+    h.state_mut().wants = None;
+    assert!(
+        h.state_mut().save_copy("kept copy", false).is_err(),
+        "never over another drawing"
+    );
+    let duplicate = h.state_mut().duplicate_drawing().unwrap();
+    assert_eq!(duplicate, home.join(format!("{stem} copy.klad")));
+    activate(&mut h, "colour");
+    let marks = h.state().scene.active_marks().len();
+    let (p, q) = (canvas_at(&h, 100.0, 100.0), canvas_at(&h, 220.0, 160.0));
+    drag(&mut h, p, q);
+    h.run_steps(2);
+    assert_eq!(h.state().scene.active_marks().len(), marks + 1);
+    h.state_mut().invoke(Cmd::RevertDrawing).unwrap();
+    h.run_steps(3);
+    assert_eq!(
+        h.state().scene.active_marks().len(),
+        marks,
+        "back to how it was opened: {}",
+        said(&h)
+    );
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.run_steps(3);
+    assert_eq!(
+        h.state().scene.active_marks().len(),
+        marks + 1,
+        "the revert is one undo step"
+    );
+    let renamed = h.state_mut().rename_drawing("renamed here").unwrap();
+    assert_eq!(renamed, home.join("renamed here.klad"));
+    assert_eq!(
+        h.state().scene.bundle.root,
+        renamed,
+        "klad goes on in the renamed drawing"
+    );
+    assert!(!path.exists());
+    h.state_mut().invoke(Cmd::SaveCopy).unwrap();
+    h.run_steps(3);
+    assert!(shown(&h, "Save and go on in the copy"), "shift cmd S asks for a name");
+    [copy, second, duplicate, renamed].iter().for_each(|p| {
+        let _ = std::fs::remove_dir_all(p);
+    });
+}

@@ -2978,6 +2978,13 @@ fn someone_keeps_their_drawings_in_order() {
         "Back to this drawing leaves the drawing open",
     );
     j.chord(CMD, Key::W);
+    j.look("poster-still-open");
+    j.expect(
+        "closing-shows-the-other-open-drawing",
+        j.ed().is_some_and(|ed| ed.scene.bundle.root.ends_with("poster.klad")),
+        "poster stayed open in its tab while sketchbook was open, and shows when sketchbook closes",
+    );
+    j.chord(CMD, Key::W);
 
     j.act("in the file browser, rename poster to poster final; then look at klad's recent row");
     std::fs::rename(home.join("poster.klad"), home.join("poster final.klad")).unwrap();

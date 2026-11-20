@@ -46,6 +46,8 @@ pub fn run(path: Option<PathBuf>) -> Result<()> {
 
 pub(crate) struct Home {
     pub(crate) editor: Option<Box<Editor>>,
+    pub(crate) parked: Vec<Box<Editor>>,
+    pub(crate) at: usize,
     pub(crate) start: Option<Start>,
     pub(crate) settings: Settings,
     pub(crate) settings_path: Option<PathBuf>,
@@ -56,6 +58,7 @@ pub(crate) struct Home {
     native_menus: bool,
     menus_built: Option<u64>,
     menus_shown: Option<std::time::Instant>,
+    cycling: i32,
 }
 
 fn used_twice(e: &anyhow::Error) -> bool {
@@ -90,6 +93,8 @@ impl Home {
     ) -> Self {
         Self {
             editor: None,
+            parked: Vec::new(),
+            at: 0,
             start: None,
             settings,
             settings_path,
@@ -100,6 +105,7 @@ impl Home {
             native_menus: false,
             menus_built: None,
             menus_shown: None,
+            cycling: 0,
         }
     }
 
@@ -120,6 +126,22 @@ impl Home {
     pub(crate) fn open(&mut self, ctx: &egui::Context, path: &Path) -> Result<()> {
         let (made, told) = start::brought_in(path)?;
         let path = made.as_path();
+        let same = |e: &Editor| crate::start::same_drawing(&e.scene.bundle.root, path);
+        let open_already = match self.parked.iter().position(|e| same(e)) {
+            Some(found) => {
+                let slot = if found < self.at { found } else { found + 1 };
+                self.show_slot(ctx, slot);
+                true
+            }
+            None => self.editor.as_deref().is_some_and(same),
+        };
+        if open_already {
+            if let (Some(words), Some(editor)) = (told, self.editor.as_mut()) {
+                editor.say(Tone::Done, words);
+            }
+            self.start = None;
+            return Ok(());
+        }
         let mut settings = self
             .editor
             .as_ref()
@@ -145,9 +167,117 @@ impl Home {
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(start::title(Some(path))));
         self.settings = settings;
-        self.editor = Some(Box::new(editor));
+        let mut editor = Box::new(editor);
+        if let Some(old) = self.editor.take() {
+            old.hand_over(&mut editor);
+            self.parked.insert(self.at.min(self.parked.len()), old);
+            self.at = (self.at + 1).min(self.parked.len());
+        }
+        self.editor = Some(editor);
         self.start = None;
         Ok(())
+    }
+
+    pub(crate) fn drawings(&self) -> Vec<PathBuf> {
+        let mut all: Vec<PathBuf> = self.parked.iter().map(|e| e.scene.bundle.root.clone()).collect();
+        if let Some(editor) = &self.editor {
+            all.insert(self.at.min(all.len()), editor.scene.bundle.root.clone());
+        }
+        all
+    }
+
+    pub(crate) fn show_slot(&mut self, ctx: &egui::Context, slot: usize) {
+        let count = self.parked.len() + usize::from(self.editor.is_some());
+        if slot == self.at || slot >= count || self.editor.is_none() {
+            return;
+        }
+        let index = if slot < self.at { slot } else { slot - 1 };
+        let mut next = self.parked.remove(index);
+        if let Some(old) = self.editor.take() {
+            old.hand_over(&mut next);
+            old.hand_settings(&mut next);
+            let back = if slot < self.at { self.at - 1 } else { self.at };
+            self.parked.insert(back.min(self.parked.len()), old);
+        }
+        self.at = slot;
+        self.reshow(ctx, next);
+    }
+
+    fn reshow(&mut self, ctx: &egui::Context, mut editor: Box<Editor>) {
+        if let Some(gpu) = &self.gpu {
+            gpu.renderer.write().callback_resources.insert(CanvasGpu::new(
+                &gpu.device,
+                gpu.target_format,
+                editor.scene.size(),
+            ));
+        }
+        editor.reshown();
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(start::title(Some(
+            &editor.scene.bundle.root,
+        ))));
+        self.settings = editor.settings.clone();
+        self.editor = Some(editor);
+    }
+
+    fn cycle(&mut self, ctx: &egui::Context, by: i32) {
+        let count = self.parked.len() + usize::from(self.editor.is_some());
+        if count < 2 {
+            return;
+        }
+        let slot = (self.at as i64 + by as i64).rem_euclid(count as i64) as usize;
+        self.show_slot(ctx, slot);
+    }
+
+    fn drawing_tabs(&mut self, ui: &mut egui::Ui) -> Option<(usize, bool)> {
+        if self.parked.is_empty() || self.editor.is_none() {
+            return None;
+        }
+        let drawings = self.drawings();
+        let mut picked = None;
+        egui::Panel::top("drawings").resizable(false).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                drawings.iter().enumerate().for_each(|(slot, path)| {
+                    let name = path
+                        .file_stem()
+                        .map_or_else(|| path.display().to_string(), |s| s.to_string_lossy().to_string());
+                    let shown = slot == self.at;
+                    if ui
+                        .add(egui::Button::selectable(shown, name).min_size(egui::vec2(0.0, theme::TARGET)))
+                        .on_hover_text(format!("{} (ctrl Tab goes to the next drawing)", path.display()))
+                        .clicked()
+                    {
+                        picked = Some((slot, false));
+                    }
+                    if ui
+                        .add(egui::Button::new(theme::icon::CLOSE).min_size(egui::vec2(theme::TARGET, theme::TARGET)))
+                        .on_hover_text("close this drawing (it stays saved)")
+                        .clicked()
+                    {
+                        picked = Some((slot, true));
+                    }
+                    ui.separator();
+                });
+            });
+        });
+        picked
+    }
+
+    fn close_slot(&mut self, ctx: &egui::Context, slot: usize) {
+        if slot == self.at {
+            self.close(ctx);
+            return;
+        }
+        let index = if slot < self.at { slot } else { slot - 1 };
+        if index < self.parked.len() {
+            let parked = self.parked.remove(index);
+            self.settings = self
+                .editor
+                .as_ref()
+                .map_or_else(|| parked.settings.clone(), |e| e.settings.clone());
+            if slot < self.at {
+                self.at -= 1;
+            }
+        }
     }
 
     fn checked(&mut self) {
@@ -242,6 +372,21 @@ impl Home {
             return;
         };
         self.settings = editor.settings.clone();
+        if !self.parked.is_empty() {
+            let index = self.at.min(self.parked.len() - 1);
+            let mut next = self.parked.remove(index);
+            editor.hand_over(&mut next);
+            editor.hand_settings(&mut next);
+            self.at = index;
+            self.reshow(ctx, next);
+            if let Some(path) = &self.settings_path
+                && let Err(e) = self.settings.save(path)
+                && let Some(shown) = self.editor.as_mut()
+            {
+                shown.error(format!("saving your settings: {e:#}"));
+            }
+            return;
+        }
         if let Some(path) = &self.settings_path
             && let Err(e) = self.settings.save(path)
         {
@@ -270,10 +415,25 @@ impl Home {
         let mut chosen = None;
         let mut closing = false;
         let mut gone = None;
+        let mut cycle = std::mem::take(&mut self.cycling);
+        if !self.parked.is_empty() {
+            cycle += ui.input_mut(|i| {
+                let back = i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Tab);
+                let on = i.consume_key(egui::Modifiers::CTRL, egui::Key::Tab);
+                i32::from(on) - i32::from(back)
+            });
+        }
+        if let Some((slot, close)) = self.drawing_tabs(ui) {
+            match close {
+                true => self.close_slot(&ctx, slot),
+                false => self.show_slot(&ctx, slot),
+            }
+        }
         match self.editor.as_mut() {
             Some(editor) => {
                 editor.frame(ui);
                 match editor.wants.take() {
+                    Some(Want::Cycle(by)) => cycle += by,
                     Some(Want::Close) => closing = true,
                     Some(Want::Gone) => gone = Some(editor.scene.bundle.root.clone()),
                     Some(Want::Path(path)) => chosen = Some(path),
@@ -292,6 +452,7 @@ impl Home {
                     None => {}
                 }
                 if let Some(start) = self.start.as_mut() {
+                    start.open = Some(editor.scene.bundle.root.clone());
                     let height = (ctx.content_rect().height() - 120.0).clamp(320.0, 760.0);
                     let modal = egui::Modal::new(egui::Id::unique("start window")).show(&ctx, |ui| {
                         ui.set_width(WIDTH);
@@ -372,6 +533,9 @@ impl Home {
         if closing {
             self.close(&ctx);
         }
+        if cycle != 0 {
+            self.cycle(&ctx, cycle);
+        }
         let tour = self.start.as_ref().is_some_and(|s| s.tour);
         if let Some(path) = chosen
             .or(from_menu)
@@ -445,6 +609,7 @@ impl eframe::App for Home {
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.cycling += crate::layout::take_ctrl_tabs(raw_input);
         if let Some(editor) = self.editor.as_mut() {
             editor.take_tabs(ctx, raw_input);
         }
@@ -1173,5 +1338,154 @@ mod tests {
         });
         h.render().unwrap().save(out.join("editor-lantern.png")).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod open_drawings {
+    use super::*;
+    use egui::vec2;
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    use klad_core::bundle::{Blank, Bundle};
+
+    fn folder(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("draw-open-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::canonicalize(&dir).unwrap()
+    }
+
+    fn blank(path: &Path) {
+        Bundle::blank(
+            path,
+            &Blank {
+                width: 320,
+                height: 200,
+                ..Blank::default()
+            },
+            "cli",
+        )
+        .unwrap();
+    }
+
+    fn shown(h: &Harness<'static, Home>) -> PathBuf {
+        h.state().editor.as_ref().unwrap().scene.bundle.root.clone()
+    }
+
+    #[test]
+    fn several_drawings_stay_open_side_by_side_switch_with_tabs_and_ctrl_tab_and_close_one_by_one() {
+        let dir = folder("tabs");
+        let (one, two, three) = (dir.join("one.klad"), dir.join("two.klad"), dir.join("three.klad"));
+        [&one, &two, &three].iter().for_each(|p| blank(p));
+        let settings = Settings {
+            drawings: Some(dir.display().to_string()),
+            ..Settings::default()
+        };
+        let mut home = Home::with(settings, None, None);
+        let ctx = egui::Context::default();
+        home.begin(&ctx, Some(&one));
+        let mut h = Harness::builder()
+            .with_size(vec2(1440.0, 900.0))
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), home);
+        h.run_steps(3);
+        h.state_mut().open(&ctx, &two).unwrap();
+        h.state_mut().open(&ctx, &three).unwrap();
+        h.run_steps(3);
+        assert_eq!(shown(&h), three);
+        assert_eq!(
+            h.state().drawings(),
+            [one.clone(), two.clone(), three.clone()],
+            "every drawing stays open, in the order opened"
+        );
+        assert!(
+            h.query_by_label("one").is_some() && h.query_by_label("two").is_some(),
+            "a tab for each drawing"
+        );
+        h.get_by_label("one").click();
+        h.run_steps(3);
+        assert_eq!(shown(&h), one, "a tab shows its drawing");
+        assert_eq!(
+            h.state().drawings(),
+            [one.clone(), two.clone(), three.clone()],
+            "and the tabs keep their order"
+        );
+        h.event(egui::Event::Key {
+            key: egui::Key::Tab,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::CTRL,
+        });
+        h.run_steps(3);
+        assert_eq!(shown(&h), two, "ctrl Tab goes to the next drawing");
+        h.state_mut().open(&ctx, &one).unwrap();
+        h.run_steps(2);
+        assert_eq!(shown(&h), one, "opening a drawing that is open shows its tab");
+        assert_eq!(h.state().drawings().len(), 3, "and does not open it twice");
+        h.state_mut().editor.as_mut().unwrap().wants = Some(Want::Close);
+        h.run_steps(4);
+        assert_eq!(h.state().drawings(), [two.clone(), three.clone()]);
+        assert!(h.state().editor.is_some(), "closing one drawing shows another");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_start_window_duplicates_a_drawing_and_moves_one_to_the_trash() {
+        use egui_kittest::kittest::NodeT;
+        let dir = folder("cards");
+        let (one, two) = (dir.join("one.klad"), dir.join("two.klad"));
+        blank(&one);
+        blank(&two);
+        let settings = Settings {
+            drawings: Some(dir.display().to_string()),
+            documents: vec![one.display().to_string(), two.display().to_string()],
+            ..Settings::default()
+        };
+        let mut home = Home::with(settings, None, None);
+        home.start = Some(Start::new(&home.settings, Section::Recent));
+        home.start.as_mut().unwrap().trash_to = Some(dir.join("trash"));
+        let mut h = Harness::builder()
+            .with_size(vec2(1280.0, 860.0))
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), home);
+        h.run_steps(3);
+        let card = |h: &Harness<'static, Home>, name: &str| {
+            h.query_all_by_label(name)
+                .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+                .map(|n| n.rect().center())
+        };
+        h.query_all_by_label("one")
+            .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+            .unwrap()
+            .click_secondary();
+        h.run_steps(3);
+        h.get_by_label_contains("Duplicate").click();
+        h.run_steps(3);
+        assert!(
+            dir.join("one copy.klad/doc.json").is_file(),
+            "the card's menu duplicates the drawing"
+        );
+        assert!(
+            h.state()
+                .settings
+                .documents
+                .iter()
+                .any(|d| d.ends_with("one copy.klad")),
+            "and lists the copy"
+        );
+        assert!(card(&h, "two").is_some());
+        h.query_all_by_label("two")
+            .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+            .unwrap()
+            .click_secondary();
+        h.run_steps(3);
+        h.get_by_label_contains("Move to the Trash").click();
+        h.run_steps(3);
+        assert!(
+            !two.exists() && dir.join("trash/two.klad/doc.json").is_file(),
+            "it goes to the Trash, not away for good"
+        );
+        assert!(!h.state().settings.documents.iter().any(|d| d.ends_with("two.klad")));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

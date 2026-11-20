@@ -82,6 +82,8 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad brushes`](#klad-brushes): List brushes: the library, and with a bundle the ones it embeds; keep your own brushes for every drawing
 - [`klad effect`](#klad-effect): List, add or remove a layer's effects: klad effect art.klad l3 glow radius=24 color=#ffd080
 - [`klad reshape`](#klad-reshape): Bend a brush stroke along a new path; it keeps its pressure, tilt and timing (klad strokes --json gives each stroke's fitted path)
+- [`klad save-as`](#klad-save-as): Save a copy of a drawing under a new name (everything but its undo history); the copy gets its own ids
+- [`klad rename`](#klad-rename): Rename a drawing (its folder); an editor that has it open goes on in it
 - [`klad undo`](#klad-undo): Undo the last change (from the CLI or the editor)
 - [`klad redo`](#klad-redo): Redo the last undone change
 - [`klad log`](#klad-log): Recent changes, newest first
@@ -4514,6 +4516,49 @@ Options:
 
   -h, --help
           Print help
+```
+
+## klad save-as
+
+```text
+Save a copy of a drawing under a new name, next to it unless the name has a folder. Everything outside .cache is copied; the copy starts with no undo history and gets ids of its own when it is first opened, so the two can be edited side by side and merged in git.
+
+  klad save-as art.klad art-v2
+  klad save-as art.klad ../shared/art.klad
+
+Usage: klad save-as <BUNDLE> <TO>
+
+Arguments:
+  <BUNDLE>
+
+
+  <TO>
+          The copy's name or path (.klad is added)
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad rename
+
+```text
+Rename a drawing's folder, next to it unless the name has a folder. The undo history and pinned notes go with it. An editor that has it open follows it.
+
+  klad rename art.klad hero
+
+Usage: klad rename <BUNDLE> <TO>
+
+Arguments:
+  <BUNDLE>
+
+
+  <TO>
+          The new name or path (.klad is added)
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 ## klad undo

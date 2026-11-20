@@ -29,6 +29,8 @@ impl Piece {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Copied {
     pieces: Vec<Piece>,
+    from: std::path::PathBuf,
+    brushes: Vec<(String, klad_core::brushes::BrushDef)>,
 }
 
 impl Copied {
@@ -157,7 +159,20 @@ impl Editor {
             .map(|l| l.id.as_str())
             .collect();
         pieces.sort_by_key(|p| order.iter().position(|id| *id == p.layer));
-        (!pieces.is_empty()).then_some(Copied { pieces })
+        let brushes = pieces
+            .iter()
+            .flat_map(|p| p.around.iter().chain(&p.whole))
+            .filter_map(Mark::as_stroke)
+            .map(|s| s.brush.clone())
+            .collect::<std::collections::BTreeSet<String>>()
+            .into_iter()
+            .filter_map(|id| self.embedded.get(&id).map(|def| (id, def.clone())))
+            .collect();
+        (!pieces.is_empty()).then_some(Copied {
+            pieces,
+            from: self.scene.bundle.root.clone(),
+            brushes,
+        })
     }
 
     fn copied_shapes(&self) -> Vec<Value> {
@@ -183,6 +198,7 @@ impl Editor {
         if !shapes.is_empty() {
             let what = counted(shapes.len(), "shape");
             self.shape_clip = Some(shapes);
+            self.shape_from = Some(self.scene.bundle.root.clone());
             self.clipboard = None;
             self.cells_last = false;
             return Some(what);
@@ -248,7 +264,92 @@ impl Editor {
         }
     }
 
+    fn bring_pictures(&mut self, shapes: &[Value]) -> Result<usize> {
+        let Some(from) = self.shape_from.clone().filter(|f| *f != self.scene.bundle.root) else {
+            return Ok(0);
+        };
+        fn sources(v: &Value, out: &mut Vec<String>) {
+            match v {
+                Value::Object(map) => {
+                    if let Some(Value::String(src)) = map.get("src") {
+                        out.push(src.clone());
+                    }
+                    map.values().for_each(|c| sources(c, out));
+                }
+                Value::Array(items) => items.iter().for_each(|c| sources(c, out)),
+                _ => {}
+            }
+        }
+        let mut found = Vec::new();
+        shapes.iter().for_each(|s| sources(s, &mut found));
+        let root = self.scene.bundle.root.clone();
+        found
+            .iter()
+            .filter(|src| !src.contains("..") && !std::path::Path::new(src).is_absolute())
+            .filter(|src| !root.join(src).exists() && from.join(src).is_file())
+            .try_fold(0, |n, src| {
+                klad_core::bundle::write_atomic(&root.join(src), &std::fs::read(from.join(src))?)?;
+                Ok(n + 1)
+            })
+    }
+
+    fn bring_brushes(&mut self, copied: &Copied) -> Result<()> {
+        if copied.from == self.scene.bundle.root {
+            return Ok(());
+        }
+        copied.brushes.iter().try_for_each(|(id, def)| {
+            if self.scene.bundle.embed_brush(id, def)? {
+                self.embedded.insert(id.clone(), def.clone());
+                self.brushes.insert(id, def.clone());
+            }
+            Ok(())
+        })
+    }
+
+    fn rebound(&self, copied: Copied) -> Copied {
+        if copied.from == self.scene.bundle.root {
+            return copied;
+        }
+        let palette = &self.scene.bundle.doc.palette;
+        let swatch_of = |colour: [u16; 4]| {
+            palette
+                .iter()
+                .filter(|s| !s.id.is_empty())
+                .find(|s| {
+                    klad_core::color::parse_hex(&s.color).is_ok_and(|c| klad_core::color::to_u16(c)[..3] == colour[..3])
+                })
+                .map(|s| s.id.clone())
+        };
+        let rebind = |m: &Mark| -> Mark {
+            match m {
+                Mark::Fill(fill) => {
+                    let mut fill = fill.clone();
+                    if let klad_core::fill::FillSource::Cells { entry, .. } = &mut fill.source
+                        && !entry.is_empty()
+                    {
+                        *entry = swatch_of(fill.color).unwrap_or_default();
+                    }
+                    Mark::Fill(fill)
+                }
+                other => other.clone(),
+            }
+        };
+        Copied {
+            pieces: copied
+                .pieces
+                .into_iter()
+                .map(|p| Piece {
+                    around: p.around.iter().map(rebind).collect(),
+                    whole: p.whole.iter().map(rebind).collect(),
+                    ..p
+                })
+                .collect(),
+            ..copied
+        }
+    }
+
     fn paste_shapes(&mut self, shapes: Vec<Value>) -> Result<()> {
+        self.bring_pictures(&shapes)?;
         let frame = self.scene.frame;
         let home = self.vector_home("shapes");
         let ops: Vec<Op> = home
@@ -441,10 +542,13 @@ impl Editor {
     }
 
     pub(super) fn paste_copied(&mut self, copied: Copied, word: &str) -> Result<()> {
+        self.bring_brushes(&copied)?;
+        let copied = self.rebound(copied);
         let doc = &self.scene.bundle.doc;
         let paintable = |l: &&klad_core::doc::Layer| l.kind() == Kind::Paint && !l.locked;
         let in_hand = self.scene.active_id();
-        let own = copied.pieces.len() > 1 && copied.pieces.iter().any(|p| Some(&p.layer) == in_hand.as_ref());
+        let here = copied.from == self.scene.bundle.root;
+        let own = here && copied.pieces.len() > 1 && copied.pieces.iter().any(|p| Some(&p.layer) == in_hand.as_ref());
         let (targets, onto): (Vec<(&Piece, CopyTarget)>, String) = match own {
             false => {
                 let Some(layer) = self.scene.active_layer().filter(paintable) else {
