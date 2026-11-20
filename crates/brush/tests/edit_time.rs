@@ -86,3 +86,42 @@ fn attach_time() {
         );
     });
 }
+
+#[test]
+#[ignore]
+fn move_all_time() {
+    let Ok(path) = std::env::var("KLAD_EDIT_BUNDLE") else {
+        eprintln!("set KLAD_EDIT_BUNDLE and KLAD_EDIT_LAYER");
+        return;
+    };
+    let layer = std::env::var("KLAD_EDIT_LAYER").unwrap();
+    let bundle = Bundle::open(&path).unwrap();
+    let brushes = BrushSet::for_bundle(&bundle).unwrap();
+    let found = bundle.doc.find_layer(&layer).unwrap();
+    let cel = found.cels()[0].id.clone();
+    let marks = bundle.read_marks(&found.id, &cel).unwrap();
+    let (w, h) = (bundle.doc.canvas.width, bundle.doc.canvas.height);
+    let (mut replay, mut raster, _) = CelReplay::replay(w, h, marks.clone(), &brushes).unwrap();
+    let mut moved = marks.clone();
+    let mut change = MarkChange::Transform {
+        ids: marks.iter().map(|m| m.id()).collect(),
+        transform: MarkTransform {
+            x: 40.0,
+            y: 16.0,
+            ..Default::default()
+        },
+    };
+    markedit::apply(&mut moved, &mut change, &cel, bundle.doc.mark_ids(&cel)).unwrap();
+    let start = Instant::now();
+    let (_, in_order, _) = CelReplay::replay(w, h, moved.clone(), &brushes).unwrap();
+    let ordered = start.elapsed().as_secs_f64() * 1000.0;
+    let start = Instant::now();
+    let updated = replay.update(&mut raster, moved, &brushes).unwrap();
+    let now = start.elapsed().as_secs_f64() * 1000.0;
+    assert_eq!(raster.hash(), in_order.hash(), "the same picture either way");
+    println!(
+        "every one of {} marks moved: {now:.0} ms (full {}), against {ordered:.0} ms replayed in order",
+        marks.len(),
+        updated.full
+    );
+}

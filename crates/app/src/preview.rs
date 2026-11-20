@@ -77,32 +77,90 @@ fn liftable(mark: &Mark, brushes: &BrushSet) -> bool {
     }
 }
 
-fn lift_cel(snap: &Snapshot, cel: &str, chosen: &BTreeSet<u32>) -> Option<Lift> {
-    let replay = snap.cels.get(cel)?;
-    let marks = replay.marks();
+fn split(marks: &[Mark], chosen: &BTreeSet<u32>) -> (Vec<Mark>, Vec<Mark>) {
     let live: BTreeSet<u32> = marks.iter().map(Mark::id).collect();
     let rides = |m: &Mark| m.as_stroke().is_some_and(|s| s.on.iter().any(|t| chosen.contains(t)));
     let only = |m: &Mark| {
         m.as_stroke()
             .is_some_and(|s| s.on.iter().filter(|t| live.contains(t)).all(|t| chosen.contains(t)))
     };
-    let moving: Vec<Mark> = marks
+    let moving = marks
         .iter()
         .filter(|m| chosen.contains(&m.id()) || rides(m))
         .cloned()
         .collect();
-    if moving.is_empty() || !moving.iter().all(|m| liftable(m, &snap.brushes)) {
-        return None;
-    }
-    let staying: Vec<Mark> = marks
+    let staying = marks
         .iter()
         .filter(|m| !chosen.contains(&m.id()) && !(rides(m) && only(m)))
         .cloned()
         .collect();
+    (moving, staying)
+}
+
+fn chosen_by_cel(ids: &[String]) -> Option<BTreeMap<String, BTreeSet<u32>>> {
+    ids.iter()
+        .try_fold(BTreeMap::<String, BTreeSet<u32>>::new(), |mut by, id| {
+            let (cel, n) = parse_address(id)?;
+            by.entry(cel.to_string()).or_default().insert(n);
+            Some(by)
+        })
+}
+
+fn whole_cels(snap: &Snapshot, ids: &[String]) -> bool {
+    ids.len() >= MANY
+        && chosen_by_cel(ids).is_some_and(|by| {
+            by.iter().all(|(cel, chosen)| {
+                snap.cels
+                    .get(cel)
+                    .is_some_and(|replay| split(replay.marks(), chosen).1.is_empty())
+            })
+        })
+}
+
+fn lift_whole(snap: &Snapshot, cel: &str, picked: [f32; 4], offset: [usize; 2]) -> Option<Lift> {
+    let raster = snap.rasters.get(cel)?;
+    let (w, h) = (snap.bundle.doc.canvas.width, snap.bundle.doc.canvas.height);
+    let mut alone = Raster::new(w + 2 * offset[0] as u32, h + 2 * offset[1] as u32);
+    let (dx, dy) = (offset[0] / TILE, offset[1] / TILE);
+    let occupied: Vec<usize> = raster.occupied().map(|(i, _)| i).collect();
+    occupied.iter().for_each(|&i| {
+        let (tx, ty) = (i % raster.cols, i / raster.cols);
+        let to = alone.index(tx + dx, ty + dy);
+        alone.restore(to, &raster.tile(i));
+    });
+    let low = occupied.iter().fold((usize::MAX, usize::MAX), |a, &i| {
+        (a.0.min(i % raster.cols), a.1.min(i / raster.cols))
+    });
+    let high = occupied.iter().fold((0, 0), |a, &i| {
+        (a.0.max(i % raster.cols + 1), a.1.max(i / raster.cols + 1))
+    });
+    if occupied.is_empty() {
+        return None;
+    }
+    let [x0, y0, x1, y1] = picked;
+    Some(Lift {
+        rest: Raster::new(w, h),
+        alone,
+        offset: offset.map(|v| v as f32),
+        centre: [(x0 + x1) / 2.0, (y0 + y1) / 2.0],
+        reach: [low.0 + dx, low.1 + dy, high.0 + dx, high.1 + dy].map(|v| (v * TILE) as f32),
+    })
+}
+
+fn lift_cel(snap: &Snapshot, cel: &str, chosen: &BTreeSet<u32>) -> Option<Lift> {
+    let replay = snap.cels.get(cel)?;
+    let marks = replay.marks();
+    let (moving, staying) = split(marks, chosen);
     let picked: Vec<&Mark> = marks.iter().filter(|m| chosen.contains(&m.id())).collect();
     let [x0, y0, x1, y1] = union(&picked)?;
     let (w, h) = (snap.bundle.doc.canvas.width, snap.bundle.doc.canvas.height);
     let offset = [w, h].map(|v| (v as usize).div_ceil(GRAIN_SIZE) * GRAIN_SIZE);
+    if staying.is_empty() {
+        return lift_whole(snap, cel, [x0, y0, x1, y1], offset);
+    }
+    if moving.is_empty() || !moving.iter().all(|m| liftable(m, &snap.brushes)) {
+        return None;
+    }
     let around: Vec<Mark> = moving
         .into_iter()
         .map(|mut m| {
@@ -148,13 +206,7 @@ fn lift_cel(snap: &Snapshot, cel: &str, chosen: &BTreeSet<u32>) -> Option<Lift> 
 }
 
 fn lift(snap: &Snapshot, ids: &[String], cancel: &AtomicBool) -> Option<Lifts> {
-    let by_cel = ids
-        .iter()
-        .try_fold(BTreeMap::<String, BTreeSet<u32>>::new(), |mut by, id| {
-            let (cel, n) = parse_address(id)?;
-            by.entry(cel.to_string()).or_default().insert(n);
-            Some(by)
-        })?;
+    let by_cel = chosen_by_cel(ids)?;
     let cels = by_cel
         .into_par_iter()
         .map(|(cel, chosen)| {
@@ -336,14 +388,19 @@ impl Job {
 
     pub fn run(self) -> Result<Done> {
         let lifted = match &self.ops[..] {
-            [Op::Transform { ids, transform }] if self.snap.slow.load(Ordering::Relaxed) => self
-                .snap
-                .lifts
-                .get_or_init(|| lift(&self.snap, ids, &self.cancel))
-                .as_ref()
-                .filter(|l| l.ids == *ids)
-                .map(|l| shifted(&self.snap, l, transform))
-                .transpose()?,
+            [Op::Transform { ids, transform }]
+                if self.snap.lifts.get().is_some()
+                    || self.snap.slow.load(Ordering::Relaxed)
+                    || whole_cels(&self.snap, ids) =>
+            {
+                self.snap
+                    .lifts
+                    .get_or_init(|| lift(&self.snap, ids, &self.cancel))
+                    .as_ref()
+                    .filter(|l| l.ids == *ids)
+                    .map(|l| shifted(&self.snap, l, transform))
+                    .transpose()?
+            }
             _ => None,
         };
         self.check()?;
@@ -554,7 +611,89 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "a timing to read: KLAD_DRAG_BENCH=<drawing> [KLAD_DRAG_AT=<first mark>] [KLAD_DRAG_COUNT=<marks>] cargo test drag_steps -- --ignored --nocapture"]
+    fn a_whole_layer_of_alpha_locked_oil_moves_as_its_picture_from_the_first_step() {
+        let dir = std::env::temp_dir().join(format!("klad-lift-whole-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut doc = Document::new(600, 300);
+        doc.canvas.background = Some("#ffffff".into());
+        doc.layers = vec![Layer::paint("a", "a", "ca")];
+        let mut bundle = Bundle::create(&dir, doc).unwrap();
+        let strokes: Vec<String> = (0..40)
+            .map(|k| {
+                let y = 70 + k * 4;
+                format!(
+                    r##"{{"op":"stroke","layer":"a","path":"M60 {y} L420 {}","size":14,"brush":"oil","color":"#{:02x}5020"}}"##,
+                    y + 20,
+                    120 + k * 3
+                )
+            })
+            .collect();
+        let ops = [
+            r##"{"op":"stroke","layer":"a","path":"M120 160 L380 160","size":180,"color":"#e6bf34"}"##.to_string(),
+            r##"{"op":"set","id":"a","lockAlpha":true}"##.to_string(),
+        ]
+        .into_iter()
+        .chain(strokes)
+        .collect::<Vec<_>>()
+        .join("\n");
+        bundle.apply(&klad_core::ops::parse_lines(&ops).unwrap()).unwrap();
+        let scene = crate::composite::Scene::open(&dir).unwrap();
+        let brushes = BrushSet::for_bundle(&scene.bundle).unwrap();
+        let cel = "ca".to_string();
+        let marks = scene.marks_of(&cel);
+        assert!(
+            marks.iter().filter_map(Mark::as_stroke).skip(1).all(|s| s.lock),
+            "every stroke on the base is alpha-locked"
+        );
+        let ids: Vec<String> = marks.iter().map(|m| address(&cel, m.id())).collect();
+        let snap = Arc::new(scene.preview_snapshot(std::slice::from_ref(&cel), &brushes).unwrap());
+        let visible: BTreeSet<usize> = scene.all_tiles().into_iter().collect();
+        let transform = MarkTransform {
+            x: 40.0,
+            y: 16.0,
+            ..MarkTransform::default()
+        };
+        let job = || Job {
+            ops: vec![Op::Transform {
+                ids: ids.clone(),
+                transform,
+            }],
+            snap: snap.clone(),
+            shown: BTreeSet::new(),
+            visible: visible.clone(),
+            cancel: Arc::default(),
+        };
+        let lifted = job().run().unwrap();
+        assert!(
+            !lifted.exact,
+            "the first step already moves the layer's picture instead of painting every stroke again"
+        );
+        let exact = job();
+        let (doc, rasters, changed, _) = exact.replayed().unwrap();
+        let exact = exact.composed(&doc, rasters, changed, true).unwrap();
+        let gaps: Vec<f32> = exact
+            .tiles
+            .iter()
+            .flat_map(|(i, tile)| {
+                let shown = lifted
+                    .tiles
+                    .iter()
+                    .find(|(j, _)| j == i)
+                    .map(|(_, t)| t.clone())
+                    .expect("every tile the move changes is previewed");
+                tile.iter()
+                    .zip(shown)
+                    .map(|(a, b)| (a.to_f32() - b.to_f32()).abs())
+                    .collect::<Vec<f32>>()
+            })
+            .collect();
+        let mean = gaps.iter().sum::<f32>() / gaps.len() as f32;
+        assert!(mean < 0.02, "the moved picture is where the strokes land: {mean}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[ignore = "a timing to read: KLAD_DRAG_BENCH=<drawing> [KLAD_DRAG_LAYER=<layer>] [KLAD_DRAG_AT=<first mark>] [KLAD_DRAG_COUNT=<marks>] cargo test drag_steps -- --ignored --nocapture"]
     fn drag_steps_on_a_large_drawing() {
         let Ok(path) = std::env::var("KLAD_DRAG_BENCH") else {
             return;
@@ -571,7 +710,13 @@ mod tests {
         let scene = crate::composite::Scene::open(std::path::Path::new(&path)).unwrap();
         let brushes = BrushSet::for_bundle(&scene.bundle).unwrap();
         eprintln!("opened in {:.0} ms", start.elapsed().as_secs_f64() * 1000.0);
-        let cel = scene.bundle.doc.paint_cels()[0].1.id.clone();
+        let layer = std::env::var("KLAD_DRAG_LAYER").ok();
+        let cels = scene.bundle.doc.paint_cels();
+        let cel = cels
+            .iter()
+            .find(|(l, _)| layer.as_ref().is_none_or(|name| &l.name == name || &l.id == name))
+            .map(|(_, c)| c.id.clone())
+            .unwrap();
         let marks = scene.marks_of(&cel);
         let ids: Vec<String> = marks[at.min(marks.len() - 1)..(at + count).min(marks.len())]
             .iter()
