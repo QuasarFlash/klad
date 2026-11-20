@@ -77,6 +77,7 @@ pub(crate) struct Home {
     menus_shown: Option<std::time::Instant>,
     cycling: i32,
     ran_out: Option<String>,
+    cursor: crate::cursor::Settle,
 }
 
 fn used_twice(e: &anyhow::Error) -> bool {
@@ -129,6 +130,7 @@ impl Home {
             menus_shown: None,
             cycling: 0,
             ran_out: None,
+            cursor: crate::cursor::Settle::default(),
         }
     }
 
@@ -595,6 +597,7 @@ impl Home {
             }
         }
         self.open_links(&ctx);
+        self.cursor.frame(&ctx);
     }
 
     fn open_links(&mut self, ctx: &egui::Context) {

@@ -1,6 +1,7 @@
 mod color;
 mod commands;
 mod composite;
+mod cursor;
 mod editor;
 mod frames;
 mod gpu;
