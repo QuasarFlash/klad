@@ -314,7 +314,7 @@ enum Command {
             help = "With --size: where the drawing stays: top-left, top, top-right, left, center, right, bottom-left, bottom, bottom-right"
         )]
         anchor: String,
-        #[arg(long, value_name = "X,Y,W,H", conflicts_with_all = ["trim", "resize", "turn", "flip"], help = "Keep only this area: it becomes the canvas")]
+        #[arg(long, value_name = "X,Y,W,H", allow_hyphen_values = true, conflicts_with_all = ["trim", "resize", "turn", "flip"], help = "Keep only this area: it becomes the canvas; an area past the edges (x or y below 0, or wider than the canvas) grows it")]
         crop: Option<String>,
         #[arg(long, conflicts_with_all = ["resize", "turn", "flip"], help = "Crop to what is drawn on the visible layers")]
         trim: bool,

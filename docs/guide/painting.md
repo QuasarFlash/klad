@@ -41,7 +41,7 @@ Paint with **Smudge**, **Wet round** or **Blender** over colours that are alread
 **Edit > Canvas** holds what changes the whole drawing; each is one step that **cmd Z** takes back.
 
 - **Canvas size…** opens a window: type the new size, click where the drawing should stay and click **change the canvas size**. The same window scales the whole drawing and sets the paper colour.
-- **Crop** (**C**, the crop tool in the strip): a box with handles goes round the canvas. Drag a handle to move its edge (**shift** keeps the shape, **alt** sizes from the middle), drag inside to move the box, or drag a new one; the bar shows its size. Press **Return** or **crop to the box**; **Esc** leaves. **Crop to selection** and **Trim** crop to the selection or to what is drawn.
+- **Crop** (**C**, the crop tool in the strip): a box with handles goes round the canvas. Drag a handle to move its edge (**shift** keeps the shape, **alt** sizes from the middle), drag inside to move the box, or drag a new one; past the canvas edges it grows the canvas, as Canvas size does. The bar shows its size. Press **Return** or **crop to the box**; **Esc** leaves. **Crop to selection** and **Trim** crop to the selection or to what is drawn.
 - **Turn** and **Flip** turn or mirror every layer at once.
 
 ## Paint symmetrically

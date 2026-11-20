@@ -1654,5 +1654,28 @@ fn the_crop_tool_is_in_the_strip_with_handles_a_box_that_moves_and_its_bar() {
     chord(&mut h, Modifiers::COMMAND, Key::Z);
     h.run_steps(4);
     assert_eq!(size(&h), (512, 384), "cmd Z takes the crop back");
+
+    let cel = layer_named(&h, "lines").cels()[0].id.clone();
+    let bounds = |h: &Harness<'static, Editor>| h.state().scene.marks_of(&cel)[0].bounds().unwrap();
+    let first = bounds(&h);
+    h.key_press(Key::C);
+    h.run_steps(2);
+    let (a, b) = (canvas_at(&h, 512.0, 192.0), canvas_at(&h, 600.0, 192.0));
+    drag(&mut h, a, b);
+    let (a, b) = (canvas_at(&h, 0.0, 192.0), canvas_at(&h, -50.0, 192.0));
+    drag(&mut h, a, b);
+    h.key_press(Key::Enter);
+    h.run_steps(4);
+    let (w, hh) = size(&h);
+    assert!(
+        (w as i32 - 650).abs() <= 2 && hh == 384,
+        "past the edges the crop grows the canvas, as Canvas size does: {w}x{hh} {}",
+        said(&h)
+    );
+    let moved = bounds(&h);
+    assert!(
+        (moved[0] - first[0] - 50.0).abs() < 1.5,
+        "and the drawing moves with the left edge: {moved:?} from {first:?}"
+    );
     let _ = std::fs::remove_dir_all(&path);
 }

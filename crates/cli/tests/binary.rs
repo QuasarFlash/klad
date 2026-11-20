@@ -3431,6 +3431,8 @@ fn the_canvas_grows_crops_scales_turns_and_flips_with_everything_on_it() {
             &["--turn", "180"],
             &["--size", "400,260", "--anchor", "bottom-right"],
             &["--crop", "100,60,300,200"],
+            &["--crop", "-30,-20,360,240"],
+            &["--crop", "30,20,300,200"],
             &["--resize", "2"],
             &["--resize", "0.5"],
         ],

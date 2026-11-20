@@ -346,7 +346,7 @@ Options:
           [default: center]
 
       --crop <X,Y,W,H>
-          Keep only this area: it becomes the canvas
+          Keep only this area: it becomes the canvas; an area past the edges (x or y below 0, or wider than the canvas) grows it
 
       --trim
           Crop to what is drawn on the visible layers

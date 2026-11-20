@@ -90,7 +90,7 @@ impl Crop {
         }
     }
 
-    fn dragged(&mut self, at: Vec2, size: Vec2, keep: bool, centred: bool) {
+    fn dragged(&mut self, at: Vec2, keep: bool, centred: bool) {
         let Some((grip, start, lo, hi)) = self.held else {
             return;
         };
@@ -106,11 +106,7 @@ impl Crop {
                     false => (start, start + half),
                 }
             }
-            Grip::Move => {
-                let d = at - start;
-                let d = vec2(d.x.clamp(-lo.x, size.x - hi.x), d.y.clamp(-lo.y, size.y - hi.y));
-                (lo + d, hi + d)
-            }
+            Grip::Move => (lo + (at - start), hi + (at - start)),
             Grip::Sides(sx, sy) => {
                 let pick = |s: i8, low: f32, high: f32| if s < 0 { low } else { high };
                 let anchor = match centred {
@@ -136,9 +132,8 @@ impl Crop {
                 (vec2(x0, y0), vec2(x1, y1))
             }
         };
-        let inside = |v: Vec2| vec2(v.x.clamp(0.0, size.x), v.y.clamp(0.0, size.y));
-        self.from = inside(a.min(b));
-        self.to = inside(a.max(b));
+        self.from = a.min(b);
+        self.to = a.max(b);
     }
 
     fn area(&self, pixel: bool) -> (f32, f32, u32, u32) {
@@ -151,7 +146,7 @@ impl Crop {
     }
 }
 
-const CROP_HINT: &str = "drag the handles, the box or a new box over the area to keep, then Return; shift keeps the shape, alt sizes from the middle, Esc leaves";
+const CROP_HINT: &str = "drag the handles, the box or a new box over the area to keep, then Return; past the edges it grows the canvas; shift keeps the shape, alt sizes from the middle, Esc leaves";
 
 pub(super) const COMMANDS: [Cmd; 5] = [
     Cmd::CanvasRight,
@@ -246,8 +241,6 @@ impl Editor {
     }
 
     pub(super) fn crop_pen(&mut self, phase: Phase, at: Vec2, on_canvas: bool) {
-        let (w, h) = self.scene.size();
-        let size = vec2(w as f32, h as f32);
         let slack = GRIP / self.view.map_or(1.0, |v| v.zoom);
         let (keep, centred) = (self.modifiers.shift, self.modifiers.alt);
         let Some(crop) = self.cropping.as_mut() else {
@@ -256,22 +249,18 @@ impl Editor {
         match phase {
             Phase::Down if on_canvas => {
                 let grip = crop.grip_at(at, slack);
-                let start = match grip {
-                    Grip::New => vec2(at.x.clamp(0.0, size.x), at.y.clamp(0.0, size.y)),
-                    _ => at,
-                };
                 let (lo, hi) = crop.span();
-                crop.held = Some((grip, start, lo, hi));
+                crop.held = Some((grip, at, lo, hi));
             }
             Phase::Move if crop.held.is_some() => {
-                crop.dragged(at, size, keep, centred);
+                crop.dragged(at, keep, centred);
                 crop.whole = false;
             }
             Phase::Up => {
                 let Some((grip, _, lo, hi)) = crop.held else {
                     return;
                 };
-                crop.dragged(at, size, keep, centred);
+                crop.dragged(at, keep, centred);
                 crop.held = None;
                 let (a, b) = crop.span();
                 if grip == Grip::New && ((b.x - a.x) < 1.0 || (b.y - a.y) < 1.0) {
@@ -334,22 +323,23 @@ impl Editor {
         ui.label(RichText::new(format!("{} crop", Cmd::CropTool.spec().icon)).strong());
         ui.separator();
         let mut sized = false;
-        [("w", &mut width, w), ("h", &mut height, h)]
+        [("w", &mut width), ("h", &mut height)]
             .into_iter()
-            .for_each(|(name, value, most)| {
+            .for_each(|(name, value)| {
                 let label = ui.label(name);
                 sized |= ui
-                    .add(egui::DragValue::new(value).range(1..=most).suffix(" px"))
+                    .add(
+                        egui::DragValue::new(value)
+                            .range(1..=klad_render::reshape::MOST)
+                            .suffix(" px"),
+                    )
                     .labelled_by(label.id)
-                    .hint("the size of the area to keep, in canvas px; it grows to the right and down")
+                    .hint("the size of the area to keep, in canvas px; it grows to the right and down, past the canvas too")
                     .changed();
             });
         if sized && let Some(crop) = self.cropping.as_mut() {
             let (lo, _) = crop.span();
-            crop.to = vec2(
-                (lo.x + width as f32).min(w as f32),
-                (lo.y + height as f32).min(h as f32),
-            );
+            crop.to = lo + vec2(width as f32, height as f32);
             crop.from = lo;
             crop.whole = false;
         }
@@ -390,16 +380,35 @@ impl Editor {
         let canvas = Rect::from_two_pos(to_screen(Vec2::ZERO), to_screen(vec2(w as f32, h as f32)));
         let keep = Rect::from_two_pos(to_screen(lo), to_screen(hi));
         let shade = Color32::from_black_alpha(140);
+        let rows = (keep.min.y.max(canvas.min.y), keep.max.y.min(canvas.max.y));
         [
             Rect::from_min_max(canvas.min, egui::pos2(canvas.max.x, keep.min.y)),
             Rect::from_min_max(egui::pos2(canvas.min.x, keep.max.y), canvas.max),
-            Rect::from_min_max(egui::pos2(canvas.min.x, keep.min.y), egui::pos2(keep.min.x, keep.max.y)),
-            Rect::from_min_max(egui::pos2(keep.max.x, keep.min.y), egui::pos2(canvas.max.x, keep.max.y)),
+            Rect::from_min_max(egui::pos2(canvas.min.x, rows.0), egui::pos2(keep.min.x, rows.1)),
+            Rect::from_min_max(egui::pos2(keep.max.x, rows.0), egui::pos2(canvas.max.x, rows.1)),
         ]
         .into_iter()
         .filter(|r| r.is_positive())
         .for_each(|r| {
             painter.rect_filled(r, 0.0, shade);
+        });
+        let grown = Color32::from_white_alpha(36);
+        [
+            Rect::from_min_max(keep.min, egui::pos2(keep.max.x, keep.max.y.min(canvas.min.y))),
+            Rect::from_min_max(egui::pos2(keep.min.x, keep.min.y.max(canvas.max.y)), keep.max),
+            Rect::from_min_max(
+                egui::pos2(keep.min.x, rows.0),
+                egui::pos2(keep.max.x.min(canvas.min.x), rows.1),
+            ),
+            Rect::from_min_max(
+                egui::pos2(keep.min.x.max(canvas.max.x), rows.0),
+                egui::pos2(keep.max.x, rows.1),
+            ),
+        ]
+        .into_iter()
+        .filter(|r| r.is_positive())
+        .for_each(|r| {
+            painter.rect_filled(r, 0.0, grown);
         });
         painter.rect_stroke(
             keep,
