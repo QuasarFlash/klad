@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 22:45_
+_Last updated: 2026-11-20 00:35_
 
 # Layers, masks and clipping
 
@@ -11,6 +11,10 @@ At the top of the Layers pane, click **paint** for brush strokes or **vector** f
 Right click a layer's row for its menu: rename, duplicate, delete, merge, group, lock, mask and more. **alt ]** and **alt [** go to the layer above or below; **alt cmd ]** and **alt cmd [** move the layer up or down. Cmd click more rows to select several layers: hide, lock, group, duplicate and delete then act on all of them.
 
 To put part of a drawing on a layer of its own, [select it](selecting.md#split-part-of-a-drawing-onto-its-own-layer), right click the canvas and select **Move to new layer**.
+
+## Open a PSD
+
+Select **File > Open** and pick the `.psd`, or drop it on the start window. It opens as a new klad drawing next to the file: each layer comes in as a picture on a layer of its own, with its name, visibility, opacity and blend mode, and groups stay groups. A message names what came in as pixels, such as text, adjustment layers and effects.
 
 ## Merge layers
 

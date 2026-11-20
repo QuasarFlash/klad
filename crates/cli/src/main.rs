@@ -25,10 +25,12 @@ mod marks;
 mod paintover;
 mod paths;
 mod pixelise;
+mod psdfile;
 mod rig;
 mod scene;
 mod shapes;
 mod sheet;
+mod sheetin;
 mod sprites;
 mod svgin;
 mod svgout;
@@ -143,11 +145,14 @@ enum Command {
         long_about = "Make a klad drawing from an Aseprite file (.aseprite or .ase), or a pixel drawing from a picture (.png, .jpg). The drawing is written next to the file (hero.aseprite makes hero.klad) unless -o names it, and its path is printed.\n\n  klad import hero.aseprite\n  klad import hero.ase -o sprites/hero.klad\n  klad import sprite.png                      (a picture of 512 px or less a side, at its own size)\n  klad import sprite@8x.png --size 32         (shrunk to 32 px on its longest side)\n  klad import photo.jpg --size 64 --colors 16\n  klad import photo.jpg                       (larger than 512 px: a painting drawing of its size with the picture on a layer)\n  klad import --clipboard                     (the picture copied in another app: pasted.klad here)\n  klad import logo.svg                        (an SVG: a drawing of its size, a vector layer for each of its groups)\n  klad import logo.svg --into art.klad        (its layers added to a drawing you have)\n\nA picture larger than 512 px a side, without --size or --colors, or any picture with --painting, makes a painting drawing of its size: the picture on a layer at the bottom and a paint layer over it. Otherwise a picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.\n\nFrom an Aseprite file, what comes over: image layers as pixel layers with their name, visibility, opacity and blend mode, groups as groups, every cel as a drawing on its frame (linked cels stay linked), the palette with its names, and tags as clips. Frame times become whole frames: a file of 100 ms frames is 10 frames a second, and a frame shown for 300 ms holds for three. Indexed, grey and RGBA files all open; every pixel is bound to its palette colour, and colours a file uses outside its palette are added to it.\n\nWhat does not: tilemap layers, tilesets and slices are left out, a tag that plays backwards or back and forth becomes a clip that plays forwards, and blend modes klad does not have blend as normal. Each of these is said when it happens.\n\nklad export art.klad --aseprite writes a drawing's pixel layers back to an Aseprite file."
     )]
     Import {
-        #[arg(required_unless_present = "clipboard")]
-        file: Option<PathBuf>,
+        #[arg(
+            required_unless_present = "clipboard",
+            help = "The file: a PSD, an SVG, an Aseprite file or a picture; several pictures or a folder of them come in as frames"
+        )]
+        files: Vec<PathBuf>,
         #[arg(
             long,
-            conflicts_with = "file",
+            conflicts_with = "files",
             help = "The picture on the clipboard, copied in another app (the drawing is pasted.klad here unless -o names it)"
         )]
         clipboard: bool,
@@ -158,10 +163,31 @@ enum Command {
         painting: bool,
         #[arg(
             long,
+            visible_alias = "to",
             value_name = "BUNDLE",
-            help = "An SVG: add its shapes to this drawing, a vector layer for each of its groups, instead of making a drawing"
+            help = "Add to this drawing instead of making one: an SVG's shapes (a vector layer for each group), or frames (a new layer with a cel per frame and a clip)"
         )]
         into: Option<PathBuf>,
+        #[arg(
+            long,
+            value_name = "WxH",
+            help = "A sprite sheet: cut it into cells of this size, each a frame (empty cells are skipped)"
+        )]
+        cell: Option<String>,
+        #[arg(
+            long,
+            value_name = "COLSxROWS",
+            help = "A sprite sheet: cut it into this many columns and rows, each a frame"
+        )]
+        grid: Option<String>,
+        #[arg(long, default_value_t = 0, help = "A sprite sheet: px between the cells")]
+        padding: u32,
+        #[arg(
+            long,
+            default_value_t = 0,
+            help = "A sprite sheet: px around the cells, at the sheet's edges"
+        )]
+        margin: u32,
         #[arg(
             long,
             help = "A picture: its longest side in pixels once it is pixel art, 1 to 512 (needed when the picture is larger)"
@@ -3325,16 +3351,47 @@ fn pixel_size(text: &str) -> Result<(u32, u32)> {
 fn run() -> Result<()> {
     match Cli::parse().command {
         Command::Import {
-            file,
+            files,
             clipboard,
             painting,
             into,
+            cell,
+            grid,
+            padding,
+            margin,
             size,
             colors,
             out,
         } => {
             let ask = pixelise::Ask { size, colors };
-            let file = match (file, clipboard) {
+            let cut = sheetin::parse_cut(cell.as_deref(), grid.as_deref(), padding, margin)?;
+            let frames = cut.is_some()
+                || files.len() > 1
+                || files
+                    .iter()
+                    .any(|f| f.is_dir() && !f.join("doc.json").is_file() && f.extension().is_none_or(|e| e != "klad"));
+            if frames || (into.is_some() && files.first().is_some_and(|f| pixelise::is_picture(f))) {
+                if size.is_some() || colors.is_some() || painting {
+                    return Err(anyhow!(
+                        "--size, --colors and --painting are for one picture; frames come in at their own size"
+                    ));
+                }
+                let notes = match into {
+                    Some(bundle) => {
+                        let notes = sheetin::into(&files, cut.as_ref(), &bundle)?;
+                        println!("{}", bundle.display());
+                        notes
+                    }
+                    None => {
+                        let (made, notes) = sheetin::new_drawing(&files, cut.as_ref(), out)?;
+                        println!("{}", made.display());
+                        notes
+                    }
+                };
+                notes.iter().for_each(|n| eprintln!("note: {n}"));
+                return Ok(());
+            }
+            let file = match (files.into_iter().next(), clipboard) {
                 (_, true) => {
                     println!("{}", pixelise::from_clipboard(&ask, out, painting)?.display());
                     return Ok(());
@@ -3356,9 +3413,18 @@ fn run() -> Result<()> {
                 }
                 return Ok(());
             }
+            if psdfile::is_file(&file) {
+                if into.is_some() || size.is_some() || colors.is_some() {
+                    return Err(anyhow!(
+                        "a PSD comes in as a drawing of its own, with its layers: leave out --into, --size and --colors"
+                    ));
+                }
+                println!("{}", psdfile::import(&file, out)?.display());
+                return Ok(());
+            }
             if into.is_some() {
                 return Err(anyhow!(
-                    "--into takes an SVG; a picture goes on a layer with klad add <bundle> layer image src=<file>"
+                    "--into takes an SVG or frames; a picture goes on a layer with klad add <bundle> layer image src=<file>"
                 ));
             }
             let made = match (aseprite::is_file(&file), pixelise::is_picture(&file)) {
@@ -3371,7 +3437,7 @@ fn run() -> Result<()> {
                 (_, true) => pixelise::import(&file, &ask, out, painting)?,
                 _ => {
                     return Err(anyhow!(
-                        "klad import opens Aseprite files (.aseprite, .ase) and pictures (.png, .jpg) as pixel drawings: {} is something else. A picture to trace or paint over goes on a layer with klad add <bundle> layer image src=<file>",
+                        "klad import opens PSDs, SVGs, Aseprite files (.aseprite, .ase) and pictures (.png, .jpg): {} is something else. A picture to trace or paint over goes on a layer with klad add <bundle> layer image src=<file>",
                         file.display()
                     ));
                 }
@@ -5621,6 +5687,9 @@ fn run() -> Result<()> {
                             out,
                         },
                     ),
+                    _ if format == Some(klad_render::formats::Format::Psd) => {
+                        psdfile::export(&bundle, frame, references, background, out)
+                    }
                     _ if format == Some(klad_render::formats::Format::Mp4) => sprites::animated(
                         &bundle,
                         animated.as_deref().unwrap_or("all"),

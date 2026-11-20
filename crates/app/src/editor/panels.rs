@@ -1208,6 +1208,17 @@ impl Editor {
             );
             self.windows.assists &= open;
         }
+        if self.windows.frames {
+            let mut open = true;
+            Self::window(
+                ctx,
+                "import frames",
+                (format!("{} Import frames", icon::IMAGE), Spot::Middle),
+                &mut open,
+                |ui| self.check(|e| e.frames_window(ui)),
+            );
+            self.windows.frames &= open;
+        }
         if self.windows.canvas {
             let mut open = true;
             Self::window(

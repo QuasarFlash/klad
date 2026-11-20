@@ -1110,3 +1110,49 @@ fn the_export_window_writes_jpeg_webp_tiff_pdf_and_video_and_the_selection_alone
     assert!(args.contains("--format webp --animated"), "{args}");
     let _ = std::fs::remove_dir_all(&path);
 }
+
+#[test]
+fn frames_come_in_from_a_sheet_cut_in_the_import_frames_window_with_a_preview() {
+    use super::framesin::Way;
+    let path = sample("frames-in");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    let sheet = path.parent().unwrap().join("frames-in-sheet.png");
+    let picture = klad_render::pixelise::Picture {
+        width: 20,
+        height: 8,
+        rgba: (0..20 * 8)
+            .flat_map(|i| {
+                if (i % 20) / 5 == 2 {
+                    [0, 0, 0, 0]
+                } else {
+                    [200, 40, 40, 255]
+                }
+            })
+            .collect(),
+    };
+    std::fs::write(&sheet, klad_render::clipboard::png(&picture)).unwrap();
+    h.state_mut().invoke(Cmd::ImportFrames).unwrap();
+    h.run_steps(3);
+    assert!(h.state().windows.frames);
+    h.state_mut().frames_in.path = sheet.display().to_string();
+    h.state_mut().frames_in.way = Way::Grid;
+    h.state_mut().frames_in.grid = [4, 1];
+    h.run_steps(4);
+    assert!(
+        shown(&h, "3 frames of 5 x 8 px"),
+        "the preview counts the cells that are not empty"
+    );
+    let root = h.state().scene.bundle.root.clone();
+    let args = h.state().frames_in.args(&root).join(" ");
+    assert_eq!(
+        args,
+        format!("import {} --grid 4x1 --to {}", sheet.display(), root.display())
+    );
+    h.state_mut().frames_in.way = Way::Files;
+    assert!(
+        h.state_mut().import_frames_for_test().is_err(),
+        "a picture per frame wants a folder"
+    );
+    let _ = std::fs::remove_file(&sheet);
+    let _ = std::fs::remove_dir_all(&path);
+}

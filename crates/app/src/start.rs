@@ -684,10 +684,9 @@ pub fn foreign(path: &Path) -> bool {
     path.is_file()
         && (is_picture(path)
             || path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"))
-            || path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("aseprite") || e.eq_ignore_ascii_case("ase")))
+            || path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                e.eq_ignore_ascii_case("aseprite") || e.eq_ignore_ascii_case("ase") || e.eq_ignore_ascii_case("psd")
+            }))
 }
 
 pub fn brought_in(path: &Path) -> Result<(PathBuf, Option<String>)> {

@@ -1,0 +1,1 @@
+These four PSDs, saved by Photoshop, are test files of the `psd` crate (https://github.com/chinedufn/psd), under the MIT License in `LICENSE-MIT` next to them. klad's PSD reader is its own; the files check it against Photoshop's output.

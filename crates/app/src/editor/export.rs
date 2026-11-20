@@ -31,10 +31,11 @@ pub(super) enum Picture {
     Jpeg,
     Webp,
     Tiff,
+    Psd,
 }
 
 impl Picture {
-    pub(super) const ALL: [Picture; 4] = [Picture::Png, Picture::Jpeg, Picture::Webp, Picture::Tiff];
+    pub(super) const ALL: [Picture; 5] = [Picture::Png, Picture::Jpeg, Picture::Webp, Picture::Tiff, Picture::Psd];
 
     pub(super) fn name(self) -> &'static str {
         match self {
@@ -42,6 +43,7 @@ impl Picture {
             Picture::Jpeg => "JPEG",
             Picture::Webp => "WebP",
             Picture::Tiff => "TIFF",
+            Picture::Psd => "PSD",
         }
     }
 
@@ -51,6 +53,7 @@ impl Picture {
             Picture::Jpeg => "jpeg",
             Picture::Webp => "webp",
             Picture::Tiff => "tiff",
+            Picture::Psd => "psd",
         }
     }
 
@@ -60,6 +63,7 @@ impl Picture {
             Picture::Jpeg => "jpg",
             Picture::Webp => "webp",
             Picture::Tiff => "tif",
+            Picture::Psd => "psd",
         }
     }
 
@@ -71,6 +75,7 @@ impl Picture {
             }
             Picture::Webp => "small files with transparency, for the web; lossless keeps every pixel",
             Picture::Tiff => "for print and photo apps, 8 or 16 bits, with transparency",
+            Picture::Psd => "for Photoshop, Krita and Affinity: a layer for each layer, with its name, look and groups",
         }
     }
 
@@ -323,7 +328,7 @@ pub(super) fn args(bundle: &Path, home: &Path, frame: u32, form: &Form) -> Vec<S
             if form.picture.squeezes(form.lossless) && form.quality != 90.0 {
                 push("--quality", Some(form.quality.round().to_string()));
             }
-            if !form.only.is_empty() {
+            if !form.only.is_empty() && form.picture != Picture::Psd {
                 push("--only", Some(form.only.join(",")));
             }
         }
@@ -374,14 +379,15 @@ pub(super) fn args(bundle: &Path, home: &Path, frame: u32, form: &Form) -> Vec<S
             }
         }
     }
-    if let Some(layer) = form
-        .layer
-        .as_ref()
-        .filter(|_| !matches!(form.what, What::Frames | What::Aseprite | What::Pdf) && form.only.is_empty())
-    {
+    if let Some(layer) = form.layer.as_ref().filter(|_| {
+        !matches!(form.what, What::Frames | What::Aseprite | What::Pdf)
+            && form.only.is_empty()
+            && !(form.what == What::Image && form.picture == Picture::Psd)
+    }) {
         push("--layer", Some(layer.clone()));
     }
-    if form.scale != 1.0 && !matches!(form.what, What::Aseprite | What::Svg | What::Pdf) {
+    let layered = form.what == What::Image && form.picture == Picture::Psd;
+    if form.scale != 1.0 && !matches!(form.what, What::Aseprite | What::Svg | What::Pdf) && !layered {
         push("--scale", Some(form.scale.to_string()));
     }
     if form.deep
@@ -793,7 +799,8 @@ impl Editor {
                     });
                     ui.end_row();
                 }
-                if !matches!(what, What::Frames | What::Aseprite | What::Pdf) && !(what == What::Image && !form.only.is_empty()) {
+                let layered = what == What::Image && form.picture == Picture::Psd;
+                if !matches!(what, What::Frames | What::Aseprite | What::Pdf) && !(what == What::Image && !form.only.is_empty()) && !layered {
                     label(ui, "what");
                     let shown = form
                         .layer
@@ -832,7 +839,7 @@ impl Editor {
                     });
                     ui.end_row();
                 }
-                if what == What::Image && !form.only.is_empty() {
+                if what == What::Image && !form.only.is_empty() && !layered {
                     label(ui, "what");
                     let mut alone = true;
                     if ui
@@ -844,7 +851,7 @@ impl Editor {
                     }
                     ui.end_row();
                 }
-                if !matches!(what, What::Aseprite | What::Svg | What::Pdf) {
+                if !matches!(what, What::Aseprite | What::Svg | What::Pdf) && !layered {
                     label(ui, "size");
                     ui.horizontal(|ui| {
                         match pixel {
@@ -1129,6 +1136,19 @@ mod tests {
         assert_eq!(
             args(bundle, home, 5, &print).join(" "),
             "export /w/art.klad --format pdf --frame 5 --dpi 300 --background"
+        );
+        let psd = Form {
+            picture: Picture::Psd,
+            scale: 2.0,
+            layer: Some("l2".into()),
+            only: vec!["n4".into()],
+            background: true,
+            ..Form::default()
+        };
+        assert_eq!(
+            args(bundle, home, 1, &psd).join(" "),
+            "export /w/art.klad --frame 1 --format psd --background",
+            "a PSD is the whole drawing, layer by layer, at its size"
         );
         let video = Form {
             what: What::Video,

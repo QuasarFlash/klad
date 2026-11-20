@@ -15,6 +15,7 @@ mod copy;
 mod depth;
 mod export;
 mod first;
+mod framesin;
 mod history;
 mod keys;
 mod layerops;
@@ -802,6 +803,7 @@ struct Windows {
     canvas: bool,
     grid: bool,
     assists: bool,
+    frames: bool,
 }
 
 #[derive(Default)]
@@ -984,6 +986,7 @@ pub(crate) struct Editor {
     guide_drag: Option<snap::GuideDrag>,
     assist_drag: Option<(usize, usize, [f32; 2])>,
     yours: yours::Yours,
+    frames_in: framesin::FramesIn,
     snap_lines: Option<(Option<f32>, Option<f32>)>,
     pub(crate) pixel_filled: bool,
     pub(crate) pixel_diagonal: bool,
@@ -1214,6 +1217,7 @@ impl Editor {
             cropping: None,
             guide_drag: None,
             assist_drag: None,
+            frames_in: framesin::FramesIn::fresh(),
             yours: yours::Yours::at(match cfg!(test) {
                 true => None,
                 false => klad_render::library::Library::home().ok(),

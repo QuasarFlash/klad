@@ -1,4 +1,4 @@
-_Last updated: 2026-11-20 00:10_
+_Last updated: 2026-11-20 00:35_
 
 # Exporting
 
@@ -22,6 +22,7 @@ Under **format** in the Image window:
 - **JPEG** makes small files for photos and the web. It has no transparency: white shows there, or the canvas colour with **keep the background colour**. Set the **quality**.
 - **WebP** makes small files with transparency for the web. Tick **lossless** to keep every pixel.
 - **TIFF** is for print and photo apps, in 8 or 16 bits.
+- **PSD** is for Photoshop, Krita and Affinity: a layer for each layer, with its name, visibility, opacity and blend mode, and groups as groups. Vector layers become pixels.
 
 The GIF window has the same choice between **GIF** and **WebP**: an animated WebP keeps full colour and soft edges.
 

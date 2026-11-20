@@ -210,7 +210,7 @@ fn fresh(target: &Path) -> Result<()> {
     }
 }
 
-fn finished(mut bundle: Bundle, ops: &[Op], target: &Path, what: &str) -> Result<Bundle> {
+pub(crate) fn finished(mut bundle: Bundle, ops: &[Op], target: &Path, what: &str) -> Result<Bundle> {
     let applied = bundle.apply(ops).and_then(|_| bundle.stamp("cli"));
     match applied {
         Ok(_) => Ok(bundle),
@@ -219,6 +219,29 @@ fn finished(mut bundle: Bundle, ops: &[Op], target: &Path, what: &str) -> Result
             Err(error.context(what.to_string()))
         }
     }
+}
+
+pub(crate) fn keys_for(palette: &[Swatch], pictures: &[&Picture], notes: &mut Vec<String>) -> Vec<(String, [u8; 3])> {
+    chosen(
+        palette,
+        pictures,
+        &Ask {
+            size: None,
+            colors: None,
+        },
+        UNASKED,
+        notes,
+    )
+}
+
+pub(crate) fn marks_of(
+    layer: &str,
+    frame: u32,
+    picture: &Picture,
+    keys: &[(String, [u8; 3])],
+    canvas: (u32, u32),
+) -> Vec<Op> {
+    marks(layer, frame, [0, 0], picture, keys, canvas)
 }
 
 pub fn import(file: &Path, ask: &Ask, out: Option<PathBuf>, painting: bool) -> Result<PathBuf> {

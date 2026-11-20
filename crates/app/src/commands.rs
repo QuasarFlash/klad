@@ -23,6 +23,7 @@ pub enum Cmd {
     MakeMirror,
     Unwrap,
     ImportPicture,
+    ImportFrames,
     Pixelize,
     Shapes,
     Strokes,
@@ -588,7 +589,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 260] = [
+    pub const ALL: [Cmd; 261] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -608,6 +609,7 @@ impl Cmd {
         Cmd::MakeMirror,
         Cmd::Unwrap,
         Cmd::ImportPicture,
+        Cmd::ImportFrames,
         Cmd::Pixelize,
         Cmd::Shapes,
         Cmd::Strokes,
@@ -1041,6 +1043,15 @@ impl Cmd {
                 T::None,
                 R::No,
                 "place a PNG or JPEG on a new layer to trace over or paint from (dropping the file works too)",
+            ),
+            Cmd::ImportFrames => spec(
+                "file.import-frames",
+                "import frames",
+                icon::IMAGE,
+                G::File,
+                T::None,
+                R::No,
+                "frames from a sprite sheet cut into cells, or from a folder of numbered pictures: a new layer with a frame each, and a clip",
             ),
             Cmd::Pixelize => spec(
                 "layer.pixelize",
@@ -3231,6 +3242,7 @@ impl Cmd {
             Cmd::MakeMirror => "Mirror",
             Cmd::Unwrap => "Take shapes out",
             Cmd::ImportPicture => "Import picture…",
+            Cmd::ImportFrames => "Import frames…",
             Cmd::Pixelize => "Pixels of a picture…",
             Cmd::Shapes => "Select and move",
             Cmd::Strokes => "Select strokes",
@@ -3518,6 +3530,7 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::Save),
             Line,
             Run(Cmd::ImportPicture),
+            Run(Cmd::ImportFrames),
             Run(Cmd::Pixelize),
             Run(Cmd::AddFont),
             Line,

@@ -1,4 +1,4 @@
-_Last updated: 2026-11-18 13:53_
+_Last updated: 2026-11-20 00:35_
 
 # Animating frame by frame
 
@@ -42,6 +42,15 @@ The frames are repeated right after themselves as copies, and the copies are sel
 ## Make clips for a game
 
 Drag along the empty strip above the frame numbers to make a clip, then click its bar to name it (idle, walk, attack). Each clip [exports](exporting.md) as its own animation.
+
+## Bring in frames from another app
+
+1. Select **File > Import frames…**.
+2. Click **Choose…** for a sprite sheet, or **Folder…** for a folder of numbered pictures (`run-0001.png`, `run-0002.png` …).
+3. For a sheet, cut it **by cell size** or **by columns and rows**, and set the space **between** and **around** the cells. The preview shows the cut and how many frames it makes; empty cells are left out.
+4. Click **Import**.
+
+The frames go on a new layer, one per frame, with a clip named after the file. In a pixel drawing their colours take the palette.
 
 ## Let klad draw the in-betweens
 

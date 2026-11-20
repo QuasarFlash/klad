@@ -3878,3 +3878,194 @@ fn webp_size(data: &[u8]) -> (u32, u32) {
     let bits = u32::from_le_bytes(data[at..at + 4].try_into().unwrap());
     ((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1)
 }
+
+#[test]
+fn a_psd_goes_out_with_its_layers_and_comes_back_and_frames_come_in_from_a_sheet_or_numbered_pictures() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-psd-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("a.klad");
+    let path = path.to_str().unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+    };
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (
+            String::from_utf8_lossy(&out.stdout).trim().to_string(),
+            String::from_utf8_lossy(&out.stderr).to_string(),
+        )
+    };
+    let doc = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(dir.join(name).join("doc.json")).unwrap()).unwrap()
+    };
+    draw(&["new", path, "--width", "96", "--height", "64"]);
+    draw(&[
+        "stroke",
+        path,
+        "l1",
+        "--line",
+        "10,50,86,20",
+        "--size",
+        "8",
+        "--color",
+        "#204080",
+    ]);
+    std::fs::write(
+        dir.join("ops.jsonl"),
+        "{\"op\":\"add\",\"layer\":{\"kind\":\"group\",\"name\":\"figure\",\"opacity\":0.8,\"children\":[{\"kind\":\"vector\",\"name\":\"body\",\"blend\":\"multiply\",\"cels\":[{\"frame\":0,\"nodes\":[{\"type\":\"rect\",\"x\":20,\"y\":10,\"w\":30,\"h\":30,\"fill\":\"#c0392b\"}]}]},{\"kind\":\"vector\",\"name\":\"hidden\",\"visible\":false,\"cels\":[{\"frame\":0,\"nodes\":[{\"type\":\"rect\",\"x\":0,\"y\":0,\"w\":8,\"h\":8,\"fill\":\"#00ff00\"}]}]}]}}\n",
+    )
+    .unwrap();
+    draw(&["apply", path, "--file", "ops.jsonl"]);
+    let (out, said) = draw(&["export", path, "-o", "a.psd"]);
+    assert!(
+        out.ends_with("a.psd") && said.contains("vector layers went in as pixels"),
+        "{said}"
+    );
+    let psd = std::fs::read(dir.join("a.psd")).unwrap();
+    assert_eq!(&psd[..4], b"8BPS");
+    let (back, said) = draw(&["import", "a.psd", "-o", "back.klad"]);
+    assert!(back.ends_with("back.klad"), "{said}");
+    let layers = doc("back.klad")["layers"].clone();
+    let names: Vec<&str> = layers
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["name"].as_str().unwrap_or(""))
+        .collect();
+    assert!(names.contains(&"figure"), "{names:?}");
+    let figure = layers
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["name"] == "figure")
+        .unwrap();
+    assert_eq!(figure["kind"], "group");
+    assert!((figure["opacity"].as_f64().unwrap() - 0.8).abs() < 0.01);
+    let kids = figure["children"].as_array().unwrap();
+    let body = kids.iter().find(|l| l["name"] == "body").unwrap();
+    assert_eq!(body["blend"], "multiply");
+    assert_eq!(kids.iter().find(|l| l["name"] == "hidden").unwrap()["visible"], false);
+    let (a, _) = draw(&["export", path, "-o", "a.png"]);
+    let (b, _) = draw(&["export", dir.join("back.klad").to_str().unwrap(), "-o", "b.png"]);
+    let compared = run(&["compare", &a, &b, "--json"]);
+    assert!(
+        compared.status.success(),
+        "the PSD brings back the same picture: {}",
+        String::from_utf8_lossy(&compared.stdout)
+    );
+    let photoshop =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../render/testdata/psd/green-clipping-10x10.psd");
+    std::fs::copy(&photoshop, dir.join("clip.psd")).unwrap();
+    draw(&["import", "clip.psd"]);
+    let clipped = doc("clip.klad")["layers"].clone();
+    assert!(
+        clipped
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["name"] == "First clipped layer" && l["clip"] == true)
+    );
+    assert!(String::from_utf8_lossy(&run(&["import", "a.psd", "--into", path]).stderr).contains("drawing of its own"));
+
+    draw(&["new", "sprite.klad", "--pixel", "8x6", "--frames", "4"]);
+    (0..4).for_each(|i| {
+        let frame = i.to_string();
+        let rect = format!("{},1,2,2", i * 2);
+        draw(&[
+            "pixel",
+            "sprite.klad",
+            "l1",
+            "--frame",
+            &frame,
+            "--color",
+            "#ff0000",
+            "--rect",
+            &rect,
+            "--filled",
+        ]);
+    });
+    draw(&["export", "sprite.klad", "--frames", "all", "-o", "frames"]);
+    let numbered = std::fs::read_dir(dir.join("frames")).unwrap().count();
+    assert!(numbered >= 1);
+    let (made, said) = draw(&["import", "frames"]);
+    assert!(
+        made.ends_with("frames.klad"),
+        "a folder makes a drawing named after it, beside it: {made} {said}"
+    );
+    let from_folder = doc("frames.klad");
+    assert_eq!(from_folder["timeline"]["frames"], 4);
+    assert!(
+        from_folder["timeline"]["clips"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["name"] == "sprite" && c["to"] == 3),
+        "a clip of the frames"
+    );
+
+    draw(&["new", "sheet.klad", "--pixel", "26x13"]);
+    [(0usize, 0usize), (1, 0), (2, 0), (0, 1)].iter().for_each(|(c, r)| {
+        let rect = format!("{},{},6,4", 1 + c * 8, 1 + r * 6);
+        let colour = format!("#{:02x}c8{:02x}", 40 * c, 90 * r);
+        draw(&[
+            "pixel",
+            "sheet.klad",
+            "l1",
+            "--color",
+            &colour,
+            "--rect",
+            &rect,
+            "--filled",
+        ]);
+    });
+    draw(&["export", "sheet.klad", "-o", "sheet.png"]);
+    let (_, said) = draw(&[
+        "import",
+        "sheet.png",
+        "--cell",
+        "6x4",
+        "--padding",
+        "2",
+        "--margin",
+        "1",
+        "--to",
+        "sprite.klad",
+    ]);
+    assert!(said.contains("4 frames on a new layer sheet"), "{said}");
+    let sprite = doc("sprite.klad");
+    let sheet_layer = sprite["layers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["name"] == "sheet")
+        .unwrap()
+        .clone();
+    assert_eq!(sheet_layer["pixel"], true);
+    assert_eq!(sheet_layer["cels"].as_array().unwrap().len(), 4);
+    assert!(
+        sprite["timeline"]["clips"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["name"] == "sheet" && c["to"] == 3)
+    );
+    assert!(
+        String::from_utf8_lossy(&run(&["import", "sheet.png", "--cell", "6x4", "--grid", "3x2"]).stderr)
+            .contains("not both")
+    );
+    assert!(
+        String::from_utf8_lossy(&run(&["import", "sheet.png", "--padding", "2"]).stderr).contains("go with --cell")
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

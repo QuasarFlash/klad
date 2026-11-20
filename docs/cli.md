@@ -128,11 +128,11 @@ What does not: tilemap layers, tilesets and slices are left out, a tag that play
 
 klad export art.klad --aseprite writes a drawing's pixel layers back to an Aseprite file.
 
-Usage: klad import [OPTIONS] [FILE]
+Usage: klad import [OPTIONS] [FILES]...
 
 Arguments:
-  [FILE]
-
+  [FILES]...
+          The file: a PSD, an SVG, an Aseprite file or a picture; several pictures or a folder of them come in as frames
 
 Options:
       --clipboard
@@ -142,7 +142,25 @@ Options:
           A picture: a painting drawing with the picture on a layer, whatever its size (pictures larger than 512 px come in that way already)
 
       --into <BUNDLE>
-          An SVG: add its shapes to this drawing, a vector layer for each of its groups, instead of making a drawing
+          Add to this drawing instead of making one: an SVG's shapes (a vector layer for each group), or frames (a new layer with a cel per frame and a clip)
+
+          [alias: --to]
+
+      --cell <WxH>
+          A sprite sheet: cut it into cells of this size, each a frame (empty cells are skipped)
+
+      --grid <COLSxROWS>
+          A sprite sheet: cut it into this many columns and rows, each a frame
+
+      --padding <PADDING>
+          A sprite sheet: px between the cells
+
+          [default: 0]
+
+      --margin <MARGIN>
+          A sprite sheet: px around the cells, at the sheet's edges
+
+          [default: 0]
 
       --size <SIZE>
           A picture: its longest side in pixels once it is pixel art, 1 to 512 (needed when the picture is larger)

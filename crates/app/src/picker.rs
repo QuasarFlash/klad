@@ -60,7 +60,7 @@ fn choose(start: Option<&Path>, prompt: &str, pick: Pick) -> Option<PathBuf> {
     panel.setAllowsMultipleSelection(false);
     panel.setCanCreateDirectories(pick == Pick::Folder);
     match pick {
-        Pick::Drawing => only_kinds(&panel, &["klad", "aseprite", "ase", "png", "jpg", "jpeg", "svg"]),
+        Pick::Drawing => only_kinds(&panel, &["klad", "aseprite", "ase", "psd", "png", "jpg", "jpeg", "svg"]),
         Pick::Picture => only_kinds(&panel, &PICTURES),
         Pick::Folder | Pick::File => {}
     }

@@ -770,6 +770,7 @@ impl Editor {
             Cmd::HideGuides => !self.scene.bundle.doc.guides.hidden,
             Cmd::LockGuides => self.scene.bundle.doc.guides.locked,
             Cmd::AssistsWindow => self.windows.assists,
+            Cmd::ImportFrames => self.windows.frames,
             Cmd::FollowGuides => {
                 let g = &self.scene.bundle.doc.guides;
                 g.follow && !g.assists.is_empty()
@@ -1254,6 +1255,7 @@ impl Editor {
             Cmd::LockGuides => self.guides_switch(false)?,
             Cmd::ClearGuides => self.clear_guides()?,
             Cmd::AssistsWindow => self.windows.assists = !self.windows.assists,
+            Cmd::ImportFrames => self.windows.frames = !self.windows.frames,
             Cmd::FollowGuides => self.toggle_follow()?,
             Cmd::CanvasWindow
             | Cmd::CropTool

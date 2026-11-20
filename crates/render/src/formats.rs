@@ -10,9 +10,10 @@ pub enum Format {
     Tiff,
     Pdf,
     Mp4,
+    Psd,
 }
 
-pub const NAMES: &str = "png, jpeg, webp, tiff, pdf or mp4";
+pub const NAMES: &str = "png, jpeg, webp, tiff, psd, pdf or mp4";
 
 impl Format {
     pub fn parse(text: &str) -> Result<Self> {
@@ -23,6 +24,7 @@ impl Format {
             "tiff" | "tif" => Ok(Format::Tiff),
             "pdf" => Ok(Format::Pdf),
             "mp4" | "video" => Ok(Format::Mp4),
+            "psd" => Ok(Format::Psd),
             other => bail!("{other:?} is not a format klad writes: {NAMES}"),
         }
     }
@@ -42,6 +44,7 @@ impl Format {
             Format::Tiff => "tif",
             Format::Pdf => "pdf",
             Format::Mp4 => "mp4",
+            Format::Psd => "psd",
         }
     }
 
@@ -53,6 +56,7 @@ impl Format {
             Format::Tiff => "TIFF",
             Format::Pdf => "PDF",
             Format::Mp4 => "MP4",
+            Format::Psd => "PSD",
         }
     }
 
@@ -202,7 +206,7 @@ pub fn encode(image: &Image, format: Format, deep: bool, q: Quality) -> Result<V
         (Format::Tiff, false) => tiff8(w, h, &crate::export::dither8(image)?),
         (Format::Jpeg, _) => jpeg(w, h, &crate::export::dither8(image)?, q),
         (Format::Webp, _) => webp(w, h, &crate::export::dither8(image)?, q),
-        (Format::Pdf | Format::Mp4, _) => bail!("a {} is not one picture", format.name()),
+        (Format::Pdf | Format::Mp4 | Format::Psd, _) => bail!("a {} is not one picture", format.name()),
     }
 }
 
