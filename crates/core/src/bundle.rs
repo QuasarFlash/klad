@@ -434,6 +434,10 @@ impl Bundle {
         if root.join("doc.json").exists() {
             bail!("{} already exists", root.display());
         }
+        let fit = crate::memory::fit(blank.width, blank.height);
+        if let (crate::memory::Fit::TooBig { .. }, Some(words)) = (fit, fit.words(blank.width, blank.height)) {
+            bail!(words);
+        }
         let mut doc = Document::new(blank.width, blank.height);
         doc.canvas.background = blank.background.clone();
         doc.timeline.fps = blank.fps;

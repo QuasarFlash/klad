@@ -224,7 +224,7 @@ pub fn alone(
         ((height as f32 * scale).round() as i32).max(1),
     );
     let mut surface = skia_safe::surfaces::raster(&crate::f16_info(w as u32, h as u32), None, None)
-        .ok_or_else(|| anyhow!("cannot allocate {w}x{h}"))?;
+        .ok_or_else(|| crate::no_room(w as u64, h as u64))?;
     let canvas = surface.canvas();
     canvas.clear(skia_safe::Color4f::new(0.0, 0.0, 0.0, 0.0));
     canvas.scale((scale, scale));

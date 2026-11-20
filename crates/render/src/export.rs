@@ -89,7 +89,7 @@ pub fn render(doc: &Document, frame: u32, rasters: &Rasters, target: &Target, op
         ((doc.canvas.height as f32 * scale).round() as u32).max(1),
     );
     let mut surface =
-        surfaces::raster(&f16_info(w, h), None, None).ok_or_else(|| anyhow!("cannot allocate {w}x{h}"))?;
+        surfaces::raster(&f16_info(w, h), None, None).ok_or_else(|| crate::no_room(w as u64, h as u64))?;
     let canvas = surface.canvas();
     let fill = match (options.background, target) {
         (true, Target::Frame) => background(doc.canvas.background.as_deref())?,

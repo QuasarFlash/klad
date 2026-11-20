@@ -4119,3 +4119,74 @@ fn a_drawing_is_saved_as_a_copy_with_its_own_ids_and_renamed() {
     assert!(String::from_utf8_lossy(&run(&["rename", "nothing.klad", "x"]).stderr).contains("not a klad drawing"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn canvases_too_big_for_the_machine_are_refused_and_running_out_of_memory_says_so() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-memory-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = |args: &[&str], gb: &str| {
+        Command::new(env!("CARGO_BIN_EXE_klad"))
+            .args(args)
+            .current_dir(&dir)
+            .env("KLAD_MEMORY_GB", gb)
+            .output()
+            .unwrap()
+    };
+    let big = run(&["new", "big.klad", "--width", "16384", "--height", "16384"], "4");
+    let said = String::from_utf8_lossy(&big.stderr).to_string();
+    assert!(
+        !big.status.success() && said.contains("needs about 8.7 GB") && said.contains("4.0 GB"),
+        "{said}"
+    );
+    assert!(!dir.join("big.klad").exists(), "nothing is made");
+    let tight = run(&["new", "tight.klad", "--width", "6000", "--height", "6000"], "2");
+    assert!(tight.status.success());
+    assert!(
+        String::from_utf8_lossy(&tight.stderr).contains("may slow down"),
+        "a tight canvas is made with a warning"
+    );
+    let grown = run(&["canvas", "tight.klad", "--size", "16384,16384"], "4");
+    assert!(!grown.status.success() && String::from_utf8_lossy(&grown.stderr).contains("needs about"));
+    assert!(
+        run(&["new", "fine.klad", "--width", "1024", "--height", "1024"], "2")
+            .stderr
+            .is_empty()
+    );
+    if cfg!(target_os = "linux") {
+        let exe = env!("CARGO_BIN_EXE_klad");
+        let shell = |script: String| {
+            Command::new("sh")
+                .arg("-c")
+                .arg(script)
+                .current_dir(&dir)
+                .env("KLAD_MEMORY_GB", "64")
+                .env("XDG_STATE_HOME", dir.join("state"))
+                .output()
+                .unwrap()
+        };
+        let out = shell(format!(
+            "'{exe}' stress st.klad --size 4096 --layers 4 >/dev/null && ulimit -v 400000 && '{exe}' render st.klad -o st.png"
+        ));
+        let said = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(!out.status.success(), "{said}");
+        assert!(
+            said.contains("klad ran out of memory") && said.contains("saved in the drawing"),
+            "running out of memory ends with words: {said}"
+        );
+        let note = std::fs::read_to_string(dir.join("state/klad/out-of-memory.txt")).unwrap();
+        assert!(
+            note.contains("klad ran out of memory"),
+            "and leaves a note the editor shows the next time"
+        );
+        let out = shell(format!(
+            "ulimit -v 600000; '{exe}' new huge.klad --width 2048 --height 2048 && '{exe}' render huge.klad --scale 8 -o huge.png"
+        ));
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("not enough memory"),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

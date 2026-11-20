@@ -32,6 +32,23 @@ pub fn run(path: Option<PathBuf>) -> Result<()> {
                 present_mode: wgpu::PresentMode::AutoVsync,
                 desired_maximum_frame_latency: Some(1),
             },
+            wgpu_setup: egui_wgpu::WgpuSetup::CreateNew(egui_wgpu::WgpuSetupCreateNew {
+                device_descriptor: std::sync::Arc::new(|adapter: &wgpu::Adapter| {
+                    let base = match adapter.get_info().backend == wgpu::Backend::Gl {
+                        true => wgpu::Limits::downlevel_webgl2_defaults(),
+                        false => wgpu::Limits::default(),
+                    };
+                    wgpu::DeviceDescriptor {
+                        label: Some("klad wgpu device"),
+                        required_limits: wgpu::Limits {
+                            max_texture_dimension_2d: adapter.limits().max_texture_dimension_2d.max(8192),
+                            ..base
+                        },
+                        ..Default::default()
+                    }
+                }),
+                ..egui_wgpu::WgpuSetupCreateNew::without_display_handle()
+            }),
             ..Default::default()
         },
         ..Default::default()
@@ -59,6 +76,7 @@ pub(crate) struct Home {
     menus_built: Option<u64>,
     menus_shown: Option<std::time::Instant>,
     cycling: i32,
+    ran_out: Option<String>,
 }
 
 fn used_twice(e: &anyhow::Error) -> bool {
@@ -75,6 +93,7 @@ impl Home {
         let settings = settings_path.as_deref().map(Settings::load).unwrap_or_default();
         let mut home = Self::with(settings, settings_path, Some(gpu));
         home.native_menus = true;
+        home.ran_out = klad_core::memory::last_time();
         if updates::due(
             home.settings.check_updates,
             home.settings.updates_checked,
@@ -83,6 +102,9 @@ impl Home {
             home.checking = Some(updates::spawn(updates::feed()));
         }
         home.begin(&cc.egui_ctx, path);
+        if let (Some(start), Some(words)) = (home.start.as_mut(), home.ran_out.take()) {
+            start.error = Some(format!("the last time, {words}"));
+        }
         Ok(home)
     }
 
@@ -106,6 +128,7 @@ impl Home {
             menus_built: None,
             menus_shown: None,
             cycling: 0,
+            ran_out: None,
         }
     }
 
@@ -146,12 +169,26 @@ impl Home {
             .editor
             .as_ref()
             .map_or_else(|| self.settings.clone(), |e| e.settings.clone());
+        let doc_size = klad_core::bundle::Bundle::open(path).map(|b| (b.doc.canvas.width, b.doc.canvas.height));
+        if let (Ok((w, h)), Some(gpu)) = (doc_size, self.gpu.as_ref()) {
+            let most = gpu.device.limits().max_texture_dimension_2d;
+            if let Some(words) = too_wide(w, h, most) {
+                anyhow::bail!(words);
+            }
+        }
         let mut editor = Editor::open(ctx.clone(), path)?;
         if let Some(words) = self.start.as_mut().and_then(|s| s.repaired.take()) {
             editor.say(Tone::Done, words);
         }
         if let Some(words) = told {
             editor.say(Tone::Done, words);
+        }
+        if let Some(words) = self.ran_out.take() {
+            editor.say(Tone::Error, format!("the last time, {words}"));
+        }
+        let (w, h) = editor.scene.size();
+        if let Some(words) = klad_core::memory::fit(w, h).words(w, h) {
+            editor.say(Tone::Info, words);
         }
         settings.opened(path);
         settings.offer_real_size(editor.scene.bundle.doc.pixel_art());
@@ -614,6 +651,14 @@ impl eframe::App for Home {
             editor.take_tabs(ctx, raw_input);
         }
     }
+}
+
+pub(crate) fn too_wide(width: u32, height: u32, most: u32) -> Option<String> {
+    (width.max(height) > most).then(|| {
+        format!(
+            "this {width}x{height} drawing is wider than this machine's graphics can show ({most} px a side): make it smaller with klad canvas --resize, or open it on a machine with a newer graphics chip"
+        )
+    })
 }
 
 fn open_words(path: &Path, e: &anyhow::Error) -> String {
@@ -1487,5 +1532,15 @@ mod open_drawings {
         );
         assert!(!h.state().settings.documents.iter().any(|d| d.ends_with("two.klad")));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_drawing_wider_than_the_graphics_can_show_is_refused_with_why() {
+        assert_eq!(too_wide(8192, 4000, 8192), None);
+        let said = too_wide(16384, 9000, 8192).unwrap();
+        assert!(
+            said.contains("8192 px a side") && said.contains("klad canvas --resize"),
+            "{said}"
+        );
     }
 }

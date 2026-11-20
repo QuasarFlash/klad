@@ -428,7 +428,7 @@ fn draw_grid(canvas: &Canvas, origin: (f32, f32), scale: f32, size: (f32, f32), 
 pub fn apply(image: &skia_safe::Image, overlay: &Overlay, view: &View) -> Result<Frame> {
     let (w, h) = (image.width(), image.height());
     let info = crate::f16_info(w as u32, h as u32);
-    let mut surface = surfaces::raster(&info, None, None).ok_or_else(|| anyhow!("cannot allocate {w}x{h}"))?;
+    let mut surface = surfaces::raster(&info, None, None).ok_or_else(|| crate::no_room(w as u64, h as u64))?;
     let canvas = surface.canvas();
     canvas.draw_image(image, (0, 0), None);
     let origin = view.region.map_or((0.0, 0.0), |[x, y, _, _]| (x as f32, y as f32));

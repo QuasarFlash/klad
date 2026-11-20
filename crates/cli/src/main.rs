@@ -22,6 +22,7 @@ mod layers;
 mod looks;
 mod maps;
 mod marks;
+mod oom;
 mod paintover;
 mod paths;
 mod pixelise;
@@ -3238,6 +3239,24 @@ fn followed(bundle: &Path, points: Vec<[f32; 3]>) -> Result<Vec<[f32; 3]>> {
         .collect())
 }
 
+pub(crate) fn note_memory(doc: &klad_core::doc::Document) {
+    let (w, h) = (doc.canvas.width, doc.canvas.height);
+    let layers = doc
+        .all_layers()
+        .iter()
+        .filter(|l| l.kind() == klad_core::doc::Kind::Paint)
+        .count()
+        .max(1) as u64;
+    let need = w as u64 * h as u64 * 8 * (layers + 1);
+    if let Some(have) = klad_core::memory::total().filter(|have| need > have / 2) {
+        eprintln!(
+            "note: rendering this {w}x{h} drawing can take up to {} of memory ({layers} paint layers at once), and this machine has {}: it may be slow or run out",
+            klad_core::memory::gb(need),
+            klad_core::memory::gb(have)
+        );
+    }
+}
+
 fn parse_points(text: &str) -> Result<Vec<[f32; 3]>> {
     text.split_whitespace()
         .map(|triple| {
@@ -3310,7 +3329,11 @@ fn figure_path(kind: &str, text: &str) -> Result<String> {
     })
 }
 
+#[global_allocator]
+static GUARD: oom::Guard = oom::Guard;
+
 fn main() {
+    oom::arm();
     let traced = std::env::var_os("KLAD_BACKTRACE").is_some_and(|v| v != "0");
     #[cfg(unix)]
     unsafe {
@@ -3544,6 +3567,12 @@ fn run() -> Result<()> {
                     return Err(error);
                 }
                 made.stamp("cli")?;
+            }
+            if let Ok(made) = Bundle::open(&bundle) {
+                let (w, h) = (made.doc.canvas.width, made.doc.canvas.height);
+                if let Some(words) = klad_core::memory::fit(w, h).words(w, h) {
+                    eprintln!("note: {words}");
+                }
             }
             println!("{}", bundle.display());
         }
@@ -6158,6 +6187,7 @@ fn render(
 ) -> Result<()> {
     let start = Instant::now();
     let bundle = Bundle::open(path)?;
+    note_memory(&bundle.doc);
     let view = match &look.focus {
         Some(id) => agent::focus_view(&bundle, id, frame, scale)?,
         None => {

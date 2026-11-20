@@ -54,6 +54,7 @@ pub fn run(path: &Path, opts: Export) -> Result<()> {
     let start = Instant::now();
     let bundle = Bundle::open(path)?;
     let doc = &bundle.doc;
+    crate::note_memory(doc);
     if opts.frame >= doc.timeline.frames {
         bail!(
             "frame {} is past the last frame {}",

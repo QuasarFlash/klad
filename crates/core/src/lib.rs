@@ -16,6 +16,7 @@ pub mod keys;
 pub mod look;
 pub mod maps;
 pub mod markedit;
+pub mod memory;
 pub mod merge;
 pub mod migrate;
 pub mod notes;

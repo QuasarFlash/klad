@@ -42,6 +42,15 @@ pub fn anchor(word: &str) -> Result<[f32; 2]> {
 }
 
 pub fn plan(doc: &Document, r: &Reshape) -> Result<(MarkTransform, u32, u32)> {
+    let planned = plan_size(doc, r)?;
+    let fit = klad_core::memory::fit(planned.1, planned.2);
+    if let (klad_core::memory::Fit::TooBig { .. }, Some(words)) = (fit, fit.words(planned.1, planned.2)) {
+        anyhow::bail!(words);
+    }
+    Ok(planned)
+}
+
+fn plan_size(doc: &Document, r: &Reshape) -> Result<(MarkTransform, u32, u32)> {
     let (w, h) = (doc.canvas.width as f32, doc.canvas.height as f32);
     let pixel = doc.pixel_art();
     let whole = |v: f32| if pixel { v.round() } else { v };
