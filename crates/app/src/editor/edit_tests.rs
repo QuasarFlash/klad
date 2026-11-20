@@ -960,6 +960,21 @@ fn the_brush_follows_perspective_and_a_ruler_and_the_guides_move_in_their_window
         Assist::Ruler { to, .. } => assert!((to[1] - 350.0).abs() < 1.0, "moving a guide is one undo step: {to:?}"),
         other => panic!("{other:?}"),
     }
+    h.state_mut().invoke(Cmd::AssistsWindow).unwrap();
+    h.run_steps(2);
+    assert!(!h.state().windows.assists, "the window is closed");
+    h.key_press(Key::V);
+    h.run_steps(2);
+    let (m, n) = (canvas_at(&h, 400.0, 350.0), canvas_at(&h, 400.0, 320.0));
+    drag(&mut h, m, n);
+    h.run_steps(2);
+    match &h.state().scene.bundle.doc.guides.assists[0] {
+        Assist::Ruler { to, .. } => assert!(
+            (to[1] - 320.0).abs() < 1.0,
+            "with V a guide's point drags with the window closed: {to:?}"
+        ),
+        other => panic!("{other:?}"),
+    }
 }
 
 #[test]
@@ -1030,6 +1045,44 @@ fn brushes_saved_to_yours_show_in_another_drawing_which_keeps_its_own_copy() {
         reopened.brush("wet-ink").unwrap().unwrap().spacing,
         0.35,
         "the drawing renders where your brushes lack it"
+    );
+
+    h.state_mut().tool = Tool::Brush;
+    if h.state().is_on(Cmd::BrushPane) != Some(true) {
+        h.state_mut().invoke(Cmd::BrushPane).unwrap();
+    }
+    h.run_steps(3);
+    {
+        use egui_kittest::kittest::{NodeT, Queryable};
+        let stale = |h: &Harness<'static, Editor>| {
+            h.query_all_by_label("wet ink")
+                .filter(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+                .count()
+        };
+        let last = stale(&h) - 1;
+        h.query_all_by_label("wet ink")
+            .filter(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+            .nth(last)
+            .expect("the first drawing still lists the brush it saved")
+            .scroll_to_me();
+        h.run_steps(4);
+        let last = stale(&h) - 1;
+        h.query_all_by_label("wet ink")
+            .filter(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+            .nth(last)
+            .expect("the first drawing still lists the brush it saved")
+            .click();
+    }
+    h.run_steps(3);
+    assert!(
+        !said(&h).contains("no brush"),
+        "a brush forgotten in another drawing is no error here: {}",
+        said(&h)
+    );
+    assert_eq!(h.state().brush, "wet-ink", "this drawing's own copy is picked");
+    assert!(
+        h.state().yours.saved.is_empty(),
+        "and its list of your brushes is read again"
     );
     let _ = std::fs::remove_dir_all(&root);
 }

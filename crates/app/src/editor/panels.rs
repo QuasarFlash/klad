@@ -99,6 +99,11 @@ impl Editor {
     }
 
     pub(crate) fn frame(&mut self, ui: &mut egui::Ui) {
+        let focused = ui.input(|i| i.focused);
+        if focused && !self.window_focused {
+            self.yours.reload();
+        }
+        self.window_focused = focused;
         let start = Instant::now();
         let ctx = ui.ctx().clone();
         if !self.themed {

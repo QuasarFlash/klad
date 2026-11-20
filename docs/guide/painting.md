@@ -51,7 +51,7 @@ Turn on **mirror** in the brush bar. Every stroke is painted with its mirror ima
 ## Paint in perspective
 
 1. Choose **View > Drawing guides…** and click **2-point perspective** (or one or three points, a **ruler** or an **ellipse**).
-2. Drag the guide's points on the canvas while the window is open: the vanishing points, the ruler's ends, the ellipse's middle and sides.
+2. Drag the guide's points (the white dots) on the canvas while the window is open, or later with **V**: the vanishing points, the ruler's ends, the ellipse's middle and sides.
 3. Paint. Each stroke runs to the vanishing point it heads for, or stays upright or level. Near a ruler a stroke runs on it, further away parallel to it; an ellipse takes strokes round it.
 
 Hold **cmd** while you paint to draw freely, or turn off **follow** in the brush bar.

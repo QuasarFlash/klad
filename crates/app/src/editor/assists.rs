@@ -109,8 +109,10 @@ impl Editor {
         let mut gone: Option<usize> = None;
         let mut follow: Option<bool> = None;
         ui.label(
-            egui::RichText::new("Guides the brush follows: drag their points on the canvas while this window is open.")
-                .color(theme::WEAK),
+            egui::RichText::new(
+                "Guides the brush follows: drag their points on the canvas while this window is open, or with V.",
+            )
+            .color(theme::WEAK),
         );
         ui.horizontal_wrapped(|ui| {
             if ui
@@ -248,7 +250,7 @@ impl Editor {
         c: Vec2,
     ) -> Result<bool> {
         use crate::pen::Phase;
-        if !self.windows.assists {
+        if !self.guide_points_held() {
             return Ok(false);
         }
         let pos = e.pos;
@@ -298,6 +300,10 @@ impl Editor {
         }
     }
 
+    fn guide_points_held(&self) -> bool {
+        self.windows.assists || (self.tool == super::Tool::Select && self.scene.bundle.doc.guides.follow)
+    }
+
     pub(super) fn draw_assists(&self, painter: &egui::Painter, rect: Rect, to_screen: impl Fn(Vec2) -> Pos2) {
         let g = &self.scene.bundle.doc.guides;
         if g.assists.is_empty() || (!g.follow && !self.windows.assists) {
@@ -340,7 +346,7 @@ impl Editor {
                     painter.add(egui::Shape::line(ring, Stroke::new(1.5, colour)));
                 }
             }
-            if self.windows.assists {
+            if self.guide_points_held() {
                 shown.handles().iter().for_each(|h| {
                     painter.circle_filled(p(*h), 5.0, Color32::WHITE);
                     painter.circle_stroke(p(*h), 5.0, Stroke::new(1.5, colour));

@@ -986,6 +986,7 @@ pub(crate) struct Editor {
     look_from: Option<String>,
     canvas_form: canvas::Form,
     cropping: Option<canvas::Crop>,
+    window_focused: bool,
     guide_drag: Option<snap::GuideDrag>,
     assist_drag: Option<(usize, usize, [f32; 2])>,
     yours: yours::Yours,
@@ -1223,6 +1224,7 @@ impl Editor {
             look_from: None,
             canvas_form: canvas::Form::default(),
             cropping: None,
+            window_focused: true,
             guide_drag: None,
             assist_drag: None,
             frames_in: framesin::FramesIn::fresh(),
@@ -6478,6 +6480,7 @@ impl Editor {
     }
 
     pub(crate) fn reshown(&mut self) {
+        self.yours.reload();
         self.dirty = self.scene.all_tiles().into_iter().collect();
         self.frames.forget_all();
         self.external.get_or_insert(now_ms());

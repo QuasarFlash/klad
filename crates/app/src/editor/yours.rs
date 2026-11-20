@@ -75,6 +75,30 @@ impl Editor {
         Ok(())
     }
 
+    fn gone_from_yours(&mut self, id: &str) -> Result<bool> {
+        if self.yours.lib()?.get(id).is_some() {
+            return Ok(false);
+        }
+        self.yours.reload();
+        let own = self.embedded.contains_key(id) || self.brushes.def(id).is_some();
+        match own {
+            true => {
+                self.tool = Tool::Brush;
+                self.previous_brush = id.to_string();
+                self.pick(id);
+                self.say(
+                    Tone::Info,
+                    format!("{id} was taken out of your brushes in another drawing; this drawing keeps its own copy"),
+                );
+            }
+            false => self.say(
+                Tone::Refused,
+                format!("{id} was taken out of your brushes in another drawing"),
+            ),
+        }
+        Ok(true)
+    }
+
     fn take_yours(&mut self, id: &str) -> Result<()> {
         let (_, fresh) = self.yours.lib()?.take(&self.scene.bundle, id)?;
         self.embedded = self.scene.bundle.brushes()?;
@@ -93,6 +117,15 @@ impl Editor {
 
     fn act_yours(&mut self, act: Act) -> Result<()> {
         let lib = self.yours.lib()?.clone();
+        let named = match &act {
+            Act::Take(id) | Act::Rename(id) | Act::Group(id) | Act::Shift(id, _) | Act::Forget(id) => Some(id.clone()),
+            Act::Export | Act::Import => None,
+        };
+        if let Some(id) = named
+            && self.gone_from_yours(&id)?
+        {
+            return Ok(());
+        }
         match act {
             Act::Take(id) => return self.take_yours(&id),
             Act::Rename(id) => lib.rename(&id, &self.yours.name)?,
