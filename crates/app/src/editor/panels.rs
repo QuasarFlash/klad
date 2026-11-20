@@ -517,6 +517,7 @@ impl Editor {
             Cmd::AddFont,
             Cmd::CopyPath,
             Cmd::InstallCommand,
+            Cmd::ConnectAgent,
             Cmd::ReportProblem,
             Cmd::About,
         ]
@@ -1066,6 +1067,21 @@ impl Editor {
                 |ui| self.report_panel(ui),
             );
             self.windows.report &= open;
+        }
+        if self.windows.connect {
+            let mut open = true;
+            Self::window(
+                ctx,
+                "connect",
+                (format!("{} Connect an agent app", icon::LINK), Spot::Middle),
+                &mut open,
+                |ui| {
+                    if self.connect.panel(ui, &mut self.settings) {
+                        self.settings_dirty = true;
+                    }
+                },
+            );
+            self.windows.connect &= open;
         }
         if self.windows.about {
             let mut open = true;

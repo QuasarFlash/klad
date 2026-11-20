@@ -805,6 +805,7 @@ struct Windows {
     grid: bool,
     assists: bool,
     frames: bool,
+    connect: bool,
 }
 
 #[derive(Default)]
@@ -987,6 +988,7 @@ pub(crate) struct Editor {
     canvas_form: canvas::Form,
     cropping: Option<canvas::Crop>,
     window_focused: bool,
+    connect: crate::connect::Connect,
     guide_drag: Option<snap::GuideDrag>,
     assist_drag: Option<(usize, usize, [f32; 2])>,
     yours: yours::Yours,
@@ -1225,6 +1227,7 @@ impl Editor {
             canvas_form: canvas::Form::default(),
             cropping: None,
             window_focused: true,
+            connect: crate::connect::Connect::here(),
             guide_drag: None,
             assist_drag: None,
             frames_in: framesin::FramesIn::fresh(),

@@ -12,6 +12,18 @@ This skill is the tool. The craft of drawing itself (planning a picture, light o
 
 Working on klad itself: the repository's `CLAUDE.md`, `CONTRIBUTING.md` and `docs/DESIGN.md` are the source of truth. Build the CLI with `just compile` (`just build` also counts the version up, for the person making a build); the binary is `target/release/klad` on macOS and `target/linux/release/klad` on Linux.
 
+## Through an agent app (MCP)
+
+When an app such as Claude Desktop, the Codex app or Cursor starts `klad mcp`, you get tools instead of a shell. They take the same ops and commands as the rest of this guide:
+
+- `look` renders a frame and gives you the picture (`klad render`, with `region` and `overlay`).
+- `read` gives JSON: `layers` (`klad ls`), a layer's `strokes`, the person's `selection`, their `notes`, or the `document`.
+- `edit` applies ops as `klad apply` does, in one step the person can undo.
+- `run` runs any other command: `{"command": "export", "drawing": "art.klad", "args": ["-o", "art.png"]}`.
+- `new` makes a drawing, `note_done` marks a note done, and `open` shows a drawing in the person's editor.
+
+A drawing is a path, or a name in the person's drawings folder. klad works only in the folders the person allowed, and refuses `open`, `watch` and `install` through `run`. Read the commands below as what these tools take.
+
 ## The loop
 
 1. Look: `klad ls art.klad` (tree, top layer first, ids and bounds) and `klad render art.klad --scale 0.5 --overlay ids,bbox`. Read the PNG it prints.

@@ -17,6 +17,7 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 
 ### Added
 
+- **Agent apps without a terminal**: File > Connect an agent app… puts klad into Claude Desktop, the Codex app, Claude Code, Cursor or VS Code in one click, and they paint, read and edit your drawings through klad's MCP server (`klad mcp`, `klad mcp --install`). ([Working with an agent](https://klad.studio/docs/guide/with-an-agent))
 - **Several drawings open at once**, with a tab each above the canvas: click a tab or press **ctrl Tab**; opening a drawing that is open shows its tab. Strokes and shapes copied in one drawing paste into another with their brushes, pictures and palette colours.
 - **File > Save a copy…** (**shift cmd S**), **Rename…**, **Duplicate** and **Revert** (back to how the drawing was when you opened it, in one undo step); in the start window, right click a drawing to duplicate it or move it to the Trash (`klad save-as`, `klad rename`). A copy gets ids of its own.
 - **Drawing guides**: perspective with one, two or three vanishing points, a ruler and an ellipse that the brush follows; **View > Drawing guides…** adds them and drags their points; **cmd** frees a stroke (`klad guides --perspective --ruler --ellipse`, `klad stroke --follow`).

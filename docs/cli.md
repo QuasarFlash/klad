@@ -106,6 +106,7 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad updates`](#klad-updates): Check now whether a newer klad is out (the editor also checks once a day by itself)
 - [`klad bench`](#klad-bench): Measure stroke storage, brush speed, replay, cache and compositing
 - [`klad open`](#klad-open): Open the editor, on a bundle or on the start window (new, open, recent)
+- [`klad mcp`](#klad-mcp): Serve klad to agent apps such as Claude Desktop and Codex (MCP), or connect klad to one
 
 ## klad import
 
@@ -5086,4 +5087,39 @@ Arguments:
 Options:
   -h, --help
           Print help
+```
+
+## klad mcp
+
+```text
+Serve klad to agent apps over the Model Context Protocol, or connect it to one. An agent app (Claude Desktop, the Codex app, Claude Code, Cursor, VS Code) starts `klad mcp` itself and paints and edits drawings through its tools: look, read, edit, run, new, note_done and open. The klad guide comes with it, as a prompt and a resource named klad. The agent works only on drawings in the drawings folder, the folders of recent drawings, the folders added in the editor (File > Connect an agent app) and the ones given with --root.
+
+  klad mcp --status                    (which agent apps are here, and which have klad)
+  klad mcp --install claude-desktop     (then quit Claude Desktop and open it again)
+  klad mcp --install codex
+  klad mcp --print cursor               (what --install writes, to add it by hand)
+  klad mcp --uninstall claude-desktop
+
+The editor does the same in File > Connect an agent app, without a terminal.
+
+Usage: klad mcp [OPTIONS]
+
+Options:
+      --root <FOLDER>
+          A folder the agent may work in, besides the drawings folder and the folders of recent drawings (repeat for more)
+
+      --install <APP>
+          Put klad in an agent app's settings: claude-desktop, codex, claude-code, cursor or vscode
+
+      --uninstall <APP>
+          Take klad out of an agent app's settings
+
+      --print <APP>
+          Print what --install writes, to add it by hand
+
+      --status
+          Which agent apps are on this computer, and which have klad
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```

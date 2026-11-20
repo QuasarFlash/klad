@@ -6,7 +6,7 @@
 
 *Don't want to build it? Sign up for the pre-built app release at [klad.studio](https://klad.studio).*
 
-**There is no image model in klad.** Your agent (Claude Code, Codex, anything that can run commands) decides what to paint; klad gives it brushes, layers and a timeline. Whatever either of you puts down stays what it was: a stroke with its path, pressure, brush and colour, a shape with its points, a fill with its region. So there's no rerolling and hoping for the best: if one leaf looks off, you fix that leaf.
+**There is no image model in klad.** Your agent (Claude Code, Codex, Claude Desktop, anything that can run commands or speak MCP) decides what to paint; klad gives it brushes, layers and a timeline. Whatever either of you puts down stays what it was: a stroke with its path, pressure, brush and colour, a shape with its points, a fill with its region. So there's no rerolling and hoping for the best: if one leaf looks off, you fix that leaf.
 
 | | |
 |---|---|

@@ -76,6 +76,7 @@ pub struct Start {
     pub tour: bool,
     focused: bool,
     thumbs: BTreeMap<String, Thumb>,
+    pub connect: crate::connect::Connect,
 }
 
 fn repaired_words(done: &klad_core::bundle::Repaired) -> String {
@@ -115,6 +116,7 @@ impl Start {
             trash_to: None,
             samples: samples::shipped(),
             tour: false,
+            connect: crate::connect::Connect::here(),
             focused: false,
             thumbs: BTreeMap::new(),
         }
@@ -308,6 +310,18 @@ impl Start {
             chosen = chosen.take().or_else(|| self.recent_section(ui, settings));
             ui.add_space(14.0);
             chosen = chosen.take().or_else(|| self.samples_section(ui, settings));
+            ui.add_space(14.0);
+            egui::CollapsingHeader::new(
+                RichText::new(format!("{} Connect an agent app", icon::LINK))
+                    .strong()
+                    .size(16.0),
+            )
+            .id_salt("connect an agent app")
+            .show(ui, |ui| {
+                if self.connect.panel(ui, settings) {
+                    self.changed = true;
+                }
+            });
         });
         self.focused = true;
         chosen

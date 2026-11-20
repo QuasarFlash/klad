@@ -67,6 +67,8 @@ pub struct Settings {
     pub pens: BTreeMap<String, PenSettings>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recent: Vec<String>,
+    #[serde(default, rename = "agentFolders", skip_serializing_if = "Vec::is_empty")]
+    pub agent_folders: Vec<String>,
     #[serde(default)]
     pub layout: crate::layout::Layout,
     #[serde(default, rename = "recentCommands", skip_serializing_if = "Vec::is_empty")]
@@ -118,6 +120,7 @@ impl Default for Settings {
             version: VERSION,
             pens: BTreeMap::new(),
             recent: Vec::new(),
+            agent_folders: Vec::new(),
             layout: crate::layout::Layout::default(),
             recent_commands: Vec::new(),
             keys: BTreeMap::new(),
@@ -266,6 +269,23 @@ impl Settings {
         self.drawings
             .as_ref()
             .map_or_else(crate::places::drawings, PathBuf::from)
+    }
+
+    pub fn agent_roots(&self) -> Vec<PathBuf> {
+        let mut roots: Vec<PathBuf> = Vec::new();
+        std::iter::once(self.drawings_folder())
+            .chain(self.agent_folders.iter().map(PathBuf::from))
+            .chain(
+                self.documents
+                    .iter()
+                    .filter_map(|d| Path::new(d).parent().map(Path::to_path_buf)),
+            )
+            .for_each(|p| {
+                if !roots.contains(&p) {
+                    roots.push(p);
+                }
+            });
+        roots
     }
 
     pub fn used(&mut self, hex: &str) -> bool {

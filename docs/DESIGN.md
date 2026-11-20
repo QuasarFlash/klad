@@ -383,6 +383,14 @@ Stateless: read the bundle, apply, write atomically, optionally render. Output i
 
 Every command with its options is in `docs/cli.md`, which `klad reference` (hidden) writes and a test keeps current. `klad-client` (`crates/client`) runs the commands from Rust: `Klad` finds the binary (`KLAD` or the path), `Drawing` applies op lines through `klad apply` and reads `ls`, `show`, `strokes`, `notes` and `selection` as JSON.
 
+**The MCP server (S14.32, 2026-11-20).** `klad mcp` serves klad to agent apps over the Model Context Protocol on stdio, so a person who never opens a terminal can let Claude Desktop or the Codex app paint. The server is `crates/mcp` (`klad-mcp`, MIT like `klad-client`, on the official `rmcp` SDK and tokio) and depends on no PolyForm crate: every tool runs the klad binary through `klad-client`, the same commands the skill teaches.
+
+- **The tools:** `look` (`render`, returned as a PNG image), `read` (`ls`, `strokes`, `selection`, `notes` or `doc.json` as JSON), `edit` (op lines through `apply`), `run` (any other command, refusing the ones that leave the drawing: open, watch, install and the rest of `klad_mcp::REFUSED`), `new` (`new`) and `note_done` (`notes --done`). `open` asks macOS to open the drawing with the klad.app the server runs from (`open -a`, so a running editor takes it as a tab), and elsewhere starts `klad open`.
+- **The guide:** `docs/skill/SKILL.md` is the server's prompt and resource, both named klad. The instructions say what each tool is for.
+- **Folders:** a drawing is a path, or a name in the first allowed folder, with or without `.klad`. It must lie inside the allowed folders: the drawings folder, the folders of recent drawings, the folders added in the connect window (`agentFolders` in the settings) and `--root`.
+- **Connecting:** `klad_mcp::apps` knows where Claude Desktop, Codex (`~/.codex/config.toml`, kept with `toml_edit` so comments stay), Claude Code (`~/.claude.json`), Cursor and VS Code keep their MCP servers. It adds or removes only the `klad` entry, writes a `.before-klad` copy first, leaves a file it cannot read alone, and tells apart an app that is here from one connected to a klad that moved. `klad mcp --install/--uninstall/--print/--status` and the editor's Connect window (`connect.rs`, shown in the editor and folded on the start window) use it. In test builds the window has no home folder unless a test gives one, so tests never touch real settings.
+- **Not built:** a Claude Desktop extension file (`.mcpb`) and HTTP.
+
 An error is one line on stderr (`error: reading a.klad/doc.json: No such file or directory`) and exit code 1, whatever `RUST_BACKTRACE` says; a bug (a panic) is one line too, with where it happened and where to report it. `KLAD_BACKTRACE=1` prints the whole chain and the backtrace instead.
 
 | Command | Purpose |

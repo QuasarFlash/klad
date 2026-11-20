@@ -2943,6 +2943,118 @@ enum Command {
     #[cfg(feature = "editor")]
     #[command(about = "Open the editor, on a bundle or on the start window (new, open, recent)")]
     Open { bundle: Option<PathBuf> },
+    #[command(
+        about = "Serve klad to agent apps such as Claude Desktop and Codex (MCP), or connect klad to one",
+        long_about = "Serve klad to agent apps over the Model Context Protocol, or connect it to one. An agent app (Claude Desktop, the Codex app, Claude Code, Cursor, VS Code) starts `klad mcp` itself and paints and edits drawings through its tools: look, read, edit, run, new, note_done and open. The klad guide comes with it, as a prompt and a resource named klad. The agent works only on drawings in the drawings folder, the folders of recent drawings, the folders added in the editor (File > Connect an agent app) and the ones given with --root.\n\n  klad mcp --status                    (which agent apps are here, and which have klad)\n  klad mcp --install claude-desktop     (then quit Claude Desktop and open it again)\n  klad mcp --install codex\n  klad mcp --print cursor               (what --install writes, to add it by hand)\n  klad mcp --uninstall claude-desktop\n\nThe editor does the same in File > Connect an agent app, without a terminal."
+    )]
+    Mcp {
+        #[arg(
+            long,
+            value_name = "FOLDER",
+            help = "A folder the agent may work in, besides the drawings folder and the folders of recent drawings (repeat for more)"
+        )]
+        root: Vec<PathBuf>,
+        #[arg(long, value_name = "APP", conflicts_with_all = ["uninstall", "print", "status"], help = "Put klad in an agent app's settings: claude-desktop, codex, claude-code, cursor or vscode")]
+        install: Option<String>,
+        #[arg(long, value_name = "APP", conflicts_with_all = ["print", "status"], help = "Take klad out of an agent app's settings")]
+        uninstall: Option<String>,
+        #[arg(
+            long,
+            value_name = "APP",
+            conflicts_with = "status",
+            help = "Print what --install writes, to add it by hand"
+        )]
+        print: Option<String>,
+        #[arg(long, help = "Which agent apps are on this computer, and which have klad")]
+        status: bool,
+    },
+}
+
+fn mcp(
+    root: Vec<PathBuf>,
+    install: Option<String>,
+    uninstall: Option<String>,
+    print: Option<String>,
+    status: bool,
+) -> Result<()> {
+    use klad_mcp::{App, Entry, Places, Status};
+    let program = std::env::current_exe().context("finding klad itself")?;
+    let entry = Entry::serving(&program);
+    let app = |word: &str| {
+        App::parse(word).ok_or_else(|| anyhow!("klad knows no agent app {word}: it knows {}", App::words()))
+    };
+    let places = || Places::here().ok_or_else(|| anyhow!("this computer has no home folder for agent apps' settings"));
+    if status {
+        let places = places()?;
+        App::ALL.into_iter().for_each(|a| {
+            let state = match a.status(&places) {
+                Status::Missing => "not on this computer".to_string(),
+                Status::Found => format!("found, without klad (klad mcp --install {})", a.word()),
+                Status::Connected(e) => format!("connected ({})", e.command.display()),
+                Status::Moved(e) => format!(
+                    "set to a klad that is gone ({}): klad mcp --install {} again",
+                    e.command.display(),
+                    a.word()
+                ),
+            };
+            println!("{:<15} {state}", a.name());
+        });
+        return Ok(());
+    }
+    if let Some(word) = print {
+        let a = app(&word)?;
+        let places = places()?;
+        println!("{}", a.snippet(&entry).trim_end());
+        eprintln!("goes in {}", a.file(&places).display());
+        return Ok(());
+    }
+    if let Some(word) = install {
+        let a = app(&word)?;
+        let file = a.connect(&places()?, &entry).map_err(|e| anyhow!(e))?;
+        println!(
+            "klad is in {}'s settings ({}): {}",
+            a.name(),
+            file.display(),
+            a.next_step()
+        );
+        return Ok(());
+    }
+    if let Some(word) = uninstall {
+        let a = app(&word)?;
+        match a.disconnect(&places()?).map_err(|e| anyhow!(e))? {
+            true => println!("klad is out of {}'s settings: {}", a.name(), a.next_step()),
+            false => println!("{} had no klad in its settings", a.name()),
+        }
+        return Ok(());
+    }
+    #[cfg(feature = "editor")]
+    let usual = klad_app::agent_roots();
+    #[cfg(not(feature = "editor"))]
+    let usual: Vec<PathBuf> = Vec::new();
+    if let Some(drawings) = usual.first() {
+        let _ = std::fs::create_dir_all(drawings);
+    }
+    let mut roots: Vec<PathBuf> = Vec::new();
+    root.into_iter()
+        .chain(usual)
+        .filter(|p| p.is_dir())
+        .filter_map(|p| p.canonicalize().ok())
+        .for_each(|p| {
+            if !roots.contains(&p) {
+                roots.push(p);
+            }
+        });
+    let app_bundle = program
+        .ancestors()
+        .find(|p| p.extension().is_some_and(|e| e == "app"))
+        .map(Path::to_path_buf);
+    klad_mcp::serve(klad_mcp::Config {
+        program,
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        roots,
+        app: app_bundle,
+    })
+    .map_err(|e| anyhow!("{e}"))
 }
 
 fn output(flags: &EditFlags, frame: u32) -> Output {
@@ -6169,6 +6281,13 @@ fn run() -> Result<()> {
             }
         }
         Command::Bench { strokes, size, seed } => bench::run(strokes, size, seed)?,
+        Command::Mcp {
+            root,
+            install,
+            uninstall,
+            print,
+            status,
+        } => mcp(root, install, uninstall, print, status)?,
         #[cfg(feature = "editor")]
         Command::Open { bundle } => klad_app::run(bundle)?,
     }

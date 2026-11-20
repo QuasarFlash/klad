@@ -235,6 +235,7 @@ pub enum Cmd {
     OpenRecent,
     CopyPath,
     InstallCommand,
+    ConnectAgent,
     ReportProblem,
     ContactSupport,
     Guides,
@@ -600,7 +601,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 272] = [
+    pub const ALL: [Cmd; 273] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -839,6 +840,7 @@ impl Cmd {
         Cmd::OpenRecent,
         Cmd::CopyPath,
         Cmd::InstallCommand,
+        Cmd::ConnectAgent,
         Cmd::ReportProblem,
         Cmd::ContactSupport,
         Cmd::Guides,
@@ -3318,6 +3320,15 @@ impl Cmd {
                 R::No,
                 "what changed in each version of klad, on klad.studio",
             ),
+            Cmd::ConnectAgent => spec(
+                "file.connect-agent",
+                "connect an agent app",
+                icon::LINK,
+                G::File,
+                T::None,
+                R::No,
+                "Claude Desktop, Codex and other agent apps paint in your drawings with klad: connect one here, no terminal needed",
+            ),
             Cmd::InstallCommand => spec(
                 "file.install-command",
                 "install the klad command",
@@ -3573,6 +3584,7 @@ impl Cmd {
             Cmd::OpenRecent => "All recent drawings…",
             Cmd::CopyPath => "Copy path",
             Cmd::InstallCommand => "Install the klad command",
+            Cmd::ConnectAgent => "Connect an agent app…",
             Cmd::ReportProblem => "Report a problem…",
             Cmd::ContactSupport => "Contact support",
             Cmd::Guides => "Guides",
@@ -3690,6 +3702,7 @@ pub const MENUS: [Menu; 9] = [
             Line,
             Run(Cmd::CopyPath),
             Run(Cmd::InstallCommand),
+            Run(Cmd::ConnectAgent),
             Line,
             Run(Cmd::Quit),
         ],

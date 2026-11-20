@@ -17,6 +17,7 @@ ignore = [
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: as zvariant" },
     { crate = "async-executor@1.14.0", reason = "yanked; reached only through accesskit_unix and zbus 5 on Linux, waits on eframe" },
     { id = "RUSTSEC-2024-0436", reason = "paste: unmaintained, not a vulnerability; a macro used only while building rav1e (video export), no safe upgrade; waits on rav1e moving to pastey" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained, not a vulnerability; rmcp (the MCP SDK behind klad mcp) depends on it for timestamps, no safe upgrade; waits on rmcp moving to jiff or time" },
 ]
 
 [licenses]

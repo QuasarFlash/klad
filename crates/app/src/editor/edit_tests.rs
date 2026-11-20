@@ -1732,3 +1732,49 @@ fn the_crop_tool_is_in_the_strip_with_handles_a_box_that_moves_and_its_bar() {
     );
     let _ = std::fs::remove_dir_all(&path);
 }
+
+#[test]
+fn the_connect_window_puts_klad_in_an_agent_apps_settings_and_takes_it_out() {
+    use egui_kittest::kittest::Queryable;
+    let path = sample("connect");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    let home = std::env::temp_dir().join(format!("draw-ui-connect-home-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let claude = home.join("Library/Application Support/Claude");
+    std::fs::create_dir_all(&claude).unwrap();
+    let program = home.join("klad");
+    std::fs::write(&program, "").unwrap();
+    h.state_mut().connect.places = Some(klad_mcp::Places {
+        home: home.clone(),
+        os: klad_mcp::Os::Mac,
+    });
+    h.state_mut().connect.program = program.clone();
+    h.state_mut().invoke(Cmd::ConnectAgent).unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().is_on(Cmd::ConnectAgent), Some(true));
+    assert!(
+        h.query_by_label("connect Codex").is_some(),
+        "every agent app is listed, Codex too though it is not here"
+    );
+    h.get_by_label("connect Claude Desktop").click();
+    h.run_steps(3);
+    let config = std::fs::read_to_string(claude.join("claude_desktop_config.json")).unwrap();
+    assert!(
+        config.contains("\"klad\"") && config.contains(&program.display().to_string()),
+        "{config}"
+    );
+    assert!(
+        h.query_by_label_contains("quit Claude Desktop").is_some(),
+        "it says what to do next"
+    );
+    h.get_by_label("disconnect Claude Desktop").click();
+    h.run_steps(3);
+    let config = std::fs::read_to_string(claude.join("claude_desktop_config.json")).unwrap();
+    assert!(!config.contains("\"klad\""), "{config}");
+    assert!(
+        h.query_by_label("connect Claude Desktop").is_some(),
+        "and it can connect again"
+    );
+    let _ = std::fs::remove_dir_all(&home);
+    let _ = std::fs::remove_dir_all(&path);
+}

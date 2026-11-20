@@ -802,6 +802,7 @@ impl Editor {
             Cmd::MessageLog => self.windows.log,
             Cmd::Spin => self.spin,
             Cmd::Link => self.windows.link,
+            Cmd::ConnectAgent => self.windows.connect,
             _ => return None,
         };
         let other_tool =
@@ -1349,6 +1350,7 @@ impl Editor {
             Cmd::ShowParts => self.checks.parts = !self.checks.parts,
             Cmd::ShowArcs => self.show_arcs()?,
             Cmd::InstallCommand => self.start_job(install_job()),
+            Cmd::ConnectAgent => self.windows.connect = !self.windows.connect,
             Cmd::ReportProblem => self.windows.report = !self.windows.report,
             Cmd::ContactSupport => self.contact_support(),
             Cmd::Guides => self.open_link(klad_core::contact::GUIDES.to_string()),
