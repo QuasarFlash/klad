@@ -44,8 +44,8 @@ The result is one path with the look of the shape at the back. **Subtract** cuts
 
 ## Line things up on a grid or guides
 
-1. Press **cmd '** to show the grid and **shift cmd '** to snap to it. **View > Grid…** sets its spacing, stronger lines and look, square or isometric.
-2. Press **cmd R** for the rulers and drag a guide out of one. Drag it back onto the ruler to take it away.
+1. Press **cmd '** (View > Show grid) to show the grid and **shift cmd '** to snap to it. **View > Grid…** sets its spacing, stronger lines and look, square or isometric.
+2. Press **cmd R** (View > Show rulers) for the rulers and drag a guide out of one. Drag it back onto the ruler to take it away.
 
 While snapping is on, shapes, points, moves, the pen and bones snap to the grid, the guides and the edges and middles of other shapes. Hold **cmd** while you drag to leave the snap.
 
