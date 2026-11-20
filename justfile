@@ -89,6 +89,9 @@ journeys out="":
     cargo build -p klad-cli
     KLAD_JOURNEY_OUT={{out}} cargo test -p klad-app -- journeys
 
+notes version:
+    @bash packaging/notes.sh {{version}}
+
 monkey out="":
     cargo build -p klad-cli
     KLAD_STAMP="$(date '+%Y-%m-%d %H:%M')" KLAD_MONKEY_OUT={{out}} cargo test -p klad-app -- --ignored monkey::random_use --nocapture

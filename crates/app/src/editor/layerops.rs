@@ -250,8 +250,12 @@ impl Editor {
             .map(|r| r.path)
             .collect();
         let Some(at) = rows.iter().position(|p| *p == self.scene.active) else {
-            if let Some(first) = rows.first().cloned() {
-                self.activate(first)?;
+            match rows.first().cloned() {
+                Some(first) => self.activate(first)?,
+                None => self.say(
+                    Tone::Refused,
+                    "there are no layers yet: add one with + in the layers panel",
+                ),
             }
             return Ok(());
         };
@@ -259,9 +263,19 @@ impl Editor {
             true => at.checked_sub(1),
             false => (at + 1 < rows.len()).then_some(at + 1),
         };
-        if let Some(path) = next.and_then(|i| rows.get(i).cloned()) {
-            self.also.clear();
-            self.activate(path)?;
+        match next.and_then(|i| rows.get(i).cloned()) {
+            Some(path) => {
+                self.also.clear();
+                self.activate(path)?;
+            }
+            None => self.say(
+                Tone::Info,
+                match (rows.len(), up) {
+                    (1, _) => "this is the only layer",
+                    (_, true) => "this is the top layer",
+                    (_, false) => "this is the bottom layer",
+                },
+            ),
         }
         Ok(())
     }

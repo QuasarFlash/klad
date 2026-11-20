@@ -1358,3 +1358,71 @@ fn the_weight_brush_adds_takes_away_with_strength_and_reads_the_weight_under_the
     );
     let _ = std::fs::remove_dir_all(&path);
 }
+
+#[test]
+fn a_new_layer_made_inside_a_hidden_group_goes_above_the_group_where_it_shows() {
+    let path = sample("hidden-group");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "colour");
+    h.state_mut().invoke(Cmd::GroupLayer).unwrap();
+    h.run_steps(2);
+    let group = {
+        let doc = &h.state().scene.bundle.doc;
+        doc.layers
+            .iter()
+            .find(|l| l.children().iter().any(|c| c.name == "colour"))
+            .unwrap()
+            .id
+            .clone()
+    };
+    h.state_mut()
+        .timeline_apply(vec![klad_core::ops::Op::Set {
+            id: group.clone(),
+            props: serde_json::from_str(r#"{"visible":false}"#).unwrap(),
+        }])
+        .unwrap();
+    activate(&mut h, "colour");
+    h.state_mut().invoke(Cmd::NewPaintLayer).unwrap();
+    h.run_steps(2);
+    let doc = &h.state().scene.bundle.doc;
+    let made = h.state().scene.active_layer().unwrap().id.clone();
+    assert!(
+        doc.layers.iter().any(|l| l.id == made),
+        "the new layer is not inside the hidden group"
+    );
+    let at = |id: &str| doc.layers.iter().position(|l| l.id == id).unwrap();
+    assert_eq!(at(&made), at(&group) + 1, "it sits just above the group");
+    let (a, b) = (canvas_at(&h, 100.0, 100.0), canvas_at(&h, 200.0, 150.0));
+    let before = h.state().scene.total_marks();
+    drag(&mut h, a, b);
+    h.run_steps(2);
+    assert!(
+        h.state().scene.total_marks() > before,
+        "and a stroke lands on it: {}",
+        said(&h)
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn stepping_past_the_last_layer_and_pasting_a_look_onto_its_own_shape_say_why() {
+    let path = sample("edges-said");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "shapes");
+    let ids = add_rects(&mut h);
+    h.state_mut().tool = Tool::Select;
+    h.state_mut().selection = Some(ids[0].clone());
+    h.run_steps(2);
+    h.state_mut().invoke(Cmd::CopyLook).unwrap();
+    h.state_mut().invoke(Cmd::PasteLook).unwrap();
+    h.run_steps(1);
+    assert!(said(&h).contains("the look came from"), "{}", said(&h));
+    let layers = h.state().scene.bundle.doc.layers.len();
+    (0..=layers).for_each(|_| h.state_mut().invoke(Cmd::LayerAbove).unwrap());
+    h.run_steps(1);
+    assert!(said(&h).contains("this is the top layer"), "{}", said(&h));
+    (0..=layers * 3).for_each(|_| h.state_mut().invoke(Cmd::LayerBelow).unwrap());
+    h.run_steps(1);
+    assert!(said(&h).contains("this is the bottom layer"), "{}", said(&h));
+    let _ = std::fs::remove_dir_all(&path);
+}

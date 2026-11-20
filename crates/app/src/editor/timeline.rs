@@ -1156,6 +1156,10 @@ impl Editor {
             Some(&MASK) => above[..above.len() - 1].to_vec(),
             _ => above,
         };
+        let doc = &self.scene.bundle.doc;
+        let owner = (1..owner.len())
+            .find(|k| doc.locate_path(&owner[..*k]).is_some_and(|group| !group.visible))
+            .map_or(owner.clone(), |k| owner[..k].to_vec());
         let place = match self.scene.bundle.doc.locate_path(&owner) {
             Some(layer) => Place {
                 above: Some(layer.id.clone()),

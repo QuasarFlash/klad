@@ -38,12 +38,48 @@ bash "$root/packaging/samples.sh" "${KLAD:-$app/Contents/MacOS/klad}" "$app/Cont
 codesign --force --deep --sign - "$app" 2>/dev/null || true
 echo "$app"
 if [ "${KLAD_DMG:-1}" = "1" ]; then
+  name="klad ${version%.*}"
   stage="$(mktemp -d)"
   cp -R "$app" "$stage/"
   ln -s /Applications "$stage/Applications"
+  mkdir "$stage/.background"
+  tiffutil -cathidpicheck "$root/packaging/macos/background.png" "$root/packaging/macos/background@2x.png" -out "$stage/.background/background.tiff" >/dev/null 2>&1 \
+    || cp "$root/packaging/macos/background.png" "$stage/.background/background.tiff"
+  cp "$root/packaging/icon/klad.icns" "$stage/.VolumeIcon.icns"
   dmg="$out/klad-$version-macos.dmg"
-  rm -f "$dmg"
-  hdiutil create -volname "klad $version" -srcfolder "$stage" -ov -format UDZO "$dmg" >/dev/null
+  work="$out/klad-$version-work.dmg"
+  rm -f "$dmg" "$work"
+  hdiutil create -volname "$name" -srcfolder "$stage" -ov -fs HFS+ -format UDRW "$work" >/dev/null
   rm -rf "$stage"
+  mounted="$(hdiutil attach -readwrite -noverify -noautoopen "$work" | sed -n 's|.*\(/Volumes/.*\)|\1|p' | tail -1)"
+  if [ -n "$mounted" ]; then
+    xattr -wx com.apple.FinderInfo 0000000000000000040000000000000000000000000000000000000000000000 "$mounted" 2>/dev/null || true
+    disk="$(basename "$mounted")"
+    osascript <<APPLESCRIPT >/dev/null 2>&1 || echo "note: the window's look was not set (allow Terminal to control Finder in System Settings > Privacy & Security > Automation, then run this again)" >&2
+tell application "Finder"
+  tell disk "$disk"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set bounds of container window to {200, 120, 860, 520}
+    set opts to the icon view options of container window
+    set arrangement of opts to not arranged
+    set icon size of opts to 112
+    set text size of opts to 13
+    set background picture of opts to file ".background:background.tiff"
+    set position of item "klad.app" to {170, 190}
+    set position of item "Applications" to {490, 190}
+    update without registering applications
+    delay 1
+    close
+  end tell
+end tell
+APPLESCRIPT
+    sync
+    hdiutil detach "$mounted" -quiet || hdiutil detach "$mounted" -force -quiet
+  fi
+  hdiutil convert "$work" -format UDZO -imagekey zlib-level=9 -o "$dmg" >/dev/null
+  rm -f "$work"
   echo "$dmg"
 fi

@@ -935,7 +935,7 @@ impl Desk {
             ),
             frame: ed.scene.frame,
             flags: format!(
-                "{} wants {:?} links {} copied {} {} {} jobs {} windows {} {} {} {} range {:?} ask {:?} developer {} swatch {:?} second {:?} pencil {}",
+                "{} wants {:?} links {} copied {} {} {} jobs {} windows {} {} {} {} {} range {:?} ask {:?} developer {} swatch {:?} second {:?} pencil {}",
                 Cmd::ALL
                     .iter()
                     .map(|cmd| match ed.is_on(*cmd) {
@@ -954,6 +954,7 @@ impl Desk {
                 ed.windows.palettes,
                 ed.windows.clip,
                 ed.windows.between,
+                ed.naming.is_some(),
                 ed.timeline.range,
                 ed.timeline.ask,
                 ed.settings.developer,

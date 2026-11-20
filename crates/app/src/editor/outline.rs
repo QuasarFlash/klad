@@ -137,6 +137,10 @@ impl Editor {
         }
         let ids: Vec<String> = self.shapes().into_iter().filter(|id| *id != from).collect();
         if ids.is_empty() {
+            self.say(
+                Tone::Info,
+                "this is the shape the look came from: select the shapes to give it to with V (shift click adds)",
+            );
             return Ok(());
         }
         let count = ids.len();

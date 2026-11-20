@@ -728,7 +728,7 @@ impl Editor {
                     ui.end_row();
                 }
                 if what == What::Pdf {
-                    let pages = label(ui, "pages");
+                    label(ui, "pages");
                     ui.horizontal_wrapped(|ui| {
                         [("", "this frame"), ("all", "every frame")]
                             .into_iter()
@@ -743,9 +743,7 @@ impl Editor {
                                 form.pages = c.clone();
                             }
                         });
-                    })
-                    .response
-                    .labelled_by(pages.id);
+                    });
                     ui.end_row();
                     label(ui, "paper");
                     ui.horizontal(|ui| {

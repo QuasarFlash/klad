@@ -49,8 +49,7 @@ jobs:
       - name: Notes
         run: |
           version="${GITHUB_REF_NAME#v}"
-          awk -v v="$version" '$0 ~ "^## "v"( |$)" {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
-          [ -s notes.md ] || echo "klad $version" > notes.md
+          bash packaging/notes.sh "$version" > notes.md
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}

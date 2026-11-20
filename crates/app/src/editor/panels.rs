@@ -563,7 +563,7 @@ impl Editor {
         let lines = LINES.get_or_init(|| klad_core::notices::NOTICES.lines().collect());
         ui.label(RichText::new(format!("klad {}", crate::VERSION)).strong());
         self.update_rows(ui);
-        ui.label("Source-available licence, copyright Indicode BV. Built on the open source work listed below; klad licences prints the same.");
+        ui.label("Source-available licence, copyright Indicode BV. The drawings you make are yours: you may sell them and use them in your own and your clients' commercial work. Built on the open source work listed below; klad licences prints the same.");
         ui.horizontal(|ui| {
             ui.hyperlink_to("klad.studio", klad_core::contact::SITE)
                 .hint("klad's website: the guides, what's new and your download");
