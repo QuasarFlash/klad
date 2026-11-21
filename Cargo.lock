@@ -2081,10 +2081,12 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "png",
  "pollster 1.0.1",
+ "raw-window-handle",
  "rayon",
  "rfd",
  "serde",
  "serde_json",
+ "windows-sys 0.61.2",
  "zstd",
 ]
 

@@ -63,6 +63,7 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 - Moving everything on a layer (select all, then drag) follows the pen however many strokes it holds, alpha-locked and thick oil strokes too, and lands about three times faster when you let go.
 - Select all frames in a drawing with no layers left closed klad; it now says to add a paint or vector layer first.
 - `klad merge` of large layers lists the first few strokes it copied instead of thousands, so an agent's answer stays short; `--json` still lists every one.
+- On Windows, lifting a tablet pen ends the stroke: with some tablets (a Huion H1060P) the stroke went on after the pen left the tablet. klad now reads the pen through Windows Ink itself, so it also gets the pen's tilt, its eraser end and every point the tablet sends, as on the Mac. ([Painting](https://klad.studio/docs/guide/painting#tune-your-pen))
 
 ## 0.4.0 (2026-11-19)
 

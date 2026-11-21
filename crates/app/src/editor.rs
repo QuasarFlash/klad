@@ -878,6 +878,7 @@ pub(crate) struct Editor {
     navigating: bool,
     focused: bool,
     pen: Option<Pen>,
+    touch: Option<egui::TouchId>,
     readout: Readout,
     dirty: BTreeSet<usize>,
     pending: Option<Instant>,
@@ -1118,6 +1119,7 @@ impl Editor {
             navigating: false,
             focused: false,
             pen: if cfg!(test) { None } else { Pen::install() },
+            touch: None,
             readout: Readout::default(),
             pending: None,
             stats: Arc::default(),
@@ -4411,8 +4413,8 @@ impl Editor {
         }
         self.refresh_shape();
         let events = match &self.pen {
-            Some(pen) => pen.drain(ctx.content_rect().height()),
-            None => pen::from_egui(&ui.input(|i| i.events.clone())),
+            Some(pen) => pen.drain(&ctx),
+            None => pen::from_egui(&ui.input(|i| i.events.clone()), &mut self.touch),
         };
         let holding = self.writing() && matches!(self.tool, Tool::Select | Tool::Direct);
         self.held
@@ -6369,7 +6371,9 @@ impl Editor {
         ui.spacing_mut().slider_width = 220.0;
         prefs::grid(ui, "settings pen", |ui| {
             prefs::row_label(ui, "Pen");
-            ui.label(if self.readout.device == 0 {
+            ui.label(if self.readout.device == 0 && cfg!(windows) {
+                "not identified yet: draw with it. No pressure? Turn on Windows Ink in the tablet's driver".to_string()
+            } else if self.readout.device == 0 {
                 "not identified yet: move it away from the tablet and back".to_string()
             } else {
                 key.clone()

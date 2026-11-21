@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 23:45_
+_Last updated: 2026-11-21 20:00_
 
 # Painting
 
@@ -71,3 +71,5 @@ Right click a brush of the drawing in the brush tiles to save it in **your brush
 1. Open the settings with **cmd ,** and go to **Pen**.
 2. Press on the tablet as hard as you ever draw, then click **heaviest = my peak**.
 3. If light strokes still come out too heavy, set the curve above 1.
+
+On Windows, klad reads the pen through Windows Ink. If the **Pen** bars don't move when you press, open your tablet's driver settings and turn on **Windows Ink** (Huion, Wacom and XP-Pen drivers have it as a check box). Without it the pen draws like a mouse, at full pressure.

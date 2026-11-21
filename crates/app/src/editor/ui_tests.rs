@@ -5509,6 +5509,68 @@ fn a_selected_shape_turns_into_a_repeat_and_back() {
 }
 
 #[test]
+fn a_windows_pen_lifted_in_the_frame_of_its_last_move_ends_the_stroke() {
+    let path = sample("windows-pen");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "colour");
+    let marks = |h: &Harness<'static, Editor>| h.state().scene.active_marks().len();
+    let had = marks(&h);
+    let at = |h: &Harness<'static, Editor>, x: f32| canvas_at(h, x, 150.0);
+    let touch = |phase, pos, force| egui::Event::Touch {
+        device_id: egui::TouchDeviceId(5),
+        id: egui::TouchId(1),
+        phase,
+        pos,
+        force,
+    };
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    let (a, b, c) = (at(&h, 60.0), at(&h, 120.0), at(&h, 180.0));
+    [
+        touch(egui::TouchPhase::Start, a, Some(0.4)),
+        egui::Event::PointerMoved(a),
+        button(a, true),
+    ]
+    .into_iter()
+    .for_each(|e| h.event(e));
+    h.run_steps(1);
+    [
+        touch(egui::TouchPhase::Move, b, Some(0.6)),
+        egui::Event::PointerMoved(b),
+    ]
+    .into_iter()
+    .for_each(|e| h.event(e));
+    h.run_steps(1);
+    assert!(h.state().live.is_some(), "the pen is painting");
+    [
+        touch(egui::TouchPhase::Move, c, Some(0.5)),
+        egui::Event::PointerMoved(c),
+        touch(egui::TouchPhase::End, c, None),
+        button(c, false),
+        egui::Event::PointerGone,
+    ]
+    .into_iter()
+    .for_each(|e| h.event(e));
+    h.run_steps(1);
+    settle(&mut h, |ed| ed.live.is_none());
+    assert_eq!(marks(&h), had + 1, "one stroke, lifted");
+    [
+        touch(egui::TouchPhase::Move, at(&h, 240.0), None),
+        egui::Event::PointerMoved(at(&h, 240.0)),
+    ]
+    .into_iter()
+    .for_each(|e| h.event(e));
+    h.run_steps(2);
+    assert!(h.state().live.is_none(), "hovering after the lift paints nothing");
+    assert_eq!(marks(&h), had + 1);
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn mirror_painting_makes_two_plain_strokes_in_one_step() {
     let path = sample("mirror-paint");
     let mut h = harness(editor(&path), vec2(1440.0, 1000.0));

@@ -86,6 +86,7 @@ fn used_twice(e: &anyhow::Error) -> bool {
 
 impl Home {
     fn new(cc: &eframe::CreationContext, path: Option<&Path>) -> Result<Self> {
+        crate::pen::attach(cc);
         let gpu = cc
             .wgpu_render_state
             .clone()

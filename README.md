@@ -143,7 +143,7 @@ What you build is for your own use, or your company's if it had less than 500,00
 ## What's rough
 
 - **You build it yourself.** Signed builds for macOS, Windows and Linux are planned, under the same licence as the source; [leave your email on klad.studio](https://klad.studio/pricing) to hear when they are ready.
-- **The editor is made on a Mac.** On Linux it starts and you draw with the mouse: tablets give no pressure there yet. On Windows it builds and its tests pass, but nobody has drawn with it there, so tell us what you see.
+- **The editor is made on a Mac.** On Linux it starts and you draw with the mouse: tablets give no pressure there yet. On Windows it builds, its tests pass and the pen works through Windows Ink, but it is drawn with far less than on a Mac, so tell us what you see.
 - **Some illustration basics are missing:** snapping, a grid for shapes, and SVG import and export.
 - **Bones are a preview:** their commands may still change.
 - **The file format still moves.** Drawings keep opening as klad changes: a new format version comes with a migration.
