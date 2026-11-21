@@ -6353,7 +6353,15 @@ fn first_steps_tick_as_a_shape_is_drawn_filled_and_handed_to_an_agent() {
         h.query_by_label_contains("Done. File > Close shows the samples")
             .is_some()
     );
-    assert!(super::first::prompt(&path).contains(&format!("klad render \"{}\"", path.display())));
+    let request = super::first::prompt(&path);
+    assert!(
+        request.contains(&path.display().to_string()) && !request.contains("klad render"),
+        "a plain request with the drawing's path, for an agent app's chat: {request}"
+    );
+    assert!(
+        h.query_by_label_contains("connect an agent app").is_some(),
+        "the third step connects an agent app"
+    );
     h.state_mut().invoke(Cmd::FirstSteps).unwrap();
     h.run_steps(2);
     assert!(!h.state().first.open, "Help > First steps closes them again");

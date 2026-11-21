@@ -74,6 +74,7 @@ pub struct Start {
     pub trash_to: Option<PathBuf>,
     pub samples: Vec<Sample>,
     pub tour: bool,
+    pub welcome_connect: bool,
     focused: bool,
     thumbs: BTreeMap<String, Thumb>,
     pub connect: crate::connect::Connect,
@@ -86,6 +87,31 @@ fn repaired_words(done: &klad_core::bundle::Repaired) -> String {
         .map(|r| format!("{} \"{}\" ({} is now {})", r.what, r.name, r.from, r.to))
         .collect();
     format!("repaired ids used twice: {}", names.join(", "))
+}
+
+fn way(ui: &mut egui::Ui, title: &str, text: &str, more: &str, button: &str) -> bool {
+    let mut clicked = false;
+    egui::Frame::new()
+        .fill(ui.visuals().faint_bg_color)
+        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+        .corner_radius(6)
+        .inner_margin(egui::Margin::same(12))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.set_width(331.0);
+                ui.set_min_height(140.0);
+                ui.label(RichText::new(title).strong().size(15.0));
+                ui.add_space(4.0);
+                ui.add(egui::Label::new(text).wrap());
+                ui.add_space(4.0);
+                ui.add(egui::Label::new(RichText::new(more).color(theme::WEAK)).wrap());
+                ui.add_space(10.0);
+                clicked = ui
+                    .add(crate::connect::main_button(ui, button, vec2(170.0, 30.0)))
+                    .clicked();
+            });
+        });
+    clicked
 }
 
 impl Start {
@@ -116,6 +142,7 @@ impl Start {
             trash_to: None,
             samples: samples::shipped(),
             tour: false,
+            welcome_connect: false,
             connect: crate::connect::Connect::here(),
             focused: false,
             thumbs: BTreeMap::new(),
@@ -200,17 +227,60 @@ impl Start {
         ui.group(|ui| {
             ui.set_width(726.0);
             ui.label(RichText::new("Welcome to klad").strong().size(16.0));
-            ui.add_space(4.0);
-            ui.label(
-                "New here? First steps take a few minutes: draw a shape with your pen, fill it, and hand the drawing to an agent. \
-                 Or open a sample below and look around: it opens as a copy, yours to change.",
-            );
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                if ui
-                    .add(egui::Button::new("First steps").min_size(vec2(120.0, 28.0)))
-                    .clicked()
-                {
+            if self.welcome_connect {
+                ui.label(RichText::new(format!("{} Connect your agent app", icon::LINK)).strong());
+                ui.add_space(4.0);
+                if self.connect.panel(ui, settings) {
+                    self.changed = true;
+                }
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(egui::Button::new("Back").min_size(vec2(80.0, 28.0)))
+                        .hint("back to the two ways to start")
+                        .clicked()
+                    {
+                        self.welcome_connect = false;
+                    }
+                    if ui
+                        .add(crate::connect::main_button(ui, "Done", vec2(96.0, 28.0)))
+                        .hint("closes the welcome; File > Connect an agent app\u{2026} brings this window back")
+                        .clicked()
+                    {
+                        settings.welcomed = true;
+                        self.welcome_connect = false;
+                        self.changed = true;
+                    }
+                });
+                return;
+            }
+            ui.horizontal_top(|ui| {
+                let found = self.connect.found();
+                let on_here = match found.is_empty() {
+                    true => "It works with Claude Desktop, Codex, Claude Code, Cursor and VS Code.".to_string(),
+                    false => format!(
+                        "{}: {}.",
+                        crate::connect::capital(crate::connect::here_word()),
+                        crate::connect::names(&found)
+                    ),
+                };
+                if way(
+                    ui,
+                    &format!("{} Paint with your agent app", icon::LINK),
+                    "Connect the agent app you already use, then ask it for a drawing. It paints in klad stroke by stroke, and you fix what you like by hand.",
+                    &on_here,
+                    "Connect an agent app",
+                ) {
+                    self.welcome_connect = true;
+                }
+                if way(
+                    ui,
+                    &format!("{} Draw it yourself", icon::BRUSH),
+                    "First steps take a few minutes: draw a shape with your pen or mouse, fill it, and let your agent add to it.",
+                    "Or open a sample below: it opens as a copy, yours to change.",
+                    "First steps",
+                ) {
                     match self.first_steps(settings) {
                         Ok(path) => {
                             self.tour = true;
@@ -220,7 +290,14 @@ impl Start {
                         Err(e) => self.error = Some(format!("making the first steps drawing: {e:#}")),
                     }
                 }
-                if ui.add(egui::Button::new("Not now").min_size(vec2(96.0, 28.0))).clicked() {
+            });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add(egui::Button::new("Not now").min_size(vec2(96.0, 26.0)))
+                    .hint("hides the welcome; Help > First steps and File > Connect an agent app\u{2026} stay")
+                    .clicked()
+                {
                     settings.welcomed = true;
                     self.changed = true;
                 }
@@ -229,6 +306,27 @@ impl Start {
             });
         });
         chosen
+    }
+
+    fn connect_section(&mut self, ui: &mut egui::Ui, settings: &mut Settings) {
+        let mut job = egui::text::LayoutJob::default();
+        RichText::new(format!("{} Connect an agent app", icon::LINK))
+            .strong()
+            .size(16.0)
+            .append_to(&mut job, ui.style(), egui::FontSelection::Default, egui::Align::Center);
+        if let Some(summary) = self.connect.summary() {
+            RichText::new(format!("    {summary}"))
+                .color(theme::WEAK)
+                .size(13.0)
+                .append_to(&mut job, ui.style(), egui::FontSelection::Default, egui::Align::Center);
+        }
+        egui::CollapsingHeader::new(job)
+            .id_salt("connect an agent app")
+            .show(ui, |ui| {
+                if self.connect.panel(ui, settings) {
+                    self.changed = true;
+                }
+            });
     }
 
     fn samples_section(&mut self, ui: &mut egui::Ui, settings: &mut Settings) -> Option<PathBuf> {
@@ -306,22 +404,14 @@ impl Start {
                     }
                 }
             }
+            if settings.welcomed {
+                ui.add_space(8.0);
+                self.connect_section(ui, settings);
+            }
             ui.add_space(10.0);
             chosen = chosen.take().or_else(|| self.recent_section(ui, settings));
             ui.add_space(14.0);
             chosen = chosen.take().or_else(|| self.samples_section(ui, settings));
-            ui.add_space(14.0);
-            egui::CollapsingHeader::new(
-                RichText::new(format!("{} Connect an agent app", icon::LINK))
-                    .strong()
-                    .size(16.0),
-            )
-            .id_salt("connect an agent app")
-            .show(ui, |ui| {
-                if self.connect.panel(ui, settings) {
-                    self.changed = true;
-                }
-            });
         });
         self.focused = true;
         chosen

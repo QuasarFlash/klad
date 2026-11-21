@@ -1,4 +1,4 @@
-_Last updated: 2026-11-20 15:45_
+_Last updated: 2026-11-21 13:20_
 
 # Working with an agent
 
@@ -8,12 +8,12 @@ Let an agent you already use paint into your drawings: an app such as Claude Des
 
 No terminal needed.
 
-1. Choose **File > Connect an agent app…**. On the start window, open **Connect an agent app** at the bottom.
-2. Click **connect Claude Desktop**, or Codex, Claude Code, Cursor or VS Code. klad adds itself to that app's settings and leaves the rest of them alone.
+1. The first time klad opens, click **Connect an agent app** in the welcome. Later, choose **File > Connect an agent app…**, or open **Connect an agent app** under New drawing on the start window.
+2. Each agent app on your computer has a card: Claude Desktop, Codex, Claude Code, Cursor or VS Code. Click **Connect** on yours. klad adds itself to that app's settings and leaves the rest of them alone.
 3. Quit the app and open it again. klad shows up among its tools.
-4. Ask in your own words: "Paint a red apple in a new klad drawing and open it in klad." The app may ask before it uses klad the first time: allow it.
+4. Ask in your own words: "Paint a red apple in a new klad drawing and open it in klad." **Copy** next to the example puts it on the clipboard. The app may ask before it uses klad the first time: allow it.
 
-Agents work in your drawings folder and the folders of drawings you opened lately. To let them work somewhere else, click **add a folder** in the same window.
+Agents work in your drawings folder and the folders of drawings you opened lately. To let them work somewhere else, open **Where your agent may work** in the same window and click **Add a folder…**.
 
 ## In a terminal
 
@@ -24,7 +24,7 @@ Agents work in your drawings folder and the folders of drawings you opened latel
 ## If the app doesn't see klad
 
 - Quit the app completely (cmd Q) and open it again.
-- If the Connect window says **set to a klad that was moved**, click **connect again**: klad moved since you connected it, from the disk image to Applications, say.
+- If the app's card says **klad moved since you connected it**, click **Connect again**: klad moved since you connected it, from the disk image to Applications, say.
 
 ## Point at something
 

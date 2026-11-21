@@ -523,6 +523,7 @@ impl Home {
                 if (ctx.zoom_factor() - self.settings.ui_scale).abs() > 1e-3 {
                     ctx.set_zoom_factor(self.settings.ui_scale);
                 }
+                theme::clear_hints(&ctx);
                 let start = self
                     .start
                     .get_or_insert_with(|| Start::new(&self.settings, Section::New));
@@ -699,6 +700,7 @@ mod tests {
         let settings = Settings {
             drawings: Some(dir.display().to_string()),
             documents: documents.iter().map(|p| p.display().to_string()).collect(),
+            welcomed: !documents.is_empty(),
             ..Settings::default()
         };
         Home::with(settings, None, None)
@@ -1021,7 +1023,10 @@ mod tests {
             about: "a rock on its own".into(),
             path: shipped.clone(),
         }];
-        let mut h = harness(first);
+        let mut h = Harness::builder()
+            .with_size(vec2(1280.0, 1100.0))
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first);
+        h.run_steps(3);
         assert!(
             h.query_by_label("Welcome to klad").is_some(),
             "a first start says hello"
@@ -1057,6 +1062,109 @@ mod tests {
         let h = harness(later);
         assert!(h.query_by_label("Welcome to klad").is_none());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn with_claude_desktop(h: &mut Harness<'static, Home>, dir: &Path) -> PathBuf {
+        let apps = dir.join("apps");
+        let claude = apps.join("Library/Application Support/Claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        let program = apps.join("klad");
+        std::fs::write(&program, "").unwrap();
+        let start = h.state_mut().start.as_mut().unwrap();
+        start.connect.places = Some(klad_mcp::Places {
+            home: apps.clone(),
+            os: klad_mcp::Os::Mac,
+        });
+        start.connect.program = program;
+        h.run_steps(2);
+        claude.join("claude_desktop_config.json")
+    }
+
+    #[test]
+    fn a_first_start_offers_to_connect_an_agent_app_and_connects_it_in_the_welcome() {
+        let dir = folder("welcome-agent");
+        let mut first = home(&dir, &[]);
+        first.begin(&egui::Context::default(), None);
+        let mut h = harness(first);
+        let config = with_claude_desktop(&mut h, &dir);
+        assert!(
+            h.query_by_label_contains("Paint with your agent app").is_some()
+                && h.query_by_label_contains("Draw it yourself").is_some(),
+            "a first start offers two ways in"
+        );
+        assert!(
+            h.query_by_label_contains(": Claude Desktop.").is_some(),
+            "and names the agent app it found"
+        );
+        h.get_by_label("Connect an agent app").click();
+        h.run_steps(2);
+        assert!(
+            h.query_by_label("Claude Desktop").is_some(),
+            "the connect step shows the app"
+        );
+        h.get_by_label("Back").click();
+        h.run_steps(2);
+        assert!(
+            h.query_by_label_contains("Draw it yourself").is_some(),
+            "Back shows both ways again"
+        );
+        h.get_by_label("Connect an agent app").click();
+        h.run_steps(2);
+        h.get_by_label("Connect").click();
+        h.run_steps(2);
+        let written = std::fs::read_to_string(&config).unwrap();
+        assert!(written.contains("\"klad\""), "{written}");
+        assert!(
+            h.query_by_label_contains("klad is connected to Claude Desktop")
+                .is_some()
+                && h.query_by_label_contains("Paint a red apple").is_some(),
+            "the next steps and the example request show"
+        );
+        assert!(!h.state().settings.welcomed, "connecting alone keeps the welcome open");
+        h.get_by_label("Done").click();
+        h.run_steps(3);
+        assert!(h.state().settings.welcomed);
+        assert!(h.query_by_label("Welcome to klad").is_none());
+        assert!(
+            h.query_by_label_contains("Claude Desktop connected").is_some(),
+            "the start window's agent section says it is connected while folded"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[ignore = "writes pictures of the agent onboarding to scratch/ui"]
+    fn onboarding_pictures() {
+        let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scratch/ui");
+        std::fs::create_dir_all(&out).unwrap();
+        let dir = folder("onboarding-pictures");
+        std::fs::create_dir_all(dir.join("apps/.codex")).unwrap();
+        let mut first = home(&dir, &[]);
+        first.begin(&egui::Context::default(), None);
+        let mut h = Harness::builder()
+            .with_size(vec2(1280.0, 860.0))
+            .wgpu()
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first);
+        h.run_steps(3);
+        with_claude_desktop(&mut h, &dir);
+        let snap = |h: &mut Harness<'static, Home>, name: &str| {
+            h.run_steps(4);
+            h.render()
+                .unwrap()
+                .save(out.join(format!("onboarding-{name}.png")))
+                .unwrap();
+        };
+        snap(&mut h, "1-welcome");
+        h.get_by_label("Connect an agent app").click();
+        snap(&mut h, "2-connect");
+        h.get_all_by_label("Connect").next().unwrap().click();
+        snap(&mut h, "3-connected");
+        h.get_by_label("Done").click();
+        h.run_steps(2);
+        h.get_by_label_contains("Connect an agent app").click();
+        snap(&mut h, "4-start-window");
+        drop(h);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

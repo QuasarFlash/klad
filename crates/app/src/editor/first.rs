@@ -15,9 +15,8 @@ pub(super) struct FirstSteps {
 
 pub(super) fn prompt(path: &Path) -> String {
     format!(
-        "I am drawing in klad; my drawing is {path}. Run `klad skill` and read it first. \
-         Then look at the drawing with `klad render \"{path}\"` and add a soft shadow under the shape I drew, on a new layer below it. \
-         I have the drawing open in the klad editor, so I see your edits as they land.",
+        "In my klad drawing {path}, add a soft shadow under the shape I drew, on a new layer below it. \
+         I have it open in klad, so I see your strokes as they land.",
         path = path.display()
     )
 }
@@ -76,10 +75,10 @@ impl Editor {
                     ui,
                     self.first.handed,
                     "3",
-                    "Hand it to an agent that works in a terminal (Claude Code, Codex and others): install the klad command, then copy a first request and paste it into your agent. Its edits show up here as they land.",
+                    "Let your agent add to it: connect your agent app, then paste a first request into a new chat. Its strokes show up here as they land.",
                 );
                 ui.horizontal(|ui| {
-                    self.command_button(ui, Cmd::InstallCommand, Some("install the klad command"));
+                    self.command_button(ui, Cmd::ConnectAgent, Some("connect an agent app"));
                     if ui
                         .button(format!("{} copy a request", icon::COPY))
                         .hint("a first request for your agent, with this drawing's path in it")
@@ -87,9 +86,19 @@ impl Editor {
                     {
                         ui.ctx().copy_text(prompt(&self.scene.bundle.root));
                         self.first.handed = true;
-                        self.say(Tone::Done, "copied a request: paste it into your agent");
+                        self.say(Tone::Done, "copied a request: paste it into a new chat with your agent");
                     }
                 });
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(
+                            "Your agent works in a terminal? Install the klad command from the File menu, and ask it to run klad skill first.",
+                        )
+                        .color(theme::WEAK)
+                        .small(),
+                    )
+                    .wrap(),
+                );
                 if self.first.drew && self.first.filled && self.first.handed {
                     ui.add_space(4.0);
                     ui.add(

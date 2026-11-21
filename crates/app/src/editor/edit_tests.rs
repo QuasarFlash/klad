@@ -1767,10 +1767,15 @@ fn the_connect_window_puts_klad_in_an_agent_apps_settings_and_takes_it_out() {
     h.run_steps(3);
     assert_eq!(h.state().is_on(Cmd::ConnectAgent), Some(true));
     assert!(
-        h.query_by_label("connect Codex").is_some(),
-        "every agent app is listed, Codex too though it is not here"
+        h.query_by_label("Claude Desktop").is_some(),
+        "the app on this computer has a card"
     );
-    h.get_by_label("connect Claude Desktop").click();
+    assert!(
+        h.query_by_label_contains("Also works with Codex").is_some(),
+        "the apps that are not here are named in one line"
+    );
+    assert!(h.query_by_label("Codex").is_none(), "and get no card of their own");
+    h.get_by_label("Connect").click();
     h.run_steps(3);
     let config = std::fs::read_to_string(claude.join("claude_desktop_config.json")).unwrap();
     assert!(
@@ -1778,17 +1783,22 @@ fn the_connect_window_puts_klad_in_an_agent_apps_settings_and_takes_it_out() {
         "{config}"
     );
     assert!(
-        h.query_by_label_contains("quit Claude Desktop").is_some(),
+        h.query_by_label_contains("klad is connected to Claude Desktop")
+            .is_some()
+            && h.query_by_label_contains("Quit Claude Desktop").is_some(),
         "it says what to do next"
     );
-    h.get_by_label("disconnect Claude Desktop").click();
+    h.get_by_label_contains("Copy").click();
+    h.run_steps(2);
+    assert!(
+        h.query_by_label_contains("Copied").is_some(),
+        "the example request is copied"
+    );
+    h.get_by_label("Disconnect").click();
     h.run_steps(3);
     let config = std::fs::read_to_string(claude.join("claude_desktop_config.json")).unwrap();
     assert!(!config.contains("\"klad\""), "{config}");
-    assert!(
-        h.query_by_label("connect Claude Desktop").is_some(),
-        "and it can connect again"
-    );
+    assert!(h.query_by_label("Connect").is_some(), "and it can connect again");
     let _ = std::fs::remove_dir_all(&home);
     let _ = std::fs::remove_dir_all(&path);
 }
