@@ -3206,13 +3206,22 @@ fn merging_the_lemons_keeps_each_lemons_alpha_locked_strokes_on_that_lemon() {
             args,
             String::from_utf8_lossy(&out.stderr)
         );
-        String::from_utf8_lossy(&out.stderr).to_string()
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
     };
     run(&["render", path, "-o", "before.png"]);
     let said = run(&["merge", path, "lemon-a", "lemon-b"]);
     assert!(
         said.contains("alpha-locked marks keep to the paint of their own layer"),
         "{said}"
+    );
+    assert!(
+        said.contains("more (--json lists every one)") && said.len() < 2000,
+        "merging thousands of strokes says so in a few lines: {} bytes",
+        said.len()
     );
     run(&["render", path, "-o", "after.png"]);
     let out = Command::new(env!("CARGO_BIN_EXE_klad"))

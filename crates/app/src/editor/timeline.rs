@@ -160,7 +160,8 @@ fn span_of(
     anchor: (u32, usize),
 ) -> Option<Span> {
     let (a, b) = (first.min(last), first.max(last));
-    let ids: Vec<String> = rows[a..=b.min(rows.len().saturating_sub(1))]
+    let ids: Vec<String> = rows
+        .get(a..=b.min(rows.len().saturating_sub(1)))?
         .iter()
         .filter(|r| matches!(r.kind, Kind::Paint | Kind::Vector))
         .map(|r| r.id.clone())
@@ -885,8 +886,8 @@ impl Editor {
         let last = self.scene.bundle.doc.timeline.frames - 1;
         self.timeline.span = span_of(&rows, (0, last), (0, rows.len().saturating_sub(1)), (0, 0));
         self.focus = super::Focus::Timeline;
-        if let Some(span) = &self.timeline.span {
-            self.say(
+        match &self.timeline.span {
+            Some(span) => self.say(
                 Tone::Done,
                 format!(
                     "selected frames 0 to {last} of {}: cmd C copies them, cmd D repeats them after themselves",
@@ -895,7 +896,8 @@ impl Editor {
                         n => format!("{n} layers"),
                     }
                 ),
-            );
+            ),
+            None => self.say(Tone::Refused, "no frames to select: add a paint or vector layer first"),
         }
     }
 

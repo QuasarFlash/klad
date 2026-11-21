@@ -61,6 +61,8 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 - A brush taken out of your brushes in one drawing no longer gives an error in another drawing that still listed it; that drawing keeps its own copy.
 - Merging layers painted with lock alpha no longer lets the strokes of one layer paint over the other: each stroke stays on the paint of the layer it came from, so the picture looks as it did before the merge.
 - Moving everything on a layer (select all, then drag) follows the pen however many strokes it holds, alpha-locked and thick oil strokes too, and lands about three times faster when you let go.
+- Select all frames in a drawing with no layers left closed klad; it now says to add a paint or vector layer first.
+- `klad merge` of large layers lists the first few strokes it copied instead of thousands, so an agent's answer stays short; `--json` still lists every one.
 
 ## 0.4.0 (2026-11-19)
 

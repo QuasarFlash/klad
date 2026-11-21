@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 pub const PREVIEW_SIDE: f32 = 1024.0;
 pub const PIXEL_SIDE: f32 = 512.0;
 const STRING_KEYS: [&str; 5] = ["name", "d", "id", "link", "text"];
+const COPIED_LISTED: usize = 8;
 
 pub struct Output {
     pub json: bool,
@@ -625,8 +626,20 @@ fn report(bundle: &Bundle, applied: &Applied, render: Option<PathBuf>, out: &Out
             println!("lasso on {} {verb} {}", p.layer, ids.join(" "));
         });
     if !copied.is_empty() {
-        let pairs: Vec<String> = copied.iter().map(|(from, to)| format!("{from} -> {to}")).collect();
-        println!("copied {}", pairs.join(", "));
+        let pairs: Vec<String> = copied
+            .iter()
+            .take(COPIED_LISTED)
+            .map(|(from, to)| format!("{from} -> {to}"))
+            .collect();
+        let more = copied.len().saturating_sub(COPIED_LISTED);
+        match more {
+            0 => println!("copied {}", pairs.join(", ")),
+            _ => println!(
+                "copied {} marks: {}, and {more} more (--json lists every one)",
+                copied.len(),
+                pairs.join(", ")
+            ),
+        }
     }
     applied.notes.iter().for_each(|n| println!("{n}"));
     applied.added.iter().for_each(|id| println!("added {id}"));

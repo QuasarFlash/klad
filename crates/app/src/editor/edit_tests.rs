@@ -1481,6 +1481,20 @@ fn stepping_past_the_last_layer_and_pasting_a_look_onto_its_own_shape_say_why() 
 }
 
 #[test]
+fn select_all_frames_with_no_layer_left_says_why() {
+    let path = sample("frames-no-layer");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    let layers = h.state().scene.bundle.doc.layers.len();
+    (0..layers).for_each(|_| h.state_mut().invoke(Cmd::DeleteLayer).unwrap());
+    h.run_steps(2);
+    h.state_mut().invoke(Cmd::SelectAllFrames).unwrap();
+    h.run_steps(1);
+    assert!(h.state().timeline.span.is_none());
+    assert!(said(&h).contains("no frames to select"), "{}", said(&h));
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn select_all_leaves_out_the_eraser_riding_on_a_stroke_and_delete_takes_both() {
     let path = sample("select-all-eraser");
     let mut h = harness(editor(&path), vec2(1440.0, 900.0));
