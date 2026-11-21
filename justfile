@@ -40,6 +40,9 @@ itch-mac:
 icon: compile
     KLAD={{klad}} bash packaging/icon/build.sh
 
+hello: compile
+    KLAD={{klad}} bash packaging/icon/hello.sh "$(mktemp -d)"
+
 formats version: compile
     bash packaging/formats.sh {{klad}} {{version}}
 

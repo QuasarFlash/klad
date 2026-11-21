@@ -1,4 +1,4 @@
-_Last updated: 2026-11-21 13:20_
+_Last updated: 2026-11-21 20:30_
 
 # Working with an agent
 
@@ -8,7 +8,7 @@ Let an agent you already use paint into your drawings: an app such as Claude Des
 
 No terminal needed.
 
-1. The first time klad opens, click **Connect an agent app** in the welcome. Later, choose **File > Connect an agent app…**, or open **Connect an agent app** under New drawing on the start window.
+1. The first time klad opens, click **Get started** in the welcome: its second screen connects your agent app. Later, choose **File > Connect an agent app…**, or **Help > Welcome to klad** to see the welcome again.
 2. Each agent app on your computer has a card: Claude Desktop, Codex, Claude Code, Cursor or VS Code. Click **Connect** on yours. klad adds itself to that app's settings and leaves the rest of them alone.
 3. Quit the app and open it again. klad shows up among its tools.
 4. Ask in your own words: "Paint a red apple in a new klad drawing and open it in klad." **Copy** next to the example puts it on the clipboard. The app may ask before it uses klad the first time: allow it.

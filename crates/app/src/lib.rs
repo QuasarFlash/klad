@@ -26,6 +26,7 @@ mod sync;
 mod theme;
 pub mod updates;
 mod view;
+mod welcome;
 
 pub use home::run;
 

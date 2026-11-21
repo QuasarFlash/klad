@@ -254,6 +254,7 @@ pub enum Cmd {
     CloseDocument,
     Quit,
     FirstSteps,
+    Welcome,
     PickAllLayers,
     FillShape,
     OutlineShape,
@@ -601,7 +602,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 273] = [
+    pub const ALL: [Cmd; 274] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -832,6 +833,7 @@ impl Cmd {
         Cmd::CloseDocument,
         Cmd::Quit,
         Cmd::FirstSteps,
+        Cmd::Welcome,
         Cmd::PickAllLayers,
         Cmd::FillShape,
         Cmd::OutlineShape,
@@ -3302,6 +3304,15 @@ impl Cmd {
                 R::No,
                 "an email to klad's support in your email app, with the version and your system filled in",
             ),
+            Cmd::Welcome => spec(
+                "help.welcome",
+                "welcome to klad",
+                icon::SPARKLE,
+                G::Panels,
+                T::None,
+                R::No,
+                "the three welcome screens again: klad, connecting your agent app, the first steps",
+            ),
             Cmd::Guides => spec(
                 "help.guides",
                 "guides",
@@ -3603,6 +3614,7 @@ impl Cmd {
             Cmd::CloseDocument => "Close",
             Cmd::Quit => "Quit klad",
             Cmd::FirstSteps => "First steps",
+            Cmd::Welcome => "Welcome to klad",
             Cmd::PickAllLayers => "Pick from all layers",
             Cmd::FillShape => "Fill with colour",
             Cmd::OutlineShape => "Outline with colour",
@@ -4074,6 +4086,7 @@ pub const MENUS: [Menu; 9] = [
     Menu {
         title: "Help",
         items: &[
+            Run(Cmd::Welcome),
             Run(Cmd::FirstSteps),
             Run(Cmd::Guides),
             Run(Cmd::WhatsNew),
@@ -4144,6 +4157,7 @@ pub fn other_names(cmd: Cmd) -> &'static [&'static str] {
         Cmd::FlipH | Cmd::FlipV => &["mirror the selection"],
         Cmd::TransformLayer => &["free transform", "scale the layer", "rotate the layer"],
         Cmd::FirstSteps => &["help", "tutorial", "getting started"],
+        Cmd::Welcome => &["onboarding", "introduction", "start again"],
         Cmd::Guides => &["help", "manual", "documentation"],
         Cmd::InspectorPane => &["opacity", "transparency", "blend mode", "layer properties"],
         Cmd::Eyedropper => &["eyedropper", "colour picker", "sample colour"],

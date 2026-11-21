@@ -928,9 +928,10 @@ fn start(out: &mut Vec<String>) {
         out.push(section(name, how, &rows, &[], &lists));
     };
     let mut h = home(false);
+    h.run_steps(60);
     record(
-        "start window: the first launch",
-        "klad started with fresh settings.",
+        "welcome: the first launch",
+        "klad started with fresh settings: the welcome's first screen, once the K is painted.",
         &mut h,
     );
     let mut h = home(true);

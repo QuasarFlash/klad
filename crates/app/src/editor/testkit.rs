@@ -97,6 +97,14 @@ impl Journey {
     }
 
     pub(super) fn begin_scaled(name: &str, size: Vec2, open: Option<&str>, scale: f32) -> Self {
+        Self::start(name, size, open, scale, true)
+    }
+
+    pub(super) fn first_launch(name: &str, size: Vec2) -> Self {
+        Self::start(name, size, None, 1.0, false)
+    }
+
+    fn start(name: &str, size: Vec2, open: Option<&str>, scale: f32, welcomed: bool) -> Self {
         let folder = scratch(name);
         let out = std::env::var_os("KLAD_JOURNEY_OUT")
             .filter(|dir| !dir.is_empty())
@@ -115,6 +123,7 @@ impl Journey {
             drawings: Some(folder.display().to_string()),
             check_updates: false,
             ui_scale: scale,
+            welcomed,
             ..Settings::default()
         };
         let mut home = Home::with(settings, None, gpu.clone());

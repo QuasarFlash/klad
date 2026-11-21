@@ -14,7 +14,7 @@ Keys are written the way a Mac shows them. On Windows and Linux, cmd is ctrl.
 
 ![The start window, with recent drawings and the samples](../images/start-window.png)
 
-1. Start klad and press **cmd N**.
+1. Start klad and press **cmd N**. The first time, a welcome comes first: it connects your agent app and offers the first steps. Skip it with **Esc**.
 2. Type a name and click **Create**.
 
 There's nothing to save: klad writes every change to the drawing as you make it. **cmd S** says so, and where the drawing is.

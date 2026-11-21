@@ -1335,6 +1335,7 @@ impl Editor {
             Cmd::CopyMerged => self.copy_merged()?,
             Cmd::CloseDocument => self.wants = Some(super::Want::Close),
             Cmd::FirstSteps => self.first.open = !self.first.open,
+            Cmd::Welcome => self.wants = Some(super::Want::Welcome),
             Cmd::Quit => self.ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Cmd::OpenDocument => self.wants = Some(super::Want::Open),
             Cmd::OpenRecent => self.wants = Some(super::Want::Recent),

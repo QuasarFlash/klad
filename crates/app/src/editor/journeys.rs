@@ -55,9 +55,19 @@ fn pngs(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 
 #[test]
 fn the_first_ten_minutes_of_someone_who_draws() {
-    let mut j = Journey::begin("first-ten-minutes-draw", WINDOW, None);
+    let mut j = Journey::first_launch("first-ten-minutes-draw", WINDOW);
 
-    j.act("klad starts");
+    j.act("klad starts for the first time: the welcome");
+    j.settle();
+    let welcomed = j.shown("Get started");
+    j.expect("welcome-first", welcomed, "the first start opens on the welcome");
+    j.look("welcome");
+
+    j.act("someone who draws by hand goes through the welcome and skips the agent and the first steps");
+    ["Get started", "Skip", "Skip"].into_iter().for_each(|button| {
+        j.click(button);
+        j.settle();
+    });
     j.look("start");
     let can_start = j.shown("Name") && j.shown("Create");
     j.expect("start-offers-new", can_start, "the start window offers a new drawing");
@@ -604,9 +614,16 @@ fn the_first_ten_minutes_of_someone_who_edits_what_an_agent_painted() {
 
 #[test]
 fn the_first_ten_minutes_of_someone_who_makes_pixel_art() {
-    let mut j = Journey::begin("first-ten-minutes-pixel", WINDOW, None);
+    let mut j = Journey::first_launch("first-ten-minutes-pixel", WINDOW);
 
-    j.act("klad starts; choose pixel art");
+    j.act("klad starts for the first time; leave the welcome with Esc");
+    j.settle();
+    j.key(Key::Escape);
+    j.settle();
+    let left = !j.shown("Get started") && j.shown("Pixel art");
+    j.expect("welcome-escape", left, "Esc leaves the welcome for the start window");
+
+    j.act("choose pixel art");
     j.click("Pixel art");
     j.look("pixel-start");
 

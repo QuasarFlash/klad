@@ -824,6 +824,7 @@ pub(crate) enum Want {
     Gone,
     Path(std::path::PathBuf),
     Cycle(i32),
+    Welcome,
 }
 
 pub(crate) struct Editor {

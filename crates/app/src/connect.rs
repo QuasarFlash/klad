@@ -9,6 +9,7 @@ pub(crate) struct Connect {
     pub program: PathBuf,
     pub said: Option<Said>,
     copied: bool,
+    steps_height: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -23,6 +24,7 @@ pub(crate) const EXAMPLE: &str = "Paint a red apple in a new klad drawing and op
 const INTRO: &str = "Your agent app can draw in klad: Claude Desktop, Codex and others. It paints stroke by stroke while you watch, and you can fix any stroke by hand.";
 
 const CARD: f32 = 470.0;
+const OPENING: f32 = 0.22;
 
 pub(crate) fn here_word() -> &'static str {
     match cfg!(target_os = "macos") {
@@ -49,6 +51,7 @@ impl Connect {
             program: if sibling.is_file() { sibling } else { exe },
             said: None,
             copied: false,
+            steps_height: 150.0,
         }
     }
 
@@ -56,29 +59,6 @@ impl Connect {
         self.places.as_ref().map_or_else(Vec::new, |places| {
             App::ALL.into_iter().map(|app| (app, app.status(places))).collect()
         })
-    }
-
-    pub fn found(&self) -> Vec<App> {
-        self.statuses()
-            .into_iter()
-            .filter(|(_, s)| !matches!(s, Status::Missing))
-            .map(|(app, _)| app)
-            .collect()
-    }
-
-    pub fn summary(&self) -> Option<String> {
-        let statuses = self.statuses();
-        let connected: Vec<App> = statuses
-            .iter()
-            .filter(|(_, s)| matches!(s, Status::Connected(_)))
-            .map(|(a, _)| *a)
-            .collect();
-        let found = self.found();
-        match (connected.is_empty(), found.is_empty()) {
-            (false, _) => Some(format!("{} connected", names(&connected))),
-            (true, false) => Some(format!("{} {}", names(&found), here_word())),
-            (true, true) => None,
-        }
     }
 
     fn act(&mut self, app: App, places: &Places, connect: bool) {
@@ -96,11 +76,21 @@ impl Connect {
         });
     }
 
+    pub fn any_connected(&self) -> bool {
+        self.statuses().iter().any(|(_, s)| matches!(s, Status::Connected(_)))
+    }
+
     pub fn panel(&mut self, ui: &mut egui::Ui, settings: &mut Settings) -> bool {
         let width = ui.available_width().min(CARD);
         ui.set_max_width(width);
         ui.add(egui::Label::new(INTRO).wrap());
         ui.add_space(8.0);
+        self.chooser(ui, width);
+        ui.add_space(8.0);
+        folders(ui, settings)
+    }
+
+    pub fn chooser(&mut self, ui: &mut egui::Ui, width: f32) {
         match self.places.clone() {
             Some(places) => self.apps(ui, &places, width),
             None => {
@@ -110,12 +100,27 @@ impl Connect {
                 );
             }
         }
-        if let Some(said) = self.said.clone() {
-            ui.add_space(6.0);
-            self.next_steps(ui, &said, width);
+        let open =
+            ui.ctx()
+                .animate_bool_with_time(egui::Id::unique("connect next steps"), self.said.is_some(), OPENING);
+        let Some(said) = self.said.clone().filter(|_| open > 0.0) else {
+            return;
+        };
+        let eased = 1.0 - (1.0 - open).powi(3);
+        let (room, _) = ui.allocate_exact_size(vec2(width, self.steps_height * eased), egui::Sense::hover());
+        let mut inner = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(egui::Rect::from_min_size(room.min, vec2(width, f32::INFINITY)))
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        inner.set_clip_rect(room.intersect(ui.clip_rect()));
+        inner.multiply_opacity(open);
+        inner.add_space(6.0);
+        self.next_steps(&mut inner, &said, width);
+        self.steps_height = inner.min_rect().height();
+        if open < 1.0 {
+            ui.ctx().request_repaint();
         }
-        ui.add_space(8.0);
-        folders(ui, settings)
     }
 
     fn apps(&mut self, ui: &mut egui::Ui, places: &Places, width: f32) {
@@ -251,6 +256,15 @@ fn card(ui: &mut egui::Ui, app: App, status: &Status, width: f32) -> Option<bool
         ),
     };
     let mut clicked = false;
+    let on = ui.ctx().animate_bool_with_time(
+        egui::Id::unique(("connected", app.name())),
+        matches!(status, Status::Connected(_)),
+        0.24,
+    );
+    let colour = match status {
+        Status::Connected(_) => theme::WEAK.lerp_to_gamma(colour, on),
+        _ => colour,
+    };
     framed(ui, width, |ui| {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
