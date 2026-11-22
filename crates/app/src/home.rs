@@ -1140,9 +1140,14 @@ mod tests {
         settle(&mut h);
         assert!(h.query_by_label_contains("Take the first steps").is_some());
         assert!(
-            ["Draw a shape", "Fill it", "Let your agent add to it"]
-                .iter()
-                .all(|chip| h.query_by_label(chip).is_some())
+            [
+                "Paint and erase",
+                "Fill a shape",
+                "Reshape a stroke",
+                "Your agent changes it"
+            ]
+            .iter()
+            .all(|chip| h.query_by_label(chip).is_some())
         );
         h.get_by_label("Back").click();
         settle(&mut h);
@@ -1163,7 +1168,7 @@ mod tests {
         assert!(h.state().settings.welcomed);
         assert!(h.state().welcome.is_none());
         assert!(
-            h.query_by_label_contains("Draw a closed shape with the brush")
+            h.query_by_label_contains("Paint a closed shape with the brush")
                 .is_some(),
             "first steps open on the new drawing"
         );
@@ -1363,6 +1368,18 @@ mod tests {
         film(&mut h, 36, Some("4-first-steps"));
         h.get_by_label("Skip").click();
         film(&mut h, 24, Some("5-start-window"));
+        menus::push(Picked::Run(Cmd::Welcome));
+        h.run_steps(60);
+        (0..2).for_each(|_| {
+            h.key_press(egui::Key::Enter);
+            h.run_steps(36);
+        });
+        h.get_by_label("Start first steps").click();
+        h.run_steps(30);
+        h.render()
+            .unwrap()
+            .save(out.join("onboarding-6-first-steps-drawing.png"))
+            .unwrap();
         drop(h);
         let _ = std::fs::remove_dir_all(&dir);
     }

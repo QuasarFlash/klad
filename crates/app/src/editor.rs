@@ -3389,6 +3389,7 @@ impl Editor {
             .chain(bent.iter().map(|shaped| set(&shaped.node, &shaped.subs)))
             .collect();
         self.apply(ops)?;
+        self.first.reshaped = true;
         let rev = self.scene.bundle.doc.rev;
         self.shaped = Some(Shaped {
             node: id,
@@ -4046,7 +4047,10 @@ impl Editor {
         self.dirty.extend(touched);
         let saving = Instant::now();
         let bytes = self.scene.save_active("stroke")?;
-        self.first.drew |= !erasing;
+        match erasing {
+            true => self.first.erased = true,
+            false => self.first.painted += 1,
+        }
         if !erasing {
             self.used_colour();
         }

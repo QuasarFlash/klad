@@ -50,4 +50,4 @@ Every stroke stays editable like this, hours later too: see [Changing strokes](s
 - **R** and **shift R** turn the view, and so does a two-finger twist (hold **shift** for steps of 15 degrees). Click **upright** at the top of the canvas, or press **alt R**, to put it back.
 - Right click the canvas for copy, paste and **Move to new layer**.
 
-**Help > First steps** in the editor walks you through a shape, a fill and an agent.
+**Help > First steps** in the editor walks you through what klad does: paint a shape and erase part of it, paint and fill a second one, reshape the first stroke, and let your agent change it.

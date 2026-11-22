@@ -29,12 +29,14 @@ pub(crate) const STAGE: Color32 = Color32::from_gray(27);
 pub(crate) const LINE: &str = "Paint by hand or let your agent paint.\nEvery stroke stays yours to change.";
 pub(crate) const AGENT_LINE: &str =
     "Your agent app paints in klad while you watch, and you can fix any stroke by hand.";
-pub(crate) const STEPS_LINE: &str = "A few minutes in a drawing made for it: draw a shape with your pen or mouse, fill it, and let your agent add to it.";
-const CHIPS: [(&str, &str); 3] = [
-    (icon::PEN, "Draw a shape"),
-    (icon::FILL, "Fill it"),
-    (icon::SPARKLE, "Let your agent add to it"),
+pub(crate) const STEPS_LINE: &str = "A few minutes in a drawing made for it: paint and erase with your pen or mouse, fill a shape, reshape a stroke you painted, and let your agent change it.";
+const CHIPS: [(&str, &str); 4] = [
+    (icon::BRUSH, "Paint and erase"),
+    (icon::FILL, "Fill a shape"),
+    (icon::POINTS, "Reshape a stroke"),
+    (icon::SPARKLE, "Your agent changes it"),
 ];
+const CHIP: f32 = 90.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Step {
@@ -474,7 +476,8 @@ impl Welcome {
     fn steps(&mut self, ui: &mut egui::Ui, now: f64) -> Option<Act> {
         self.title(ui, now, &format!("{} Take the first steps", icon::BRUSH), STEPS_LINE);
         ui.horizontal(|ui| {
-            let width = 3.0 * 140.0 + 2.0 * ui.spacing().item_spacing.x;
+            let count = CHIPS.len() as f32;
+            let width = count * (CHIP + 20.0) + (count - 1.0) * ui.spacing().item_spacing.x;
             ui.add_space(((ui.available_width() - width) / 2.0).max(0.0));
             CHIPS.iter().enumerate().for_each(|(k, (glyph, words))| {
                 self.appear(ui, now, STAGGER * (2.0 + 1.6 * k as f64), |ui| {
@@ -484,7 +487,7 @@ impl Welcome {
                         .corner_radius(8)
                         .inner_margin(egui::Margin::symmetric(10, 12))
                         .show(ui, |ui| {
-                            ui.set_width(120.0);
+                            ui.set_width(CHIP);
                             ui.set_min_height(78.0);
                             ui.vertical_centered(|ui| {
                                 ui.label(RichText::new(*glyph).size(24.0).color(theme::ACCENT));

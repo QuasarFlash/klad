@@ -3131,7 +3131,7 @@ impl Cmd {
                 G::Panels,
                 T::None,
                 R::No,
-                "three steps for someone new: draw a shape, fill it, hand the drawing to an agent",
+                "six steps for someone new: paint and erase, fill a shape, reshape a stroke, let your agent change it",
             ),
             Cmd::CloseDocument => spec(
                 "file.close",

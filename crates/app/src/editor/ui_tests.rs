@@ -6354,14 +6354,14 @@ fn a_text_open_for_editing_is_never_saved_hidden() {
 }
 
 #[test]
-fn first_steps_tick_as_a_shape_is_drawn_filled_and_handed_to_an_agent() {
+fn first_steps_tick_as_strokes_are_painted_erased_filled_reshaped_and_handed_to_an_agent() {
     let path = sample("first-steps");
     let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
     activate(&mut h, "colour");
     h.state_mut().start_first_steps();
     h.run_steps(2);
     assert!(
-        h.query_by_label_contains("Draw a closed shape with the brush")
+        h.query_by_label_contains("Paint a closed shape with the brush")
             .is_some()
     );
     let first = || super::first::FirstSteps {
@@ -6369,60 +6369,126 @@ fn first_steps_tick_as_a_shape_is_drawn_filled_and_handed_to_an_agent() {
         ..Default::default()
     };
     assert_eq!(h.state().first, first());
+    let paint = |h: &mut Harness<'static, Editor>, corners: &[(f32, f32)]| {
+        let line: Vec<(f32, f32)> = corners
+            .windows(2)
+            .flat_map(|w| {
+                (0..8)
+                    .map(move |k| k as f32 / 8.0)
+                    .map(move |t| (w[0].0 + (w[1].0 - w[0].0) * t, w[0].1 + (w[1].1 - w[0].1) * t))
+            })
+            .chain(corners.last().copied())
+            .collect();
+        h.hover_at(canvas_at(h, line[0].0, line[0].1));
+        h.run_steps(1);
+        h.drag_at(canvas_at(h, line[0].0, line[0].1));
+        h.run_steps(1);
+        line.iter().skip(1).for_each(|(x, y)| {
+            h.hover_at(canvas_at(h, *x, *y));
+            h.run_steps(1);
+        });
+        let (x, y) = line[line.len() - 1];
+        h.drop_at(canvas_at(h, x, y));
+        h.run_steps(3);
+        settle(h, |ed| !ed.writing());
+    };
+    let click = |h: &mut Harness<'static, Editor>, at: egui::Pos2| {
+        h.hover_at(at);
+        h.run_steps(1);
+        [true, false].into_iter().for_each(|pressed| {
+            h.event(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+            h.run_steps(1);
+        });
+        settle(h, |ed| !ed.writing());
+    };
     h.key_press(Key::B);
     h.run_steps(1);
-    let ring = [
-        (150.0, 120.0),
-        (260.0, 110.0),
-        (290.0, 220.0),
-        (170.0, 250.0),
-        (150.0, 120.0),
-    ];
-    h.hover_at(canvas_at(&h, ring[0].0, ring[0].1));
-    h.run_steps(1);
-    h.drag_at(canvas_at(&h, ring[0].0, ring[0].1));
-    h.run_steps(1);
-    ring.iter().skip(1).for_each(|(x, y)| {
-        h.hover_at(canvas_at(&h, *x, *y));
-        h.run_steps(1);
-    });
-    h.drop_at(canvas_at(&h, ring[4].0, ring[4].1));
-    h.run_steps(3);
-    settle(&mut h, |ed| !ed.writing());
+    paint(
+        &mut h,
+        &[
+            (150.0, 120.0),
+            (260.0, 110.0),
+            (290.0, 220.0),
+            (170.0, 250.0),
+            (150.0, 120.0),
+        ],
+    );
     assert_eq!(h.state().scene.active_marks().len(), 1);
-    assert!(h.state().first.drew, "a stroke ticks the first step");
+    assert_eq!(h.state().first.painted, 1, "a stroke ticks the first step");
+    h.key_press(Key::E);
+    h.run_steps(1);
+    paint(&mut h, &[(250.0, 160.0), (275.0, 165.0), (300.0, 170.0)]);
+    assert!(h.state().first.erased, "an eraser stroke ticks the second step");
+    assert_eq!(h.state().first.painted, 1, "erasing is not painting");
+    h.key_press(Key::B);
+    h.run_steps(1);
+    paint(
+        &mut h,
+        &[
+            (330.0, 265.0),
+            (460.0, 262.0),
+            (470.0, 360.0),
+            (340.0, 368.0),
+            (330.0, 265.0),
+        ],
+    );
+    assert_eq!(h.state().first.painted, 2, "a second stroke ticks the third step");
     assert!(!h.state().first.filled);
     h.key_press(Key::G);
     h.run_steps(1);
-    let inside = canvas_at(&h, 215.0, 175.0);
-    h.hover_at(inside);
-    h.run_steps(1);
-    [true, false].into_iter().for_each(|pressed| {
-        h.event(egui::Event::PointerButton {
-            pos: inside,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: Modifiers::NONE,
-        });
-        h.run_steps(1);
-    });
-    settle(&mut h, |ed| !ed.writing());
-    assert!(h.state().first.filled, "a fill ticks the second step");
+    let inside = canvas_at(&h, 400.0, 315.0);
+    click(&mut h, inside);
+    assert!(h.state().first.filled, "a fill ticks the fourth step");
+    assert!(!h.state().first.reshaped);
+    h.key_press(Key::A);
+    h.run_steps(2);
+    let line = canvas_at(&h, 150.0, 120.0);
+    click(&mut h, line);
+    let ring = h.state().direct.as_ref().map(|d| d.node.clone());
+    assert_eq!(ring.as_deref().map(|n| n.ends_with(":s1")), Some(true), "{ring:?}");
+    let point = h.state().shaped.as_ref().unwrap().subs[0].anchors[0].at;
+    let view = h.state().view.unwrap();
+    let rect = h.state().canvas_rect;
+    let at = rect.min + view.to_screen(egui::Vec2::new(point[0], point[1]), rect.size());
+    drag(&mut h, at, at + vec2(-40.0, 0.0));
+    settle(&mut h, |ed| ed.point_drag.is_none() && ed.path_commit.is_none());
+    h.run_steps(2);
+    assert!(
+        h.state().first.reshaped,
+        "reshaping the first stroke ticks the fifth step"
+    );
+    let shared = klad_core::notes::read_selection(&h.state().scene.bundle).map(|s| s.nodes);
+    assert_eq!(
+        shared,
+        ring.map(|n| vec![n]),
+        "the reshaped stroke is the selection the agent reads"
+    );
+    assert!(
+        h.query_by_label_contains("Done. File > Close shows the samples")
+            .is_none()
+    );
     h.get_by_label_contains("copy a request").click();
     h.run_steps(2);
-    assert!(h.state().first.handed, "copying the request ticks the third");
+    assert!(h.state().first.handed, "copying the request ticks the sixth");
     assert!(
         h.query_by_label_contains("Done. File > Close shows the samples")
             .is_some()
     );
     let request = super::first::prompt(&path);
     assert!(
-        request.contains(&path.display().to_string()) && !request.contains("klad render"),
-        "a plain request with the drawing's path, for an agent app's chat: {request}"
+        request.contains(&path.display().to_string())
+            && request.contains("the stroke I have selected")
+            && !request.contains("klad render"),
+        "a plain request about the picked stroke with the drawing's path, for an agent app's chat: {request}"
     );
     assert!(
         h.query_by_label_contains("connect an agent app").is_some(),
-        "the third step connects an agent app"
+        "the last step connects an agent app"
     );
     h.state_mut().invoke(Cmd::FirstSteps).unwrap();
     h.run_steps(2);

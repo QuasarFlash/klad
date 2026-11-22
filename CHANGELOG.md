@@ -38,6 +38,7 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 
 ### Changed
 
+- **Help > First steps** shows what klad does in six steps: paint a shape and erase part of it, paint and fill a second one, reshape the first stroke with edit points (the erased part bends with it), and let your agent change that stroke.
 - Opening a drawing keeps the one you were in open, in a tab, instead of closing it.
 - The bone tool's weights bar: the mode buttons, then size and weight; strength, hardness, pressure, the legend, **automatic** and **smooth all** under **⋯**.
 - The export window has a format row for pictures and its own pages for PDF and video; the GIF window also writes animated WebP.
