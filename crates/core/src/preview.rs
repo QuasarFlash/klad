@@ -11,7 +11,8 @@ pub const PREVIEW: &str = "Preview.png";
 pub const THUMBNAIL: &str = "Thumbnail.png";
 pub const PREVIEW_SIDE: f32 = 1024.0;
 pub const THUMBNAIL_SIDE: f32 = 512.0;
-const IGNORED: &str = "QuickLook/";
+pub const EXPLORER: &str = "folder.jpg";
+pub const IGNORED: [&str; 2] = ["QuickLook/", "folder.jpg"];
 
 fn stamp(root: &Path) -> PathBuf {
     root.join(".cache").join("preview")
@@ -37,15 +38,22 @@ pub fn made(root: &Path, fingerprint: u64) -> Result<()> {
 
 pub fn ignore(root: &Path) -> Result<()> {
     let path = root.join(".gitignore");
-    let mut text = fs::read_to_string(&path).unwrap_or_default();
-    if text.lines().any(|line| line.trim() == IGNORED) {
+    let text = fs::read_to_string(&path).unwrap_or_default();
+    let missing: Vec<&str> = IGNORED
+        .into_iter()
+        .filter(|ignored| !text.lines().any(|line| line.trim() == *ignored))
+        .collect();
+    if missing.is_empty() {
         return Ok(());
     }
+    let mut text = text;
     if !text.is_empty() && !text.ends_with('\n') {
         text.push('\n');
     }
-    text.push_str(IGNORED);
-    text.push('\n');
+    missing.iter().for_each(|line| {
+        text.push_str(line);
+        text.push('\n');
+    });
     write_atomic(&path, text.as_bytes())
 }
 
@@ -90,13 +98,17 @@ mod tests {
                 .map(str::to_string)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(lines(&dir), [".cache/", "QuickLook/"], "a new drawing ignores both");
+        assert_eq!(
+            lines(&dir),
+            [".cache/", "QuickLook/", "folder.jpg"],
+            "a new drawing ignores them"
+        );
         fs::write(dir.join(".gitignore"), ".cache/\nmine").unwrap();
         ignore(&dir).unwrap();
         ignore(&dir).unwrap();
         assert_eq!(
             lines(&dir),
-            [".cache/", "mine", "QuickLook/"],
+            [".cache/", "mine", "QuickLook/", "folder.jpg"],
             "added once, after the lines kept"
         );
         let _ = fs::remove_dir_all(&dir);

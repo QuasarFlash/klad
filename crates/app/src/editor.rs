@@ -1348,7 +1348,7 @@ impl Editor {
     }
 
     pub(crate) fn say(&mut self, tone: Tone, text: impl Into<String>) {
-        let text = text.into();
+        let text = crate::commands::local_keys(&text.into());
         if tone == Tone::Error {
             crate::report::log(&format!("editor: {text}"));
         }
@@ -5428,10 +5428,10 @@ impl Editor {
 
     fn strokes_inspector(&mut self, ui: &mut egui::Ui) -> Result<()> {
         let Some((picked, chosen)) = self.chosen_marks() else {
-            ui.label(match self.also.is_empty() {
+            ui.label(crate::commands::local_keys(&match self.also.is_empty() {
                 true => "click a stroke or drag a loop around strokes on the active paint layer (shift adds); cmd click layers in the layers panel to select on several at once".to_string(),
                 false => format!("click a stroke or drag a loop: it selects on the active layer and {} more (cmd clicked in the layers panel)", self.also.len()),
-            });
+            }));
             return Ok(());
         };
         let fills = chosen.iter().filter(|(_, m)| m.as_fill().is_some()).count();

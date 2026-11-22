@@ -316,7 +316,10 @@ pub trait Hint {
 impl Hint for Response {
     fn hint(self, text: impl Into<WidgetText>) -> Response {
         let rect = self.rect;
-        let text = text.into();
+        let text = match text.into() {
+            WidgetText::Text(words) => WidgetText::Text(crate::commands::local_keys(&words)),
+            other => other,
+        };
         #[cfg(test)]
         let seen = self.interact_rect;
         self.ctx.data_mut(|d| {

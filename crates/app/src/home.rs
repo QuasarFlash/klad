@@ -23,10 +23,16 @@ pub fn run(path: Option<PathBuf>) -> Result<()> {
         crate::report::log(&format!("the editor stopped: {}", crate::report::panic_text(info)));
         previous(info);
     }));
+    let viewport = egui::ViewportBuilder::default()
+        .with_title(start::title(path.as_deref()))
+        .with_inner_size([1600.0, 1000.0]);
+    #[cfg(not(target_os = "macos"))]
+    let viewport = match window_icon() {
+        Some(icon) => viewport.with_icon(icon),
+        None => viewport,
+    };
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title(start::title(path.as_deref()))
-            .with_inner_size([1600.0, 1000.0]),
+        viewport,
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: egui_wgpu::WgpuConfiguration {
             surface: egui_wgpu::SurfaceConfig {
@@ -764,6 +770,30 @@ impl eframe::App for Home {
     }
 }
 
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn window_icon() -> Option<egui::IconData> {
+    let ico: &[u8] = include_bytes!("../../../packaging/icon/klad.ico");
+    let long = |at: usize| {
+        ico.get(at..at + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    };
+    let count = usize::from(u16::from_le_bytes([*ico.get(4)?, *ico.get(5)?]));
+    let (offset, size) = (0..count)
+        .map(|i| 6 + 16 * i)
+        .find(|&at| ico.get(at) == Some(&0))
+        .and_then(|at| Some((long(at + 12)?, long(at + 8)?)))?;
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(ico.get(offset..offset + size)?));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder.read_info().ok()?;
+    let mut buffer = vec![0; reader.output_buffer_size()?];
+    let info = reader.next_frame(&mut buffer).ok()?;
+    (info.color_type == png::ColorType::Rgba).then(|| egui::IconData {
+        rgba: buffer[..info.buffer_size()].to_vec(),
+        width: info.width,
+        height: info.height,
+    })
+}
+
 pub(crate) fn too_wide(width: u32, height: u32, most: u32) -> Option<String> {
     (width.max(height) > most).then(|| {
         format!(
@@ -1338,6 +1368,14 @@ mod tests {
         assert!(h.state().welcome.is_none());
         assert_eq!(opened(&h), made, "the drawing is still there behind it");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_window_carries_klads_icon_at_256_pixels() {
+        let icon = super::window_icon().expect("the 256 px picture in klad.ico");
+        assert_eq!((icon.width, icon.height), (256, 256));
+        assert_eq!(icon.rgba.len(), 256 * 256 * 4);
+        assert!(icon.rgba.chunks(4).any(|p| p[3] == 255) && icon.rgba.chunks(4).any(|p| p[3] == 0));
     }
 
     #[test]

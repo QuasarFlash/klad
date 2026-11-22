@@ -285,7 +285,10 @@ impl Editor {
         });
         ui.add_space(16.0);
         ui.label(
-            RichText::new("Tab hides the panels, shift Tab the dock, cmd K finds any command.").color(theme::WEAK),
+            RichText::new(crate::commands::local_keys(
+                "Tab hides the panels, shift Tab the dock, cmd K finds any command.",
+            ))
+            .color(theme::WEAK),
         );
     }
 

@@ -3104,7 +3104,9 @@ fn frame_keys_wait_for_the_timeline_and_cmd_d_repeats_the_selected_frames() {
     h.run_steps(3);
     assert_eq!(shown(&h, "lines"), [(0, None)], "Delete takes the selected drawings");
     assert!(
-        said(&h).contains("drawings in the selected frames (cmd Z brings them back)"),
+        said(&h).contains(&crate::commands::local_keys(
+            "drawings in the selected frames (cmd Z brings them back)"
+        )),
         "and says so: {}",
         said(&h)
     );
@@ -6508,10 +6510,11 @@ fn the_menu_bar_reaches_commands_shows_their_state_and_greys_what_cannot_run() {
     };
     h.get_by_label("File").click();
     h.run_steps(2);
-    assert!(h.query_by_label("Close cmd W").is_some(), "items carry their keys");
+    let close = format!("Close {} W", crate::commands::CMD);
+    assert!(h.query_by_label(&close).is_some(), "items carry their keys");
     h.hover_at(item(&h, "Export").center());
     h.run_steps(3);
-    h.get_by_label("Image… cmd E").click();
+    h.get_by_label(&format!("Image… {} E", crate::commands::CMD)).click();
     h.run_steps(3);
     assert!(
         h.state().exporting(super::export::What::Image),
@@ -6542,7 +6545,7 @@ fn the_menu_bar_reaches_commands_shows_their_state_and_greys_what_cannot_run() {
     h.run_steps(2);
     h.get_by_label("File").click();
     h.run_steps(2);
-    h.get_by_label("Close cmd W").click();
+    h.get_by_label(&close).click();
     h.run_steps(2);
     assert_eq!(h.state().wants, Some(super::Want::Close));
     let _ = std::fs::remove_dir_all(&path);

@@ -111,17 +111,17 @@ There are no installers yet, so you build klad yourself. It takes about ten minu
 
 ### From source
 
-1. Install Rust with [rustup](https://rustup.rs) and [`just`](https://github.com/casey/just) (`brew install just`, or `cargo install just`). On Linux also `pkg-config`, `libfreetype-dev`, `libfontconfig1-dev`, `libxkbcommon-dev` and `libwayland-dev`.
+1. Install Rust with [rustup](https://rustup.rs) and [`just`](https://github.com/casey/just) (`brew install just`, or `cargo install just`). On Linux also `pkg-config`, `libfreetype-dev`, `libfontconfig1-dev`, `libxkbcommon-dev` and `libwayland-dev`. On Windows also the Visual Studio Build Tools with **Desktop development with C++** and [Git for Windows](https://git-scm.com/download/win), and run the steps below in Git Bash (`winget install Casey.Just` installs `just`).
 2. Build it and open the editor:
 
    ```sh
    git clone https://github.com/klad-app/klad && cd klad
    just compile
-   target/release/klad open      # on Linux: target/linux/release/klad open
+   target/release/klad open      # on Linux: target/linux/release/klad open, on Windows: target/windows/release/klad.exe open
    ```
 
    The editor opens on its start window: make a drawing and start painting, open a sample, or take first steps (**Help > First steps**).
-3. Put `klad` on your path, for you and for your agent: `target/release/klad install` (on Linux `target/linux/release/klad install`; on a Mac it may ask for your password).
+3. Put `klad` on your path, for you and for your agent: `target/release/klad install` (on Linux `target/linux/release/klad install`, on Windows `target/windows/release/klad.exe install`; on a Mac it may ask for your password).
 
 What you build is for your own use, or your company's if it had less than 500,000 euros in revenue last year (see [Licence](#licence)).
 

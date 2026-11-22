@@ -81,6 +81,25 @@ impl Places {
             Os::Linux => self.home.join(".config"),
         }
     }
+
+    fn packaged_claude(&self) -> Option<PathBuf> {
+        let mut found: Vec<PathBuf> = std::fs::read_dir(self.home.join("AppData/Local/Packages"))
+            .ok()?
+            .flatten()
+            .map(|entry| entry.path().join("LocalCache/Roaming/Claude"))
+            .filter(|folder| folder.is_dir())
+            .collect();
+        found.sort();
+        found.into_iter().next()
+    }
+
+    fn claude(&self) -> PathBuf {
+        let roaming = self.support().join("Claude");
+        match self.os {
+            Os::Windows => self.packaged_claude().unwrap_or(roaming),
+            _ => roaming,
+        }
+    }
 }
 
 impl App {
@@ -122,6 +141,9 @@ impl App {
 
     pub fn next_step(self) -> &'static str {
         match self {
+            App::ClaudeDesktop if Os::here() == Os::Windows => {
+                "quit Claude Desktop (right click its icon next to the clock, then Quit) and open it again"
+            }
             App::ClaudeDesktop => "quit Claude Desktop (cmd Q) and open it again",
             App::Codex => "open a new Codex chat (restart the Codex app if it was running)",
             App::ClaudeCode => "start a new Claude Code session",
@@ -141,7 +163,7 @@ impl App {
 
     pub fn file(self, places: &Places) -> PathBuf {
         match self {
-            App::ClaudeDesktop => places.support().join("Claude/claude_desktop_config.json"),
+            App::ClaudeDesktop => places.claude().join("claude_desktop_config.json"),
             App::Codex => places.home.join(".codex/config.toml"),
             App::ClaudeCode => places.home.join(".claude.json"),
             App::Cursor => places.home.join(".cursor/mcp.json"),
@@ -161,7 +183,7 @@ impl App {
 
     fn signs(self, places: &Places) -> Vec<PathBuf> {
         let folder = match self {
-            App::ClaudeDesktop => places.support().join("Claude"),
+            App::ClaudeDesktop => places.claude(),
             App::Codex => places.home.join(".codex"),
             App::ClaudeCode => places.home.join(".claude"),
             App::Cursor => places.home.join(".cursor"),
@@ -178,7 +200,13 @@ impl App {
                     ]
                 })
                 .collect(),
-            _ => Vec::new(),
+            Os::Windows => match self {
+                App::ClaudeDesktop => vec![places.home.join("AppData/Local/AnthropicClaude")],
+                App::Cursor => vec![places.home.join("AppData/Local/Programs/cursor")],
+                App::VsCode => vec![places.home.join("AppData/Local/Programs/Microsoft VS Code")],
+                _ => Vec::new(),
+            },
+            Os::Linux => Vec::new(),
         };
         std::iter::once(folder)
             .chain(std::iter::once(self.file(places)))
@@ -386,6 +414,36 @@ mod tests {
         std::fs::create_dir_all(program.parent().unwrap()).unwrap();
         std::fs::write(&program, "").unwrap();
         Entry::serving(&program)
+    }
+
+    #[test]
+    fn claude_desktop_on_windows_uses_the_packaged_apps_settings_when_it_has_them() {
+        let mut places = home("windows");
+        places.os = Os::Windows;
+        let roaming = places.home.join("AppData/Roaming/Claude/claude_desktop_config.json");
+        assert_eq!(App::ClaudeDesktop.file(&places), roaming);
+        assert_eq!(App::ClaudeDesktop.status(&places), Status::Missing);
+        std::fs::create_dir_all(places.home.join("AppData/Local/AnthropicClaude")).unwrap();
+        assert_eq!(
+            App::ClaudeDesktop.status(&places),
+            Status::Found,
+            "the installer's folder"
+        );
+        let packaged = places
+            .home
+            .join("AppData/Local/Packages/Claude_pzs8sxrjxfjjc/LocalCache/Roaming/Claude");
+        std::fs::create_dir_all(&packaged).unwrap();
+        std::fs::create_dir_all(places.home.join("AppData/Local/Packages/Other_1/LocalCache/Roaming")).unwrap();
+        assert_eq!(
+            App::ClaudeDesktop.file(&places),
+            packaged.join("claude_desktop_config.json"),
+            "the packaged app reads its own copy first"
+        );
+        let entry = klad(&places);
+        App::ClaudeDesktop.connect(&places, &entry).unwrap();
+        assert!(matches!(App::ClaudeDesktop.status(&places), Status::Connected(_)));
+        assert!(!roaming.exists(), "the copy it would not read is left alone");
+        let _ = std::fs::remove_dir_all(&places.home);
     }
 
     #[test]

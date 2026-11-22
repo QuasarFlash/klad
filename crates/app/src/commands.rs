@@ -2,6 +2,28 @@ use crate::theme::icon;
 use egui::{Key, Modifiers};
 use std::collections::BTreeMap;
 
+pub const CMD: &str = if cfg!(target_os = "macos") { "cmd" } else { "ctrl" };
+
+pub fn local_keys(text: &str) -> String {
+    if CMD == "cmd" {
+        return text.to_string();
+    }
+    let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+    let mut out = String::with_capacity(text.len() + 8);
+    let last = text.match_indices("cmd").fold(0, |last, (at, _)| {
+        match word(text[..at].chars().next_back()) || word(text[at + 3..].chars().next()) {
+            true => last,
+            false => {
+                out.push_str(&text[last..at]);
+                out.push_str(CMD);
+                at + 3
+            }
+        }
+    });
+    out.push_str(&text[last..]);
+    out
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Cmd {
     Brush,
@@ -365,10 +387,10 @@ impl Keys {
             .iter()
             .find(|(k, _)| *k == self.key)
             .map_or_else(|| self.key.name().to_string(), |(_, n)| n.to_string());
-        [(self.shift, "shift "), (self.alt, "alt "), (self.command, "cmd ")]
+        [(self.shift, "shift"), (self.alt, "alt"), (self.command, CMD)]
             .iter()
             .filter(|(on, _)| *on)
-            .map(|(_, word)| *word)
+            .map(|(_, word)| format!("{word} "))
             .collect::<String>()
             + &key
     }
@@ -414,10 +436,10 @@ impl Keys {
             .map(|(k, _)| *k)
             .or_else(|| Key::from_name(name))?;
         let has = |w: &str| mods.contains(&w);
-        if mods.iter().any(|m| !["shift", "alt", "cmd"].contains(m)) {
+        if mods.iter().any(|m| !["shift", "alt", "cmd", "ctrl"].contains(m)) {
             return None;
         }
-        Some(keys(key, has("shift"), has("alt"), has("cmd")))
+        Some(keys(key, has("shift"), has("alt"), has("cmd") || has("ctrl")))
     }
 }
 
@@ -555,7 +577,7 @@ impl Spec {
         match self.trigger {
             Trigger::None => String::new(),
             Trigger::Press(list) => list.iter().map(Keys::label).collect::<Vec<_>>().join(" or "),
-            Trigger::Hold(how) => how.to_string(),
+            Trigger::Hold(how) => local_keys(how),
         }
     }
 
@@ -565,10 +587,11 @@ impl Spec {
 
     pub fn hint_with(&self, key: &str) -> String {
         let key = key.to_string();
+        let about = local_keys(self.about);
         match (key.is_empty(), self.trigger) {
-            (true, _) => format!("{}\n{}", self.name, self.about),
-            (false, Trigger::Hold(_)) => format!("{}: {key}\n{}", self.name, self.about),
-            (false, _) => format!("{} ({key})\n{}", self.name, self.about),
+            (true, _) => format!("{}\n{about}", self.name),
+            (false, Trigger::Hold(_)) => format!("{}: {key}\n{about}", self.name),
+            (false, _) => format!("{} ({key})\n{about}", self.name),
         }
     }
 
@@ -4217,6 +4240,27 @@ pub fn rank(query: &str, recent: &[Cmd]) -> Vec<Cmd> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keys_are_named_as_the_platform_names_them_and_saved_names_read_back_either_way() {
+        let undo = keys(Key::Z, true, false, true);
+        let words = "shift cmd Z (cmd click), cmd , then; command cmdline xcmd";
+        match cfg!(target_os = "macos") {
+            true => {
+                assert_eq!(undo.label(), "shift cmd Z");
+                assert_eq!(local_keys(words), words);
+            }
+            false => {
+                assert_eq!(undo.label(), "shift ctrl Z");
+                assert_eq!(
+                    local_keys(words),
+                    "shift ctrl Z (ctrl click), ctrl , then; command cmdline xcmd"
+                );
+            }
+        }
+        assert_eq!(Keys::parse("shift cmd Z"), Some(undo));
+        assert_eq!(Keys::parse("shift ctrl Z"), Some(undo), "a shortcut saved on Windows");
+    }
     use std::collections::BTreeSet;
 
     const INVENTORY: &[(&str, &str)] = &[
@@ -4351,7 +4395,7 @@ mod tests {
         assert!(IN_APP_MENU.iter().all(|c| listed.contains(c)));
         assert_eq!(menu_label(Cmd::NewDocument), "New…");
         assert_eq!(Bindings::default().menu_key(Cmd::Delete), "Backspace");
-        assert_eq!(Bindings::default().menu_key(Cmd::Redo), "shift cmd Z");
+        assert_eq!(Bindings::default().menu_key(Cmd::Redo), format!("shift {CMD} Z"));
     }
 
     #[test]
@@ -4556,7 +4600,7 @@ mod tests {
 
     #[test]
     fn keys_read_the_way_the_docs_write_them() {
-        assert_eq!(Cmd::Redo.spec().key_label(), "shift cmd Z or cmd Y");
+        assert_eq!(Cmd::Redo.spec().key_label(), format!("shift {CMD} Z or {CMD} Y"));
         assert_eq!(Cmd::NextDrawing.spec().key_label(), "alt .");
         assert_eq!(Cmd::Delete.spec().key_label(), "Delete or Backspace");
         assert_eq!(Cmd::Play.spec().key_label(), "Return");
