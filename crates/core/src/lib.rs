@@ -56,6 +56,10 @@ pub mod notices {
                 LICENSE.contains("the last period paid for"),
                 "a yearly seat ends with its subscription"
             );
+            assert!(
+                LICENSE.contains("It is not a company seat."),
+                "a bought build is a personal licence"
+            );
             [
                 "skia-safe",
                 "eframe",

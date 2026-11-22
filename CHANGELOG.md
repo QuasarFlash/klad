@@ -45,7 +45,7 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 - The export window has a format row for pictures and its own pages for PDF and video; the GIF window also writes animated WebP.
 - Drawings are saved in format `klad/9` (the grid, guides and drawing guides).
 - The licence says plainly that the drawings you make are yours: you may sell them and use them in your own and your clients' commercial work.
-- The licence says that a licence bought as a subscription, such as a yearly seat for a larger company, ends at the end of the last period paid for once it is cancelled.
+- The licence says that a larger company buys a company seat for each person who uses klad: a yearly subscription, sold only on klad.studio, that ends at the end of the last period paid for once it is cancelled. A build bought anywhere, itch.io and Steam included, is a personal licence.
 - The Mac disk image opens to a window with klad, an arrow and the Applications folder.
 
 ### Fixed
