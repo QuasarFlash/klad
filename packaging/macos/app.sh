@@ -2,7 +2,9 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 out="${1:-$root/dist}"
-targets="${KLAD_MAC_TARGETS:-aarch64-apple-darwin}"
+targets="${KLAD_MAC_TARGETS:-aarch64-apple-darwin x86_64-apple-darwin}"
+MACOSX_DEPLOYMENT_TARGET="$(grep -A1 LSMinimumSystemVersion "$root/packaging/macos/Info.plist" | sed -n 's/.*<string>\(.*\)<\/string>.*/\1/p')"
+export MACOSX_DEPLOYMENT_TARGET
 version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)"
 build="$(git -C "$root" describe --tags --always 2>/dev/null || echo "$version")"
 export KLAD_BUILD="$build"
