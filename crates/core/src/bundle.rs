@@ -415,7 +415,7 @@ impl Bundle {
         let root = root.as_ref().to_path_buf();
         remember(&root);
         fs::create_dir_all(&root)?;
-        write_atomic(&root.join(".gitignore"), b".cache/\n")?;
+        write_atomic(&root.join(".gitignore"), b".cache/\nQuickLook/\n")?;
         let mut doc = doc;
         doc.here = here::start().here();
         let folder = Folder::at(&root);

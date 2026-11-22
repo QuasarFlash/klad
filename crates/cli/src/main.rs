@@ -26,6 +26,7 @@ mod oom;
 mod paintover;
 mod paths;
 mod pixelise;
+mod preview;
 mod psdfile;
 mod rig;
 mod scene;
@@ -2810,6 +2811,23 @@ enum Command {
         entry: Option<String>,
         #[arg(long, help = "Print strokes as JSON with their points (x, y, pressure)")]
         json: bool,
+    },
+    #[command(
+        about = "Write the pictures Finder shows for a drawing: space shows QuickLook/Preview.png, icons QuickLook/Thumbnail.png",
+        long_about = "Write the pictures Finder shows for a drawing: space shows QuickLook/Preview.png (up to 1024 px a side) and icons QuickLook/Thumbnail.png (up to 512). Both show frame 0, or the first frame of the first clip; a pixel drawing is enlarged by whole pixels so it stays sharp. The editor writes them in the background when a drawing closes or klad quits; this command is for drawings made without the editor. QuickLook/ stays out of git.\n\n  klad preview art.klad\n  klad preview a.klad b.klad --changed\n  klad preview --all ~/Drawings --changed"
+    )]
+    Preview {
+        #[arg(required_unless_present = "all")]
+        bundles: Vec<PathBuf>,
+        #[arg(
+            long,
+            value_name = "FOLDER",
+            conflicts_with = "bundles",
+            help = "Every drawing in a folder"
+        )]
+        all: Option<PathBuf>,
+        #[arg(long, help = "Skip drawings that have not changed since their last preview")]
+        changed: bool,
     },
     #[command(about = "Print pixel hashes, for comparing macOS and Linux renders")]
     Hash {
@@ -6173,6 +6191,32 @@ fn run() -> Result<()> {
                 false => vec![frame],
             };
             maps::hash(&bundle, &frames, &map)?
+        }
+        Command::Preview { bundles, all, changed } => {
+            let drawings = match all {
+                Some(folder) => preview::drawings_in(&folder)?,
+                None => bundles,
+            };
+            let failed = drawings
+                .iter()
+                .filter(|path| match preview::write(path, changed) {
+                    Ok(preview::Done::Written(png)) => {
+                        println!("{}", png.display());
+                        false
+                    }
+                    Ok(preview::Done::Unchanged(path)) => {
+                        println!("unchanged {}", path.display());
+                        false
+                    }
+                    Err(e) => {
+                        eprintln!("error: {}: {e:#}", path.display());
+                        true
+                    }
+                })
+                .count();
+            if failed > 0 {
+                bail!("{failed} of {} drawings got no preview", drawings.len());
+            }
         }
         Command::Hash {
             bundle,

@@ -4,6 +4,7 @@ mod composite;
 mod connect;
 mod cursor;
 mod editor;
+mod finder;
 mod frames;
 mod gpu;
 mod home;

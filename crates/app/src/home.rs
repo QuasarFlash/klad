@@ -320,6 +320,7 @@ impl Home {
         let index = if slot < self.at { slot } else { slot - 1 };
         if index < self.parked.len() {
             let parked = self.parked.remove(index);
+            crate::finder::refresh(vec![parked.scene.bundle.root.clone()]);
             self.settings = self
                 .editor
                 .as_ref()
@@ -431,6 +432,7 @@ impl Home {
         let Some(editor) = self.editor.take() else {
             return;
         };
+        crate::finder::refresh(vec![editor.scene.bundle.root.clone()]);
         self.settings = editor.settings.clone();
         if !self.parked.is_empty() {
             let index = self.at.min(self.parked.len() - 1);
@@ -736,6 +738,16 @@ fn dropped(ctx: &egui::Context) -> Option<PathBuf> {
 impl eframe::App for Home {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.frame(ui);
+    }
+
+    fn on_exit(&mut self) {
+        crate::finder::refresh(
+            self.editor
+                .iter()
+                .chain(&self.parked)
+                .map(|editor| editor.scene.bundle.root.clone())
+                .collect(),
+        );
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {

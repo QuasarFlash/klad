@@ -27,6 +27,7 @@ pub mod path;
 pub mod pathedit;
 pub mod pixel;
 pub mod pixelcheck;
+pub mod preview;
 pub mod region;
 pub mod repair;
 pub mod retime;

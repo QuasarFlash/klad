@@ -34,6 +34,7 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 - **Exports**: JPEG, WebP (lossy, lossless and animated), TIFF (8 or 16 bits), PSD with a layer for each layer and groups, PDF with vector layers kept as shapes (a page per frame or clip, on the drawing's size or a paper), MP4 video, SVG, and the selection alone (`klad export --format jpeg|webp|tiff|psd|pdf|mp4|svg --only`).
 - **Imports**: PSD from Photoshop, Krita and Affinity with its layers and groups; SVG as shapes; a sprite sheet cut into frames, or a folder of numbered pictures, onto a new layer with a clip (**File > Import frames…**, `klad import sheet.png --cell 32x32 --to art.klad`).
 - **The weight brush**: paint, add, remove and smooth (**shift 1** to **4**), a strength that the pen's pressure drives, hardness, the weight under the pointer and **alt I** to pick it up, a legend and every bone's weight in its own colour (`klad weights --mode --strength --hardness --at`).
+- **Drawings preview in Finder**: select a drawing and press space to see it, and icon and gallery views show its picture. klad writes it when you close the drawing or quit, in the background (`klad preview`, `--all` for a folder).
 - **Very large canvases**: a canvas too big for the machine's memory is refused with the size it needs, a tight one is made with a warning, and the editor uses the graphics' real texture limit.
 
 ### Changed

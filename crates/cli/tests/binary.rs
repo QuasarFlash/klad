@@ -4439,3 +4439,76 @@ fn weights_are_added_taken_away_with_strength_and_read_at_a_point() {
     assert!(String::from_utf8_lossy(&bad.stderr).contains("0 to 1"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_preview_for_finder_is_written_sized_kept_out_of_git_and_skipped_when_nothing_changed() {
+    let dir = std::env::temp_dir().join(format!("draw-binary-preview-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let wide = dir.join("wide.klad");
+    let sprite = dir.join("sprite.klad");
+    let run = |args: &[&str]| Command::new(env!("CARGO_BIN_EXE_klad")).args(args).output().unwrap();
+    let draw = |args: &[&str]| {
+        let out = run(args);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let size = |path: std::path::PathBuf| {
+        let bytes = std::fs::read(&path).unwrap();
+        let side = |at: usize| u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap());
+        (side(16), side(20))
+    };
+    let quick = |bundle: &std::path::Path, name: &str| bundle.join("QuickLook").join(name);
+    draw(&[
+        "new",
+        wide.to_str().unwrap(),
+        "--width",
+        "1600",
+        "--height",
+        "900",
+        "--background",
+        "#f4efe6",
+    ]);
+    draw(&["new", sprite.to_str().unwrap(), "--pixel", "16x12"]);
+    let made = draw(&["preview", wide.to_str().unwrap()]);
+    assert_eq!(made.trim(), quick(&wide, "Preview.png").display().to_string());
+    assert_eq!(size(quick(&wide, "Preview.png")), (1024, 576), "up to 1024 a side");
+    assert_eq!(size(quick(&wide, "Thumbnail.png")), (512, 288), "up to 512 a side");
+    let ignored = std::fs::read_to_string(wide.join(".gitignore")).unwrap();
+    assert!(ignored.lines().any(|l| l == "QuickLook/"), "{ignored}");
+    assert!(
+        draw(&["preview", wide.to_str().unwrap(), "--changed"]).starts_with("unchanged"),
+        "nothing changed since the last preview"
+    );
+    let tree: serde_json::Value = serde_json::from_str(&draw(&["ls", wide.to_str().unwrap(), "--json"])).unwrap();
+    let layer = tree["layers"][0]["id"].as_str().unwrap().to_string();
+    std::fs::write(
+        dir.join("ops.jsonl"),
+        format!(r##"{{"op":"stroke","layer":"{layer}","path":"M100 100 L900 600","size":24}}"##),
+    )
+    .unwrap();
+    draw(&[
+        "apply",
+        wide.to_str().unwrap(),
+        "--file",
+        dir.join("ops.jsonl").to_str().unwrap(),
+    ]);
+    let all = draw(&["preview", "--all", dir.to_str().unwrap(), "--changed"]);
+    assert_eq!(
+        all.lines().collect::<Vec<_>>(),
+        [
+            quick(&sprite, "Preview.png").display().to_string(),
+            quick(&wide, "Preview.png").display().to_string()
+        ],
+        "both: the sprite had none and the wide one changed"
+    );
+    assert_eq!(
+        size(quick(&sprite, "Preview.png")),
+        (1024, 768),
+        "a pixel drawing grows by whole pixels"
+    );
+    assert_eq!(size(quick(&sprite, "Thumbnail.png")), (512, 384));
+    let missing = run(&["preview", dir.join("none.klad").to_str().unwrap()]);
+    assert!(!missing.status.success());
+    let _ = std::fs::remove_dir_all(&dir);
+}

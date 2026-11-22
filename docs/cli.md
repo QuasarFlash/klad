@@ -93,6 +93,7 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad info`](#klad-info): Paint cels with stroke counts and file sizes
 - [`klad repair`](#klad-repair): Give every layer, drawing or shape whose id is used twice (after a merge) a new id, moving its files along
 - [`klad strokes`](#klad-strokes): List the strokes and fills of a paint layer's cel at a frame
+- [`klad preview`](#klad-preview): Write the pictures Finder shows for a drawing: space shows QuickLook/Preview.png, icons QuickLook/Thumbnail.png
 - [`klad hash`](#klad-hash): Print pixel hashes, for comparing macOS and Linux renders
 - [`klad demo`](#klad-demo): Write a sample bundle (vector sky and hills, painted glow, clouds, hatching, grass)
 - [`klad stress`](#klad-stress): Create a large bundle of synthetic paint layers for editor performance tests
@@ -4796,6 +4797,32 @@ Options:
 
   -h, --help
           Print help
+```
+
+## klad preview
+
+```text
+Write the pictures Finder shows for a drawing: space shows QuickLook/Preview.png (up to 1024 px a side) and icons QuickLook/Thumbnail.png (up to 512). Both show frame 0, or the first frame of the first clip; a pixel drawing is enlarged by whole pixels so it stays sharp. The editor writes them in the background when a drawing closes or klad quits; this command is for drawings made without the editor. QuickLook/ stays out of git.
+
+  klad preview art.klad
+  klad preview a.klad b.klad --changed
+  klad preview --all ~/Drawings --changed
+
+Usage: klad preview [OPTIONS] [BUNDLES]...
+
+Arguments:
+  [BUNDLES]...
+
+
+Options:
+      --all <FOLDER>
+          Every drawing in a folder
+
+      --changed
+          Skip drawings that have not changed since their last preview
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 ## klad hash

@@ -1,4 +1,4 @@
-_Last updated: 2026-11-21 20:00_
+_Last updated: 2026-11-22 10:00_
 
 # Getting started
 
@@ -27,6 +27,10 @@ There's nothing to save: klad writes every change to the drawing as you make it.
 - **File > Revert** takes the drawing back to how it was when you opened it. **cmd Z** takes that back.
 
 In the start window, right click a drawing to **Duplicate** it or **Move to the Trash**. You can get it back from the Trash.
+
+## See a drawing in Finder
+
+On a Mac, select a drawing in Finder and press **space** to see it, and icon and gallery views show its picture. klad writes that picture when you close the drawing or quit klad. A drawing your agent made without the editor shows its picture after `klad preview art.klad`. Windows and Linux show a drawing as a folder.
 
 ## Keep several drawings open
 
