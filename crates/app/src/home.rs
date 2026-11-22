@@ -1708,7 +1708,7 @@ mod tests {
             .click();
         h.run_steps(3);
         assert!(
-            h.query_by_label_contains("Source-available licence, copyright Indicode BV")
+            h.query_by_label_contains("Source-available licence, copyright Indicode")
                 .is_some()
         );
         assert!(h.query_by_label("# Third-party notices").is_some());

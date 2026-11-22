@@ -25,7 +25,7 @@
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSHumanReadableCopyright</key>
-  <string>Copyright Indicode BV</string>
+  <string>Copyright Indicode</string>
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>

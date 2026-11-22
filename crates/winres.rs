@@ -92,11 +92,11 @@ fn version_info(about: &About) -> Vec<u8> {
         &[],
         0,
         &[
-            text("CompanyName", "Indicode BV"),
+            text("CompanyName", "Indicode"),
             text("FileDescription", about.description),
             text("FileVersion", about.version),
             text("InternalName", about.file.trim_end_matches(".exe")),
-            text("LegalCopyright", "Copyright Indicode BV"),
+            text("LegalCopyright", "Copyright Indicode"),
             text("OriginalFilename", about.file),
             text("ProductName", "klad"),
             text("ProductVersion", about.version),

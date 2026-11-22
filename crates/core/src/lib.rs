@@ -50,7 +50,7 @@ pub mod notices {
 
         #[test]
         fn the_licence_and_the_notices_ship_with_the_code() {
-            assert!(LICENSE.contains("PolyForm Internal Use License 1.0.0") && LICENSE.contains("Indicode BV"));
+            assert!(LICENSE.contains("PolyForm Internal Use License 1.0.0") && LICENSE.contains("Indicode"));
             assert!(LICENSE.contains("500,000 euros"), "larger companies buy a licence");
             assert!(
                 LICENSE.contains("the last period paid for"),
