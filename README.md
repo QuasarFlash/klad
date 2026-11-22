@@ -138,7 +138,7 @@ What you build is for your own use, or your company's if it had less than 500,00
 
 - **Samples.** Eight drawings to look at and draw on, from a lantern to a walking creature and a pixel art tileset. The start window shows them; `klad samples` lists them and copies one out. `just samples` builds every drawing in `samples/` from its generator; the eight in `samples/shipped.json` go into every build.
 - **Guides.** `docs/guide/` shows how to paint, select, fill, draw pixel art, animate, rig and export in the editor, one recipe at a time, starting with [Getting started](docs/guide/getting-started.md).
-- **A Mac app.** On a Mac, `just app` makes `klad.app` and a disk image in `dist/`; `just dist` packs this machine's build as an archive. Each machine builds for itself: a Mac builds the Mac version, Linux the Linux one.
+- **A Mac app.** On a Mac, `just app` makes `klad.app` (Apple silicon and Intel in one, macOS 14 or later) and a disk image in `dist/`. With a Developer ID Application certificate in the keychain it also signs both, has Apple notarise them and staples the tickets, and writes `klad-<version>-macos.zip` of the signed app; it finds the notary's login under the keychain profile `klad-notary` (`xcrun notarytool store-credentials klad-notary`, or set `NOTARY_PROFILE`). Without the certificate, or with `KLAD_SIGN=0`, the app is signed ad hoc and other Macs warn before opening it. `just dist` packs this machine's build as an archive. Each machine builds for itself: a Mac builds the Mac version, Linux the Linux one.
 
 ## What's rough
 

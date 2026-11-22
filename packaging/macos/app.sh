@@ -37,7 +37,19 @@ cp "$root/docs/skill/drawing/SKILL.md" "$app/Contents/Resources/skill/drawing/"
 mkdir -p "$app/Contents/Resources/skill/pixel"
 cp "$root/docs/skill/pixel/SKILL.md" "$app/Contents/Resources/skill/pixel/"
 bash "$root/packaging/samples.sh" "${KLAD:-$app/Contents/MacOS/klad}" "$app/Contents/Resources/samples" >/dev/null
-codesign --force --deep --sign - "$app" 2>/dev/null || true
+signer="$root/packaging/macos/sign.sh"
+identity=""
+[ "${KLAD_SIGN:-1}" = "1" ] && identity="$(bash "$signer" identity || true)"
+if [ -n "$identity" ]; then
+  CODESIGN_IDENTITY="$identity" bash "$signer" app "$app"
+  archive="$out/klad-$version-macos.zip"
+  rm -f "$archive"
+  ditto -c -k --keepParent "$app" "$archive"
+  echo "$archive"
+else
+  codesign --force --deep --sign - "$app" 2>/dev/null || true
+  echo "warning: klad.app is signed ad hoc, so other Macs warn before they open it; with a Developer ID Application certificate in the keychain this signs and notarises it" >&2
+fi
 echo "$app"
 if [ "${KLAD_DMG:-1}" = "1" ]; then
   name="klad ${version%.*}"
@@ -83,5 +95,10 @@ APPLESCRIPT
   fi
   hdiutil convert "$work" -format UDZO -imagekey zlib-level=9 -o "$dmg" >/dev/null
   rm -f "$work"
+  [ -n "$identity" ] && CODESIGN_IDENTITY="$identity" bash "$signer" dmg "$dmg"
   echo "$dmg"
+fi
+if [ -n "$identity" ]; then
+  echo
+  shasum -a 256 "$out"/klad-"$version"-macos.*
 fi

@@ -40,7 +40,7 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 
 ### Changed
 
-- **The Mac app is one app for Apple silicon and Intel Macs**, and needs macOS 14 Sonoma or later. The Windows build needs 64-bit Windows 10 or 11.
+- **The Mac app is one app for Apple silicon and Intel Macs**, signed and notarised so it opens without a warning, and needs macOS 14 Sonoma or later. The Windows build needs 64-bit Windows 10 or 11.
 - **Help > First steps** shows what klad does in six steps: paint a shape and erase part of it, paint and fill a second one, reshape the first stroke with edit points (the erased part bends with it), and let your agent change that stroke.
 - Opening a drawing keeps the one you were in open, in a tab, instead of closing it.
 - The bone tool's weights bar: the mode buttons, then size and weight; strength, hardness, pressure, the legend, **automatic** and **smooth all** under **⋯**.
