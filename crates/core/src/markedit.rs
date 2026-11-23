@@ -451,8 +451,16 @@ fn set_fill(fill: &mut Fill, props: &Map<String, Value>) -> Result<()> {
     Ok(())
 }
 
+pub fn size_scale(a: Affine) -> f32 {
+    let area = (a[0] * a[3] - a[1] * a[2]).abs();
+    match (area - 1.0).abs() < 1e-5 {
+        true => 1.0,
+        false => libm::sqrtf(area),
+    }
+}
+
 pub fn transform_stroke(stroke: &mut Stroke, a: Affine) {
-    let scale = libm::sqrtf((a[0] * a[3] - a[1] * a[2]).abs());
+    let scale = size_scale(a);
     stroke.samples.iter_mut().for_each(|s| {
         let (x, y) = apply_affine(a, s.pos());
         let (tx, ty) = s.tilt();
@@ -971,6 +979,24 @@ mod tests {
             .with_points(&[(10.0, 10.0, 1.0), (30.0, 10.0, 1.0)], 4.0)
             .tapered([4.0, 8.0])
             .into()
+    }
+
+    #[test]
+    fn a_turn_leaves_a_stroke_exactly_as_thick_and_a_scale_scales_it() {
+        (1..360).for_each(|deg| {
+            let (s, c) = (deg as f32).to_radians().sin_cos();
+            let Mark::Stroke(mut stroke) = line(1) else {
+                unreachable!()
+            };
+            transform_stroke(&mut stroke, [c, -s, s, c, 3.0, 4.0]);
+            assert_eq!(stroke.size, 10.0, "turned by {deg} degrees");
+            assert_eq!(stroke.taper, [4.0, 8.0], "turned by {deg} degrees");
+        });
+        let Mark::Stroke(mut stroke) = line(1) else {
+            unreachable!()
+        };
+        transform_stroke(&mut stroke, [2.0, 0.0, 0.0, 2.0, 0.0, 0.0]);
+        assert_eq!(stroke.size, 20.0);
     }
 
     fn square(id: u32) -> Mark {

@@ -497,7 +497,7 @@ impl Editor {
         ui.horizontal_wrapped(|ui| {
             HEIGHTS.iter().for_each(|(name, v)| {
                 let close = grey && ((lift + 1.0) * 0.5 - v).abs() < 0.01;
-                let swatch = color::swatch(ui, [*v, *v, *v, 1.0], close, 24.0);
+                let swatch = color::swatch(ui, [*v, *v, *v, 1.0], close, crate::theme::CONTROL);
                 swatch.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, *name));
                 if swatch
                     .hint(format!("{name}: {}", height_words(2.0 * v - 1.0, range)))
@@ -565,7 +565,7 @@ impl Editor {
             palette(directions).into_iter().for_each(|(name, n)| {
                 let [r, g, b] = encoded(n);
                 let close = current.iter().zip(n).map(|(a, b)| a * b).sum::<f32>() > 0.999;
-                let swatch = color::swatch(ui, [r, g, b, 1.0], close, 24.0);
+                let swatch = color::swatch(ui, [r, g, b, 1.0], close, crate::theme::CONTROL);
                 swatch.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name.as_str()));
                 if swatch.hint(format!("{name}: {}", lean_words(n))).clicked() {
                     chosen = Some(n);

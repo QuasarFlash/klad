@@ -268,7 +268,7 @@ fn card(ui: &mut egui::Ui, app: App, status: &Status, width: f32) -> Option<bool
     framed(ui, width, |ui| {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                ui.label(RichText::new(app.name()).strong().size(14.0));
+                ui.label(RichText::new(app.name()).font(theme::medium(theme::BODY)));
                 ui.label(RichText::new(state).color(colour));
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

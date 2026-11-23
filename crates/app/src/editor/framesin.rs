@@ -217,7 +217,7 @@ impl Editor {
                 Color32::WHITE,
             );
             if let Ok((cw, ch, _)) = cells(&seen.picture, &cut) {
-                let line = Stroke::new(1.0, theme::ACCENT);
+                let line = Stroke::new(1.0, theme::MARK);
                 let step = (cw + cut.padding, ch + cut.padding);
                 let inner = |t: u32| t.saturating_sub(2 * cut.margin);
                 let cols = (inner(seen.size[0]) + cut.padding) / step.0.max(1);

@@ -183,7 +183,7 @@ impl Editor {
             ui.horizontal(|ui| {
                 ui.label(a.word());
                 if ui
-                    .add(egui::Button::new(crate::theme::icon::TRASH).min_size(vec2(theme::TARGET, theme::TARGET)))
+                    .add(egui::Button::new(crate::theme::icon::TRASH).min_size(vec2(theme::CONTROL, theme::CONTROL)))
                     .hint("take this guide away")
                     .clicked()
                 {

@@ -186,7 +186,7 @@ impl Start {
         if self.samples.is_empty() {
             return None;
         }
-        ui.label(RichText::new(format!("{} Samples", icon::IMAGE)).strong().size(16.0));
+        ui.label(RichText::new(format!("{} Samples", icon::IMAGE)).font(theme::semibold(theme::HEADING)));
         ui.label(
             RichText::new("Open one to look around or draw on it: it opens as a copy in your drawings folder.")
                 .color(theme::WEAK),
@@ -203,7 +203,7 @@ impl Start {
                         .picture(ui, &key, &sample.path, sample_thumb(&sample.path), &sample.name, true)
                         .on_hover_text(&sample.about)
                         .clicked();
-                    ui.add(egui::Label::new(RichText::new(&sample.about).color(theme::WEAK).size(11.0)).wrap());
+                    ui.add(egui::Label::new(RichText::new(&sample.about).color(theme::WEAK).size(theme::LABEL)).wrap());
                     if picked {
                         match samples::copy(sample, &settings.drawings_folder()) {
                             Ok(path) => {
@@ -284,11 +284,7 @@ impl Start {
 
     fn new_section(&mut self, ui: &mut egui::Ui, settings: &mut Settings) -> Option<PathBuf> {
         ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(format!("{} New drawing", icon::FILE_PLUS))
-                    .strong()
-                    .size(16.0),
-            );
+            ui.label(RichText::new(format!("{} New drawing", icon::FILE_PLUS)).font(theme::semibold(theme::HEADING)));
             ui.add_space(12.0);
             let was = self.pixel;
             ui.selectable_value(&mut self.pixel, false, "Painting")
@@ -425,11 +421,7 @@ impl Start {
     }
 
     fn open_section(&mut self, ui: &mut egui::Ui, settings: &Settings) -> Option<PathBuf> {
-        ui.label(
-            RichText::new(format!("{} Open a drawing", icon::FOLDER_OPEN))
-                .strong()
-                .size(16.0),
-        );
+        ui.label(RichText::new(format!("{} Open a drawing", icon::FOLDER_OPEN)).font(theme::semibold(theme::HEADING)));
         ui.add_space(6.0);
         let mut picked = None;
         if picker::NATIVE
@@ -481,7 +473,7 @@ impl Start {
     }
 
     fn recent_section(&mut self, ui: &mut egui::Ui, settings: &mut Settings) -> Option<PathBuf> {
-        ui.label(RichText::new(format!("{} Recent", icon::HISTORY)).strong().size(16.0));
+        ui.label(RichText::new(format!("{} Recent", icon::HISTORY)).font(theme::semibold(theme::HEADING)));
         ui.add_space(6.0);
         if settings.documents.is_empty() {
             ui.label(RichText::new("Drawings you open show up here.").color(theme::WEAK));
@@ -607,7 +599,14 @@ impl Start {
             return card;
         }
         let clicked = there && response.on_hover_text(doc).clicked();
-        ui.add(egui::Label::new(RichText::new(format!("in {folder}")).color(theme::WEAK).size(11.0)).truncate());
+        ui.add(
+            egui::Label::new(
+                RichText::new(format!("in {folder}"))
+                    .color(theme::WEAK)
+                    .size(theme::LABEL),
+            )
+            .truncate(),
+        );
         if clicked {
             return Card::Open(path);
         }
@@ -668,7 +667,7 @@ fn row(ui: &mut egui::Ui, salt: &str, cards: impl FnOnce(&mut egui::Ui)) {
 const CHECK: f32 = 8.0;
 
 fn checks(painter: &egui::Painter, rect: egui::Rect) {
-    painter.rect_filled(rect, 0.0, egui::Color32::from_gray(240));
+    painter.rect_filled(rect, 0.0, theme::CHECK_LIGHT);
     let (cols, rows) = (
         (rect.width() / CHECK).ceil() as usize,
         (rect.height() / CHECK).ceil() as usize,
@@ -679,7 +678,7 @@ fn checks(painter: &egui::Painter, rect: egui::Rect) {
         .for_each(|(r, c)| {
             let min = rect.min + vec2(c as f32 * CHECK, r as f32 * CHECK);
             let cell = egui::Rect::from_min_size(min, vec2(CHECK, CHECK)).intersect(rect);
-            painter.rect_filled(cell, 0.0, egui::Color32::from_gray(205));
+            painter.rect_filled(cell, 0.0, theme::CHECK_DARK);
         });
 }
 

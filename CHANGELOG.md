@@ -52,6 +52,7 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 
 ### Fixed
 
+- Turning a selection by its knob left the strokes a hair thinner each time; a turn now leaves their thickness exactly as it was.
 - On Windows, `klad install` put klad's folder on the PATH in its long form (`\\?\C:\...`), which shells may not read.
 - A fill bent by bones got stair-steps and spikes along its edge; its weight now reaches past its soft edge. Where little weight is painted, a place fades into its nearest bones instead of jumping between them.
 - A pose, in-between or weights op in a batch with a fill is refused with what to do (a batch of its own after the drawing), instead of a message that sent you to the command you had run.

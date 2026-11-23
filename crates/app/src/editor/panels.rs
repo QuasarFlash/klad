@@ -685,7 +685,7 @@ impl Editor {
             .add(
                 egui::Button::new(RichText::new(caret).size(theme::ICON))
                     .frame(false)
-                    .min_size(vec2(theme::TARGET, theme::TARGET)),
+                    .min_size(vec2(theme::CONTROL, theme::CONTROL)),
             )
             .hint(match collapsed {
                 true => format!("open {}", pane.title()),
@@ -698,7 +698,7 @@ impl Editor {
                 .add(
                     egui::Button::new(RichText::new(icon::CLOSE).size(theme::ICON))
                         .frame(false)
-                        .min_size(vec2(theme::TARGET, theme::TARGET)),
+                        .min_size(vec2(theme::CONTROL, theme::CONTROL)),
                 )
                 .hint(format!("close {}; cmd K brings it back", pane.title()))
                 .clicked();
@@ -831,7 +831,7 @@ impl Editor {
         ui.horizontal_centered(|ui| {
             if self.settings.layout.hidden {
                 if ui
-                    .button(format!("{} show the panels (Tab)", icon::SIDEBAR))
+                    .add(egui::Button::new(format!("{} show the panels (Tab)", icon::SIDEBAR)).small())
                     .hint("the panels are hidden: this or Tab brings them back")
                     .clicked()
                 {
@@ -854,10 +854,10 @@ impl Editor {
             }
             self.jobs.running(now).into_iter().for_each(|(id, name, took)| {
                 ui.separator();
-                ui.add(egui::Spinner::new().size(14.0));
+                ui.add(egui::Spinner::new().size(theme::ICON_SMALL));
                 ui.label(format!("{name} {:.1} s", took.as_secs_f32()));
                 if ui
-                    .add(egui::Button::new(icon::CLOSE).min_size(vec2(theme::TARGET, theme::TARGET)))
+                    .add(egui::Button::new(icon::CLOSE).min_size(vec2(theme::CONTROL, theme::CONTROL)))
                     .hint(format!("cancel {name}"))
                     .clicked()
                 {
@@ -866,7 +866,7 @@ impl Editor {
             });
             self.internal_work(now).into_iter().for_each(|what| {
                 ui.separator();
-                ui.add(egui::Spinner::new().size(14.0));
+                ui.add(egui::Spinner::new().size(theme::ICON_SMALL));
                 ui.label(what);
             });
             ui.with_layout(Flow::right_to_left(Align::Center), |ui| {
@@ -1000,7 +1000,7 @@ impl Editor {
                         .add(
                             egui::Button::new(RichText::new(icon::CLOSE).size(theme::ICON))
                                 .frame(false)
-                                .min_size(vec2(theme::TARGET, theme::TARGET)),
+                                .min_size(vec2(theme::CONTROL, theme::CONTROL)),
                         )
                         .hint(format!("close {title}"))
                         .clicked()
@@ -1443,7 +1443,7 @@ impl Editor {
                                         .color(colour_of(m.tone))
                                         .size(theme::ICON),
                                 );
-                                let words = WIDTH - theme::ICON - if sticky { theme::TARGET + 12.0 } else { 6.0 };
+                                let words = WIDTH - theme::ICON - if sticky { theme::CONTROL + 12.0 } else { 6.0 };
                                 ui.scope(|ui| {
                                     ui.set_max_width(words);
                                     ui.add(egui::Label::new(&m.text).wrap().selectable(false));
@@ -1451,7 +1451,8 @@ impl Editor {
                                 if sticky
                                     && ui
                                         .add(
-                                            egui::Button::new(icon::CLOSE).min_size(vec2(theme::TARGET, theme::TARGET)),
+                                            egui::Button::new(icon::CLOSE)
+                                                .min_size(vec2(theme::CONTROL, theme::CONTROL)),
                                         )
                                         .hint("dismiss; the message log keeps it")
                                         .clicked()
@@ -1535,7 +1536,7 @@ impl Editor {
                                 egui::Button::new(RichText::new(format!("{}  {}", spec.icon, spec.name)).color(colour))
                                     .right_text(RichText::new(self.bindings.label(*cmd)).color(theme::WEAK))
                                     .selected(i == state.selected)
-                                    .min_size(vec2(ui.available_width(), theme::TARGET)),
+                                    .min_size(vec2(ui.available_width(), theme::CONTROL)),
                             )
                             .hint(self.command_hint(*cmd));
                         if i == state.selected && (down || up) {

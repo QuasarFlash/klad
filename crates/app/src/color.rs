@@ -181,7 +181,7 @@ pub fn channel_slider(
     width: f32,
     ramp: impl Fn(f32) -> [f32; 3],
 ) -> egui::Response {
-    let (rect, mut response) = ui.allocate_exact_size(vec2(width, theme::TARGET), Sense::click_and_drag());
+    let (rect, mut response) = ui.allocate_exact_size(vec2(width, theme::CONTROL), Sense::click_and_drag());
     let shown = value.round() as f64;
     response.widget_info(|| egui::WidgetInfo::slider(true, shown, channel.name));
     let span = channel.hi - channel.lo;
@@ -503,7 +503,7 @@ impl Square {
     pub fn show(self, ui: &mut egui::Ui) -> Option<Pick> {
         let (live, open) = self.live(ui);
         let shown = if open { live.rgba() } else { self.rgba };
-        let response = swatch(ui, shown, open, theme::TARGET);
+        let response = swatch(ui, shown, open, theme::CONTROL);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &self.what));
         let response = response.hint(format!("{}, {}; click to pick a colour", self.what, hex(self.rgba)));
         self.popup(ui, &response, live)
@@ -575,12 +575,12 @@ impl Square {
             self.palette.iter().for_each(|Shelf { title, colours }| {
                 ui.label(egui::RichText::new(title).color(theme::WEAK));
                 ui.scope(|ui| {
-                    ui.set_max_width(8.0 * (theme::TARGET + 3.0));
+                    ui.set_max_width(8.0 * (theme::CONTROL + 3.0));
                     ui.spacing_mut().item_spacing = vec2(3.0, 3.0);
                     ui.horizontal_wrapped(|ui| {
                         colours.iter().for_each(|(rgba, name)| {
                             let same = hex(*rgba) == hex(live.rgba());
-                            if swatch(ui, *rgba, same, theme::TARGET).hint(name.clone()).clicked() {
+                            if swatch(ui, *rgba, same, theme::CONTROL).hint(name.clone()).clicked() {
                                 let rgba = if self.alpha {
                                     *rgba
                                 } else {
@@ -595,7 +595,7 @@ impl Square {
             });
             ui.horizontal(|ui| {
                 if let Some(current) = self.current {
-                    let (rect, _) = ui.allocate_exact_size(Vec2::splat(theme::TARGET), Sense::hover());
+                    let (rect, _) = ui.allocate_exact_size(Vec2::splat(theme::CONTROL), Sense::hover());
                     paint_swatch(ui, rect, current, false);
                     if ui
                         .button("use the current colour")

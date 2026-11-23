@@ -298,14 +298,14 @@ impl Home {
                         .map_or_else(|| path.display().to_string(), |s| s.to_string_lossy().to_string());
                     let shown = slot == self.at;
                     if ui
-                        .add(egui::Button::selectable(shown, name).min_size(egui::vec2(0.0, theme::TARGET)))
+                        .add(egui::Button::selectable(shown, name).min_size(egui::vec2(0.0, theme::CONTROL)))
                         .on_hover_text(format!("{} (ctrl Tab goes to the next drawing)", path.display()))
                         .clicked()
                     {
                         picked = Some((slot, false));
                     }
                     if ui
-                        .add(egui::Button::new(theme::icon::CLOSE).min_size(egui::vec2(theme::TARGET, theme::TARGET)))
+                        .add(egui::Button::new(theme::icon::CLOSE).min_size(egui::vec2(theme::CONTROL, theme::CONTROL)))
                         .on_hover_text("close this drawing (it stays saved)")
                         .clicked()
                     {
@@ -577,7 +577,7 @@ impl Home {
                         ui.vertical(|ui| {
                             ui.set_max_width(WIDTH);
                             ui.horizontal(|ui| {
-                                ui.heading(RichText::new("klad").size(26.0));
+                                ui.heading(RichText::new("klad").font(theme::wordmark(theme::DISPLAY)));
                                 ui.label(
                                     RichText::new(format!("version {}", crate::VERSION)).color(crate::theme::WEAK),
                                 );
@@ -1760,6 +1760,132 @@ mod tests {
             h.render().unwrap();
         });
         h.render().unwrap().save(out.join("editor-lantern.png")).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn pass_editor(root: &Path, dir: &Path, open: &[crate::layout::Pane]) -> Harness<'static, Home> {
+        let path = dir.join("lemons.klad");
+        if !path.exists() {
+            let source =
+                std::fs::canonicalize(root.join("samples/lemons/lemons.klad")).expect("run just samples first");
+            let copied = std::process::Command::new("cp")
+                .arg("-R")
+                .arg(&source)
+                .arg(&path)
+                .status()
+                .unwrap();
+            assert!(copied.success());
+        }
+        let gpu = egui_kittest::wgpu::create_render_state(
+            egui_kittest::wgpu::default_wgpu_setup(),
+            egui_wgpu::RendererOptions::PREDICTABLE,
+        );
+        let mut settings = Settings {
+            welcomed: true,
+            rulers: true,
+            ..Settings::default()
+        };
+        settings
+            .layout
+            .panes
+            .iter_mut()
+            .for_each(|p| p.collapsed = !open.contains(&p.pane));
+        let mut first = Home::with(settings, None, Some(gpu.clone()));
+        first.open(&egui::Context::default(), &path).unwrap();
+        let mut h = Harness::builder()
+            .with_size(vec2(1600.0, 1000.0))
+            .with_pixels_per_point(2.0)
+            .renderer(egui_kittest::wgpu::WgpuTestRenderer::from_render_state(gpu))
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first);
+        let started = std::time::Instant::now();
+        while !h.state().editor.as_ref().unwrap().canvas_current() && started.elapsed().as_secs() < 60 {
+            h.step();
+            h.render().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        h.key_press(Key::B);
+        h.state_mut().editor.as_mut().unwrap().redraw_canvas();
+        (0..6).for_each(|_| {
+            h.step();
+            h.render().unwrap();
+        });
+        h
+    }
+
+    #[test]
+    #[ignore = "writes the six screens of the UI pass to scratch/ui/pass/$UI_PASS"]
+    fn ui_pass_pictures() {
+        use crate::layout::Pane;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let out = root
+            .join("scratch/ui/pass")
+            .join(std::env::var("UI_PASS").unwrap_or_else(|_| "now".into()));
+        std::fs::create_dir_all(&out).unwrap();
+        let shot = |h: &mut Harness<'static, Home>, name: &str| {
+            h.render().unwrap().save(out.join(format!("{name}.png"))).unwrap();
+        };
+        let dir = folder("ui-pass-drawings-in-a-folder-with-a-long-name");
+        std::fs::create_dir_all(dir.join("apps/.codex")).unwrap();
+        let mut h = Harness::builder()
+            .with_size(vec2(1600.0, 1000.0))
+            .with_pixels_per_point(2.0)
+            .with_step_dt(1.0 / 30.0)
+            .wgpu()
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first_start(&dir));
+        with_claude_desktop(&mut h, &dir);
+        h.run_steps(90);
+        shot(&mut h, "4-onboarding-hello");
+        h.get_by_label("Get started").click();
+        h.run_steps(30);
+        h.get_all_by_label("Connect").next().unwrap().click();
+        h.run_steps(40);
+        shot(&mut h, "5-onboarding-agent");
+        h.get_by_label("Continue").click();
+        h.run_steps(40);
+        shot(&mut h, "6-onboarding-steps");
+        drop(h);
+
+        let shown: Vec<PathBuf> = [
+            "samples/lemons/lemons.klad",
+            "samples/creature/creature.klad",
+            "samples/bounce/bounce.klad",
+            "samples/solids/solids.klad",
+            "samples/sprout/sprout.klad",
+        ]
+        .iter()
+        .map(|p| std::fs::canonicalize(root.join(p)).expect("run just samples first"))
+        .collect();
+        let settings = Settings {
+            welcomed: true,
+            drawings: Some(dir.display().to_string()),
+            documents: shown.iter().map(|p| p.display().to_string()).collect(),
+            ..Settings::default()
+        };
+        let mut first = Home::with(settings, None, None);
+        first.begin(&egui::Context::default(), None);
+        let mut h = Harness::builder()
+            .with_size(vec2(1600.0, 1000.0))
+            .with_pixels_per_point(2.0)
+            .wgpu()
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first);
+        let started = std::time::Instant::now();
+        while started.elapsed() < std::time::Duration::from_secs(60) {
+            h.run_steps(2);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            if shown.iter().all(|p| p.join(".cache/thumb.png").exists()) && started.elapsed().as_secs() > 2 {
+                break;
+            }
+        }
+        h.run_steps(6);
+        shot(&mut h, "1-start");
+        drop(h);
+
+        let mut h = pass_editor(&root, &dir, &[Pane::Layers]);
+        shot(&mut h, "2-editor-folded");
+        drop(h);
+        let mut h = pass_editor(&root, &dir, &[Pane::Tool, Pane::Brush, Pane::Layers]);
+        shot(&mut h, "3-editor-colour-brush");
+        drop(h);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

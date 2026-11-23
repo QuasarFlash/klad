@@ -168,13 +168,13 @@ fn audit(h: &Harness<'static, Editor>, what: &str) -> usize {
     let found = controls(h);
     let small: Vec<String> = found
         .iter()
-        .filter(|(_, _, r)| r.height() < theme::TARGET - 0.5)
+        .filter(|(_, _, r)| r.height() < theme::CONTROL - 0.5)
         .map(|(role, label, r)| format!("{role:?} {label:?} {:.1} high", r.height()))
         .collect();
     assert!(
         small.is_empty(),
         "{what}: controls under {} pt: {small:#?}",
-        theme::TARGET
+        theme::CONTROL
     );
     let bare: Vec<String> = found
         .iter()
@@ -220,7 +220,7 @@ fn the_strip_shrinks_then_folds_its_foot_when_the_window_is_short() {
         in_strip(&smaller, theme::icon::REDO).unwrap(),
     );
     let file = in_strip(&smaller, theme::icon::FILE).expect("first the buttons get smaller");
-    assert!(brush.height() < 36.0 && brush.height() >= theme::TARGET, "{brush:?}");
+    assert!(brush.height() < 36.0 && brush.height() >= theme::CONTROL, "{brush:?}");
     assert!(file.top() >= redo.bottom(), "nothing overlaps: {redo:?} {file:?}");
     drop(smaller);
     let medium = harness(editor(&path), vec2(1280.0, 1000.0));
@@ -708,7 +708,8 @@ fn a_still_opens_with_the_timeline_folded_and_a_dock_that_shares_the_window() {
             .unwrap();
         assert!(
             rows + 0.5 >= ed.dock_fit.layers_least,
-            "Layers keeps three rows: {rows}"
+            "Layers keeps three rows: {rows} of the {} they need at {scale}",
+            ed.dock_fit.layers_least
         );
         ed.settings.layout.panes.iter().filter(|p| p.open).for_each(|p| {
             let title = h.get_by_label(p.pane.title()).rect();
@@ -7730,10 +7731,14 @@ fn the_light_maps_panel_turns_maps_on_and_layers_become_map_layers_by_command() 
     let shade = h.state().scene.bundle.doc.find_layer("shade").unwrap().clone();
     assert_eq!(shade.map, Some(klad_core::maps::Role::Height), "shade now draws height");
     activate(&mut h, "colour");
+    h.get_by_label("a surface of its own").scroll_to_me();
+    h.run_steps(3);
     h.get_by_label("a surface of its own").click();
     h.run_steps(3);
     let colour = h.state().scene.bundle.doc.find_layer("colour").unwrap().clone();
     assert!(colour.surface.is_some(), "colour rounds in from its own outline");
+    h.get_by_label("add a point light").scroll_to_me();
+    h.run_steps(3);
     h.get_by_label("add a point light").click();
     h.run_steps(3);
     assert_eq!(h.state().scene.bundle.doc.maps.as_ref().unwrap().lights.len(), 1);
@@ -8075,6 +8080,8 @@ fn a_height_layer_shows_the_height_map_and_paints_in_greys() {
     activate(&mut h, "colour");
     h.run_steps(3);
     assert_eq!(h.state().maps.show, None);
+    h.get_by_label("add a point light").scroll_to_me();
+    h.run_steps(3);
     h.get_by_label("add a point light").click();
     h.run_steps(3);
     let before = h.state().scene.bundle.doc.maps.clone().unwrap();
@@ -8162,7 +8169,7 @@ fn a_map_layer_is_added_from_the_layers_panel_and_its_settings_switch_what_it_dr
     h.state_mut().pick_new_colour([0.8, 0.2, 0.2, 1.0]);
     h.run_steps(2);
     assert!(h.state().scene.bundle.doc.maps.is_none());
-    h.get_by_label(&format!("{} map", theme::icon::MOUNTAINS)).click();
+    h.get_by_label("new map layer").click();
     h.run_steps(3);
     let added = h.state().scene.active_layer().unwrap().clone();
     assert_eq!(added.map, Some(klad_core::maps::Role::Height));

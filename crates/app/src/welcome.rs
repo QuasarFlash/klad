@@ -386,12 +386,16 @@ impl Welcome {
         self.paint_tile(ui, tile, now);
         ui.add_space(22.0);
         self.appear(ui, now, WORDS, |ui| {
-            ui.label(RichText::new("klad").size(44.0).strong().color(theme::TEXT));
+            ui.label(
+                RichText::new("klad")
+                    .font(theme::wordmark(theme::WORDMARK))
+                    .color(theme::TEXT),
+            );
         });
         ui.add_space(8.0);
         self.appear(ui, now, WORDS + STAGGER * 2.0, |ui| {
             ui.set_max_width(400.0);
-            ui.add(egui::Label::new(RichText::new(LINE).size(15.0).color(theme::WEAK)).wrap());
+            ui.add(egui::Label::new(RichText::new(LINE).size(theme::HEADING).color(theme::WEAK)).wrap());
         });
         ui.add_space(28.0);
         let mut act = None;
@@ -450,12 +454,16 @@ impl Welcome {
 
     fn title(&self, ui: &mut egui::Ui, now: f64, title: &str, line: &str) {
         self.appear(ui, now, 0.0, |ui| {
-            ui.label(RichText::new(title).size(26.0).strong().color(theme::TEXT));
+            ui.label(
+                RichText::new(title)
+                    .font(theme::semibold(theme::DISPLAY))
+                    .color(theme::TEXT),
+            );
         });
         ui.add_space(6.0);
         self.appear(ui, now, STAGGER, |ui| {
             ui.set_max_width(440.0);
-            ui.add(egui::Label::new(RichText::new(line).size(14.0).color(theme::WEAK)).wrap());
+            ui.add(egui::Label::new(RichText::new(line).size(theme::HEADING).color(theme::WEAK)).wrap());
         });
         ui.add_space(18.0);
     }
@@ -490,9 +498,9 @@ impl Welcome {
                             ui.set_width(CHIP);
                             ui.set_min_height(78.0);
                             ui.vertical_centered(|ui| {
-                                ui.label(RichText::new(*glyph).size(24.0).color(theme::ACCENT));
+                                ui.label(RichText::new(*glyph).size(theme::ICON_LARGE).color(theme::ACCENT));
                                 ui.add_space(4.0);
-                                ui.add(egui::Label::new(RichText::new(*words).size(13.0)).wrap());
+                                ui.add(egui::Label::new(RichText::new(*words).font(theme::medium(theme::BODY))).wrap());
                             });
                         });
                 });

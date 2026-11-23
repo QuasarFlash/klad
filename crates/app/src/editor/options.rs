@@ -4,7 +4,7 @@ use crate::commands::Cmd;
 use crate::messages::Tone;
 use crate::theme::{self, Hint, icon};
 use anyhow::{Result, anyhow};
-use egui::{Color32, ColorImage, RichText, Sense, TextureHandle, TextureOptions, vec2};
+use egui::{Color32, ColorImage, RichText, Sense, TextureHandle, TextureOptions, Vec2, vec2};
 use klad_brush::{BrushSet, Raster, TILE, replay};
 use klad_core::brushes::BrushDef;
 use klad_core::ops::{Op, PaletteEdit, parse_lines};
@@ -211,9 +211,10 @@ impl Editor {
     }
 
     pub(super) fn colour_pair(&mut self, ui: &mut egui::Ui) {
-        let (rect, _) = ui.allocate_exact_size(vec2(36.0, 36.0), Sense::hover());
-        let back = egui::Rect::from_min_size(rect.min + vec2(12.0, 12.0), vec2(24.0, 24.0));
-        let front = egui::Rect::from_min_size(rect.min, vec2(24.0, 24.0));
+        let side = theme::CONTROL;
+        let (rect, _) = ui.allocate_exact_size(Vec2::splat(side + theme::space::MD), Sense::hover());
+        let back = egui::Rect::from_min_size(rect.min + Vec2::splat(theme::space::MD), Vec2::splat(side));
+        let front = egui::Rect::from_min_size(rect.min, Vec2::splat(side));
         let swap = ui
             .interact(back, ui.scope_id().with("second colour"), Sense::click())
             .hint(Cmd::SwapColours.spec().hint());
@@ -224,13 +225,19 @@ impl Editor {
         current.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "the current colour"));
         let painter = ui.painter();
         [(back, self.second), (front, self.color)].iter().for_each(|(r, c)| {
-            painter.rect_filled(*r, 3.0, Color32::from_gray(200));
-            painter.rect_filled(*r, 3.0, color::color32(*c));
+            painter.rect_filled(*r, theme::radius::CONTROL, theme::CHECK_DARK);
+            painter.rect_filled(*r, theme::radius::CONTROL, color::color32(*c));
             painter.rect_stroke(
                 *r,
-                3.0,
-                egui::Stroke::new(1.5, Color32::from_gray(20)),
+                theme::radius::CONTROL,
+                egui::Stroke::new(theme::HAIRLINE, theme::PANEL),
                 egui::StrokeKind::Outside,
+            );
+            painter.rect_stroke(
+                *r,
+                theme::radius::CONTROL,
+                egui::Stroke::new(theme::HAIRLINE, theme::WEAK),
+                egui::StrokeKind::Inside,
             );
         });
         if swap.clicked() || current.clicked() {
@@ -367,7 +374,7 @@ impl Editor {
                     &mut self.pen_stroke
                 };
                 ui.checkbox(on, label).hint(hint);
-                if color::swatch(ui, rgba, false, theme::TARGET)
+                if color::swatch(ui, rgba, false, theme::CONTROL)
                     .hint(format!(
                         "the {label} colour, {}; click (or X) swaps the two colours",
                         color::hex(rgba)
@@ -386,6 +393,7 @@ impl Editor {
             return ui.horizontal_wrapped(|ui| self.crop_bar(ui)).inner;
         }
         ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::space::XS;
             let (cmd, name) = match self.tool {
                 Tool::Brush if self.is_on(Cmd::Eraser) == Some(true) => (Cmd::Eraser, "eraser"),
                 Tool::Brush => (Cmd::Brush, "brush"),
@@ -735,7 +743,7 @@ impl Editor {
                         corner.center(),
                         egui::Align2::CENTER_CENTER,
                         icon::CLOSE,
-                        egui::FontId::proportional(9.0),
+                        theme::regular(theme::ICON_TINY),
                         Color32::WHITE,
                     );
                 }
@@ -866,7 +874,7 @@ impl Editor {
                             false => format!(", by {}", shipped.by),
                         };
                         if ui
-                            .add(egui::Button::new(shipped.title).min_size(vec2(130.0, theme::TARGET)))
+                            .add(egui::Button::new(shipped.title).min_size(vec2(130.0, theme::CONTROL)))
                             .hint(format!("{} colours{by}", shipped.count()))
                             .clicked()
                         {

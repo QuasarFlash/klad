@@ -925,7 +925,7 @@ impl Editor {
                     let response = ui.add(
                         egui::Button::image(egui::Image::new(t).fit_to_exact_size(size))
                             .selected(chosen)
-                            .min_size(vec2(200.0, theme::TARGET)),
+                            .min_size(vec2(200.0, theme::CONTROL)),
                     );
                     let name = family.family.clone();
                     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
@@ -934,7 +934,7 @@ impl Editor {
                 None => ui.add(
                     egui::Button::new(&family.family)
                         .selected(chosen)
-                        .min_size(vec2(200.0, theme::TARGET)),
+                        .min_size(vec2(200.0, theme::CONTROL)),
                 ),
             };
             let what = match family.shipped {
@@ -1030,7 +1030,7 @@ impl Editor {
                     ui.label(RichText::new("in this drawing").color(theme::WEAK));
                     own.iter().for_each(|file| {
                         if ui
-                            .add(egui::Button::new(file).min_size(vec2(200.0, theme::TARGET)))
+                            .add(egui::Button::new(file).min_size(vec2(200.0, theme::CONTROL)))
                             .hint("a font file copied into this drawing")
                             .clicked()
                         {

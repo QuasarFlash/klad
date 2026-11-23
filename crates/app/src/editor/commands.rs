@@ -1671,7 +1671,21 @@ impl Editor {
             Some(_) => theme::BODY,
             None => theme::ICON,
         };
-        self.command_sized(ui, cmd, label, size, egui::vec2(theme::TARGET, theme::TARGET))
+        self.command_sized(ui, cmd, label, size, egui::vec2(theme::CONTROL, theme::CONTROL))
+    }
+
+    pub(super) fn command_words(&mut self, ui: &mut egui::Ui, cmd: Cmd, words: &str) -> egui::Response {
+        let button = egui::Button::new(words)
+            .selected(self.is_on(cmd) == Some(true))
+            .min_size(egui::vec2(theme::CONTROL, theme::CONTROL));
+        let enabled = self.can_run(cmd).is_none();
+        let response = ui.add_enabled(enabled, button).hint(self.command_hint(cmd));
+        let name = cmd.spec().name;
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
+        if response.clicked() {
+            self.queued.push(cmd);
+        }
+        response
     }
 
     pub(super) fn command_sized(
@@ -1721,7 +1735,7 @@ impl Editor {
                 rect.right_bottom() - egui::vec2(3.0, 2.0),
                 egui::Align2::RIGHT_BOTTOM,
                 k.label(),
-                egui::FontId::proportional(9.0),
+                theme::regular(theme::SMALL),
                 theme::WEAK,
             );
         }
@@ -1796,7 +1810,7 @@ impl Editor {
         .hint("the drawing without its cache, so whoever reads the issue sees what you see");
         let text = self.problem_report(None);
         egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-            ui.add(egui::Label::new(RichText::new(&text).monospace().size(11.0)).wrap());
+            ui.add(egui::Label::new(RichText::new(&text).monospace().size(theme::SMALL)).wrap());
         });
         ui.horizontal(|ui| {
             if ui

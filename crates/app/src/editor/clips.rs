@@ -3,7 +3,7 @@ use crate::commands::Cmd;
 use crate::jobs::{Spec, Tag};
 use crate::theme::Hint;
 use anyhow::Result;
-use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, pos2};
+use egui::{Align2, Color32, Painter, Pos2, Rect, Stroke, pos2};
 use klad_core::doc::{Clip, Timeline as Clock};
 use klad_core::ops::{ClipEdit, Op};
 use std::path::{Path, PathBuf};
@@ -166,7 +166,7 @@ impl Strip {
                     pos2(bar.left() + 6.0, bar.center().y),
                     Align2::LEFT_CENTER,
                     label,
-                    FontId::proportional(10.5),
+                    crate::theme::regular(crate::theme::SMALL),
                     Color32::from_gray(240),
                 );
         });

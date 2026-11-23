@@ -33,7 +33,8 @@ section() {
   section "Wuffs" "GIF decoding inside Skia. MIT and Apache-2.0." wuffs.txt
   printf '## Built from C sources\n\n`libwebp-sys` compiles libwebp into klad for WebP export.\n\n'
   section "libwebp" "WebP encoding. BSD 3-Clause, with Google's patent grant." libwebp.txt libwebp-patents.txt
-  printf '## Fonts\n\nThe editor shows its interface in these fonts. Ubuntu Light (Ubuntu Font Licence) and Noto Emoji (SIL Open Font License) come with egui; their licence texts are above, under epaint_default_fonts.\n\n'
+  printf '## Fonts\n\nThe editor shows its interface in these fonts. Ubuntu Light (Ubuntu Font Licence, the klad wordmark and a fallback) and Noto Emoji (SIL Open Font License) come with egui; their licence texts are above, under epaint_default_fonts.\n\n'
+  section "Inter" "The editor's interface font, in Regular, Medium and SemiBold, without its private-use characters. SIL Open Font License 1.1." inter.txt
   section "Phosphor icons" "The editor's icons. MIT." phosphor.txt
   section "Hack" "egui's monospace font. MIT, with the Bitstream Vera licence for the glyphs it builds on." hack.txt
   section "emoji-icon-font and egui-icons" "egui's icon glyphs. MIT." emoji-icon-font.txt egui-icons.txt

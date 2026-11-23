@@ -410,12 +410,7 @@ impl Editor {
         .for_each(|r| {
             painter.rect_filled(r, 0.0, grown);
         });
-        painter.rect_stroke(
-            keep,
-            0.0,
-            egui::Stroke::new(1.5, theme::ACCENT),
-            egui::StrokeKind::Middle,
-        );
+        painter.rect_stroke(keep, 0.0, egui::Stroke::new(1.5, theme::MARK), egui::StrokeKind::Middle);
         if crop.held.is_some() {
             [1.0 / 3.0, 2.0 / 3.0].into_iter().for_each(|t| {
                 let x = keep.min.x + keep.width() * t;
@@ -429,7 +424,7 @@ impl Editor {
         handles.iter().for_each(|(_, at)| {
             let r = Rect::from_center_size(*at, Vec2::splat(GRIP));
             painter.rect_filled(r, 1.0, Color32::WHITE);
-            painter.rect_stroke(r, 1.0, egui::Stroke::new(1.5, theme::ACCENT), egui::StrokeKind::Middle);
+            painter.rect_stroke(r, 1.0, egui::Stroke::new(1.5, theme::MARK), egui::StrokeKind::Middle);
         });
         let ctx = painter.ctx();
         let Some(hover) = ctx

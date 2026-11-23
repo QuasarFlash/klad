@@ -4834,7 +4834,7 @@ impl Editor {
                 origin + vec2(radius + 8.0, 0.0),
                 egui::Align2::LEFT_CENTER,
                 format!("{:.1} px", self.size),
-                egui::FontId::proportional(13.0),
+                crate::theme::regular(crate::theme::BODY),
                 Color32::WHITE,
             );
             return;
@@ -5162,7 +5162,7 @@ impl Editor {
             ),
         };
         let button = egui::Button::new(egui::RichText::new(spec.icon).size(crate::theme::ICON))
-            .min_size(vec2(crate::theme::TARGET, crate::theme::TARGET));
+            .min_size(vec2(crate::theme::CONTROL, crate::theme::CONTROL));
         let enabled = refused.is_none();
         let response = ui.add_enabled(enabled, button).hint(hint);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, dye.what()));
@@ -5628,7 +5628,7 @@ impl Editor {
             }
         });
         let t = node.transform;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if let Some(v) = self.number(
                 ui,
                 &format!("{id}.x"),
@@ -5662,8 +5662,6 @@ impl Editor {
             ) {
                 props.push(("transform.rotate".into(), json!(v)));
             }
-        });
-        ui.horizontal(|ui| {
             if let Some(v) = self.number(
                 ui,
                 &format!("{id}.sx"),
@@ -6107,7 +6105,7 @@ impl Editor {
             ui.horizontal_wrapped(|ui| {
                 recent.iter().for_each(|hex| {
                     if let Some(rgba) = color::rgba_of(hex)
-                        && color::swatch(ui, rgba, hex.eq_ignore_ascii_case(&current), 24.0)
+                        && color::swatch(ui, rgba, hex.eq_ignore_ascii_case(&current), crate::theme::CONTROL)
                             .hint(format!("{hex}, used lately"))
                             .clicked()
                     {
@@ -6135,7 +6133,7 @@ impl Editor {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.horizontal(|ui| {
-                    color::swatch(ui, self.color, false, 28.0).hint("the current colour");
+                    color::swatch(ui, self.color, false, crate::theme::CONTROL).hint("the current colour");
                     if let Some(text) = self.text(
                         ui,
                         "colour.hex",
@@ -6247,7 +6245,7 @@ impl Editor {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.add_sized(
-                    [10.0, crate::theme::TARGET],
+                    [10.0, crate::theme::CONTROL],
                     egui::Label::new(egui::RichText::new(channel.name).color(crate::theme::WEAK)),
                 );
                 let width = (ui.available_width() - 48.0).max(CHANNEL_TRACK);

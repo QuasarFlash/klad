@@ -153,7 +153,7 @@ fn bone_colour(k: usize) -> [f32; 3] {
 }
 
 fn weight_legend(ui: &mut egui::Ui) {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(64.0, theme::TARGET), egui::Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(64.0, theme::CONTROL), egui::Sense::hover());
     let bar = egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 4.0), egui::vec2(64.0, 8.0));
     (0..16).for_each(|i| {
         let x0 = bar.min.x + bar.width() * i as f32 / 16.0;
@@ -163,7 +163,7 @@ fn weight_legend(ui: &mut egui::Ui) {
         );
         ui.painter().rect_filled(cell, 0.0, heat(i as f32 / 15.0));
     });
-    let font = egui::FontId::proportional(10.0);
+    let font = theme::regular(theme::SMALL);
     ui.painter().text(
         egui::pos2(bar.min.x, bar.max.y + 1.0),
         egui::Align2::LEFT_TOP,
@@ -1454,7 +1454,7 @@ impl Editor {
                 .into_iter()
                 .for_each(|(mode, glyph, hint, cmd)| {
                     let button = egui::Button::selectable(self.bones.wmode == mode, glyph)
-                        .min_size(egui::vec2(theme::TARGET, theme::TARGET));
+                        .min_size(egui::vec2(theme::CONTROL, theme::CONTROL));
                     if ui.add(button).hint(format!("{}: {hint}", mode.name())).clicked() {
                         self.queued.push(cmd);
                     }
@@ -1829,7 +1829,7 @@ impl Editor {
                 true => format!("{used:.2}"),
                 false => format!("{used:.2} (painted {painted:.2})"),
             };
-            let font = egui::FontId::proportional(13.0);
+            let font = theme::regular(theme::BODY);
             let galley = painter.layout_no_wrap(text, font, Color32::WHITE);
             let back = egui::Rect::from_min_size(at, galley.size()).expand(3.0);
             painter.rect_filled(back, 3.0, Color32::from_black_alpha(170));
@@ -1849,7 +1849,7 @@ impl Editor {
             let (a, z) = (place(at(*h)), place(at(*t)));
             let picked = self.bones.selected.as_ref() == Some(&b.name);
             let colour = if picked {
-                theme::ACCENT
+                theme::MARK
             } else {
                 Color32::from_rgb(120, 200, 240)
             };
@@ -1871,14 +1871,14 @@ impl Editor {
             if picked && editing {
                 [a, z].into_iter().for_each(|p| {
                     painter.circle_filled(p, 6.5, Color32::WHITE);
-                    painter.circle_stroke(p, 6.5, egui::Stroke::new(2.0, theme::ACCENT));
+                    painter.circle_stroke(p, 6.5, egui::Stroke::new(2.0, theme::MARK));
                 });
             }
             painter.text(
                 a + (z - a) * 0.5 + egui::vec2(6.0, -6.0),
                 egui::Align2::LEFT_BOTTOM,
                 &b.name,
-                egui::FontId::proportional(11.0),
+                theme::regular(theme::SMALL),
                 colour,
             );
         });
@@ -1888,17 +1888,17 @@ impl Editor {
             what: Dragging::New(_),
         }) = &self.bones.drag
         {
-            painter.line_segment([place(*from), place(*to)], egui::Stroke::new(2.0, theme::ACCENT));
+            painter.line_segment([place(*from), place(*to)], egui::Stroke::new(2.0, theme::MARK));
         }
         if editing && let Some(chain) = &self.bones.chain {
             let (a, z) = (place(at(chain.head)), place(chain.to));
             painter.extend(egui::Shape::dashed_line(
                 &[a, z],
-                egui::Stroke::new(2.0, theme::ACCENT),
+                egui::Stroke::new(2.0, theme::MARK),
                 6.0,
                 4.0,
             ));
-            painter.circle_stroke(a, 6.5, egui::Stroke::new(1.5, theme::ACCENT));
+            painter.circle_stroke(a, 6.5, egui::Stroke::new(1.5, theme::MARK));
         }
         if self.bones.mode == Mode::Pose {
             ik.iter().for_each(|k| {
@@ -1940,7 +1940,7 @@ impl Editor {
             && let Some(p) = hover
         {
             let r = self.bones.radius * self.view.map_or(1.0, |v| v.zoom);
-            painter.circle_stroke(place(p), r, egui::Stroke::new(1.0, theme::ACCENT));
+            painter.circle_stroke(place(p), r, egui::Stroke::new(1.0, theme::MARK));
         }
     }
 }

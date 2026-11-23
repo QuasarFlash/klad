@@ -168,7 +168,7 @@ impl Editor {
         let mut act = None;
         ui.horizontal(|ui| {
             ui.label(RichText::new("your brushes").color(theme::WEAK).small());
-            let square = egui::vec2(theme::TARGET, theme::TARGET);
+            let square = egui::vec2(theme::CONTROL, theme::CONTROL);
             if ui
                 .add(egui::Button::new(icon::EXPORT).min_size(square))
                 .hint("write your brushes to one file to share")
@@ -293,7 +293,7 @@ impl Editor {
         ui.add(
             button
                 .selected(selected)
-                .min_size(egui::vec2(ui.available_width(), theme::TARGET)),
+                .min_size(egui::vec2(ui.available_width(), theme::CONTROL)),
         )
         .hint(format!("{id}: {}", def.name))
     }

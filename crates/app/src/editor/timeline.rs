@@ -1201,7 +1201,7 @@ impl Editor {
             if ui
                 .add(
                     egui::Button::new(RichText::new(caret).size(theme::ICON))
-                        .min_size(vec2(theme::TARGET, theme::TARGET)),
+                        .min_size(vec2(theme::CONTROL, theme::CONTROL)),
                 )
                 .hint(match folded {
                     true => "open the timeline: its layers and frames",
@@ -1385,7 +1385,7 @@ impl Editor {
             pos2(strip.left() + 4.0, strip.top() + clips::LANE / 2.0),
             Align2::LEFT_CENTER,
             "clips",
-            FontId::proportional(11.0),
+            theme::regular(theme::SMALL),
             Color32::GRAY,
         );
         let (rect, _) = ui.allocate_exact_size(vec2(NAMES, RULER), Sense::hover());
@@ -1393,7 +1393,7 @@ impl Editor {
             rect.left_center() + vec2(4.0, 0.0),
             Align2::LEFT_CENTER,
             "layers",
-            FontId::proportional(11.0),
+            theme::regular(theme::SMALL),
             Color32::GRAY,
         );
         let rows = self.layer_rows(layers::Where::Timeline);
@@ -1921,7 +1921,7 @@ fn paint_block(painter: &egui::Painter, block: Rect, cw: f32, fill: Color32, lab
             room.left_center(),
             Align2::LEFT_CENTER,
             label,
-            FontId::monospace(10.0),
+            FontId::monospace(theme::SMALL),
             Color32::from_gray(if faded { 140 } else { 230 }),
         );
     }

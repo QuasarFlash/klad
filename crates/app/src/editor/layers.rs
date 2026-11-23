@@ -13,7 +13,7 @@ use serde_json::{Map, json};
 use std::collections::BTreeMap;
 use std::sync::mpsc::{Receiver, channel};
 
-const ROW: f32 = 32.0;
+const ROW: f32 = theme::ROW;
 
 pub use crate::composite::{THUMB, thumbnail};
 
@@ -242,9 +242,9 @@ impl Editor {
     fn small_toggle(ui: &mut egui::Ui, glyph: &str, on: bool, hint: String) -> bool {
         let colour = if on { theme::TEXT } else { theme::WEAK };
         ui.add(
-            egui::Button::new(RichText::new(glyph).size(15.0).color(colour))
+            egui::Button::new(RichText::new(glyph).size(theme::ICON).color(colour))
                 .frame(false)
-                .min_size(vec2(22.0, theme::TARGET)),
+                .min_size(vec2(22.0, theme::CONTROL)),
         )
         .hint(hint)
         .clicked()
@@ -429,9 +429,9 @@ impl Editor {
             if row.has_mask {
                 let r = ui
                     .add(
-                        egui::Button::new(RichText::new(icon::MASK).size(14.0))
+                        egui::Button::new(RichText::new(icon::MASK).size(theme::ICON_SMALL))
                             .selected(self.scene.active.last() == Some(&MASK) && self.scene.active.starts_with(&row.path))
-                            .min_size(vec2(22.0, theme::TARGET)),
+                            .min_size(vec2(22.0, theme::CONTROL)),
                     )
                     .hint("the mask: click to paint on it, alt click turns it on or off, right-click shows its row in the timeline");
                 if r.clicked() {
@@ -454,11 +454,11 @@ impl Editor {
                 }
             }
             if place == Where::Panel && !row.skeletons.is_empty() {
-                let glyph = RichText::new(icon::BONE).size(14.0).color(match row.rig {
+                let glyph = RichText::new(icon::BONE).size(theme::ICON_SMALL).color(match row.rig {
                     Some(_) => theme::ACCENT,
                     None => theme::WEAK,
                 });
-                let button = egui::Button::new(glyph).frame(false).min_size(vec2(22.0, theme::TARGET));
+                let button = egui::Button::new(glyph).frame(false).min_size(vec2(22.0, theme::CONTROL));
                 egui::containers::menu::MenuButton::from_button(button)
                     .ui(ui, |ui| {
                         let mut chosen = None;
@@ -512,7 +512,7 @@ impl Editor {
                 .iter()
                 .filter(|(on, _, _)| *on)
                 .for_each(|(_, glyph, what)| {
-                    ui.label(RichText::new(*glyph).size(12.0).color(theme::ACCENT)).on_hover_text(*what);
+                    ui.label(RichText::new(*glyph).size(theme::LABEL).color(theme::ACCENT)).on_hover_text(*what);
                 });
         });
         if response.clicked() && !renaming {
@@ -717,7 +717,10 @@ impl Editor {
             ]
             .into_iter()
             .for_each(|(cmd, label)| {
-                self.command_button(ui, cmd, label);
+                match label {
+                    Some(words) => self.command_words(ui, cmd, words),
+                    None => self.command_button(ui, cmd, None),
+                };
             });
         });
     }

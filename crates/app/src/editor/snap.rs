@@ -289,7 +289,7 @@ impl Editor {
             }
         }
         if !g.hidden {
-            let line = Stroke::new(1.0, theme::ACCENT);
+            let line = Stroke::new(1.0, theme::MARK);
             g.x.iter().for_each(|x| {
                 let s = to_screen(vec2(*x, 0.0)).x;
                 painter.line_segment([pos2(s, rect.top()), pos2(s, rect.bottom())], line);
@@ -348,7 +348,7 @@ fn draw_ruler(painter: &egui::Painter, area: Rect, across: bool, to_screen: &imp
         .into_iter()
         .find(|s| s * per_px >= 8.0)
         .unwrap_or(5000.0);
-    let font = egui::FontId::proportional(9.0);
+    let font = theme::regular(theme::SMALL);
     let count = (length / step).ceil() as i64;
     (0..=count).for_each(|i| {
         let v = i as f32 * step;

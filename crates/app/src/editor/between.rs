@@ -415,7 +415,7 @@ impl Editor {
                 pos2(x, rect.bottom() - 2.0),
                 egui::Align2::CENTER_BOTTOM,
                 f.to_string(),
-                egui::FontId::proportional(11.0),
+                theme::regular(theme::SMALL),
                 theme::WEAK,
             );
         });
@@ -462,7 +462,7 @@ impl Editor {
                                         rect.center(),
                                         egui::Align2::CENTER_CENTER,
                                         format!("go to {f}\nto see it"),
-                                        egui::FontId::proportional(11.0),
+                                        theme::regular(theme::SMALL),
                                         theme::WEAK,
                                     );
                                 }
