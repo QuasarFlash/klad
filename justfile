@@ -31,12 +31,6 @@ app:
 dist target=`rustc -vV | sed -n 's/^host: //p'`:
     bash packaging/archive.sh {{target}}
 
-itch-mac:
-    test -n "${ITCH_TARGET:-}" || { echo "set ITCH_TARGET to the itch.io page, for example indicode/klad" >&2; exit 1; }
-    bash packaging/macos/app.sh
-    rm -rf dist/itch-mac && mkdir -p dist/itch-mac && cp -R dist/klad.app dist/itch-mac/
-    butler push dist/itch-mac "$ITCH_TARGET:mac" --userversion "$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-
 icon: compile
     KLAD={{klad}} bash packaging/icon/build.sh
 

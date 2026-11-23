@@ -42,9 +42,9 @@ klad is source-available, not open source (`LICENSE`): its licence lets you send
 
 ## Releases
 
-The Mac and Windows builds are sold on itch.io (and later Steam); Linux is built from source. GitHub has the release notes, not downloads.
+The Mac and Windows builds are sold on klad.studio through Paddle. A purchase emails a link to the builds, which sit in a private bucket; Linux is built from source. GitHub has the release notes, not downloads.
 
 1. `just build minor` (or `major`) sets the release's version; move the changes under "Unreleased" in `CHANGELOG.md` to a section `## x.y.z (date)` with that version (or date a section written ahead, like `## 1.0.0 (to come)`). A section opens with a few lines for people deciding whether to update, then Added, Changed and Fixed; `just notes x.y.z` prints it as the release and the update notice will show it. `just formats x.y.z` saves seven samples with their hashes into `tests/formats/x.y.z/` (after `just samples`; `packaging/formats.sh <klad> x.y.z <folder>` takes them from another folder, laid out as `<name>/<name>.klad`). Commit.
-2. On a Mac with [butler](https://itch.io/docs/butler/) logged in: `ITCH_TARGET=<user>/<page> just itch-mac` builds the app (arm64 and x86_64 in one) and pushes it to the page's `mac` channel.
-3. Tag `vx.y.z` and push the tag. The `release` workflow runs the checks, builds the Windows version and pushes it to the `windows` channel (with the `BUTLER_API_KEY` secret and the `ITCH_TARGET` variable set in the repository), then publishes that changelog section as the release notes, which the editor's update check reads.
-4. The builds are not signed yet.
+2. On a Mac: `just app` builds the app (Apple silicon and Intel in one) and its disk image, signed and notarised with the keychain profile (`KLAD_SIGN=0` for an unsigned build for yourself).
+3. Tag `vx.y.z` and push the tag. The `release` workflow runs the checks, builds the Windows version and publishes that changelog section as the release notes, which the editor's update check reads.
+4. Until the workflow signs the builds and puts them in the bucket, the signed disk image goes into the bucket by hand.
