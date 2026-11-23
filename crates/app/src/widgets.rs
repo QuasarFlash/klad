@@ -101,3 +101,88 @@ pub fn heading_text(glyph: &str, text: &str, size: f32) -> WidgetText {
 pub fn section_header(ui: &mut Ui, glyph: &str, text: &str) -> Response {
     ui.label(heading_text(glyph, text, theme::HEADING))
 }
+
+pub fn heading_row(ui: &mut Ui, glyph: &str, text: &str, beside: impl FnOnce(&mut Ui)) {
+    ui.horizontal(|ui| {
+        ui.set_min_height(theme::CONTROL);
+        section_header(ui, glyph, text);
+        ui.add_space(space::MD);
+        beside(ui);
+    });
+}
+
+pub fn form_label(ui: &mut Ui, text: &str) -> Response {
+    ui.label(RichText::new(text).font(theme::medium(theme::BODY)).color(theme::WEAK))
+}
+
+pub fn secondary_text(text: impl Into<String>) -> RichText {
+    RichText::new(text).color(theme::WEAK)
+}
+
+pub fn caption(text: impl Into<String>) -> RichText {
+    RichText::new(text).size(theme::LABEL).color(theme::WEAK)
+}
+
+pub fn path_field(ui: &mut Ui, text: &mut String, width: f32) -> Response {
+    let id = ui.next_auto_id().with("path");
+    let editing = ui.memory(|m| m.has_focus(id) || m.data.get_temp::<bool>(id).unwrap_or(false));
+    if editing {
+        let response = ui.add(field(text, width).id(id));
+        if response.lost_focus() {
+            ui.memory_mut(|m| m.data.remove::<bool>(id));
+        }
+        return response;
+    }
+    let (rect, response) = ui.allocate_exact_size(vec2(width, theme::CONTROL), egui::Sense::click());
+    let shown = text.clone();
+    response.widget_info(|| egui::WidgetInfo::text_edit(ui.is_enabled(), shown.clone(), shown.clone(), ""));
+    let edge = match response.hovered() {
+        true => theme::PRESSED,
+        false => theme::BORDER,
+    };
+    ui.painter().rect(
+        rect,
+        radius::CONTROL,
+        theme::BG,
+        Stroke::new(theme::HAIRLINE, edge),
+        egui::StrokeKind::Inside,
+    );
+    let inner = rect.shrink2(ui.spacing().button_padding);
+    let galley = from_the_end(ui, text, inner.width());
+    let at = egui::pos2(inner.left(), rect.center().y - galley.size().y / 2.0);
+    ui.painter().galley(at, galley, theme::TEXT);
+    if response.clicked() {
+        ui.memory_mut(|m| {
+            m.data.insert_temp(id, true);
+            m.request_focus(id);
+        });
+        let mut state = egui::text_edit::TextEditState::load(ui.ctx(), id).unwrap_or_default();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(
+                text.chars().count(),
+            ))));
+        state.store(ui.ctx(), id);
+    }
+    response.on_hover_cursor(egui::CursorIcon::Text)
+}
+
+fn from_the_end(ui: &Ui, text: &str, width: f32) -> std::sync::Arc<egui::Galley> {
+    let lay = |s: String| {
+        WidgetText::from(s).into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::TextStyle::Body,
+        )
+    };
+    let whole = lay(text.to_string());
+    if whole.size().x <= width {
+        return whole;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    (1..chars.len())
+        .map(|k| lay(format!("\u{2026}{}", chars[k..].iter().collect::<String>())))
+        .find(|g| g.size().x <= width)
+        .unwrap_or_else(|| lay("\u{2026}".into()))
+}

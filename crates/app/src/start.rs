@@ -29,6 +29,12 @@ pub const PIXEL_PRESETS: [(&str, u32, u32); 5] = [
 ];
 
 const THUMB: f32 = 168.0;
+const PICTURE: f32 = THUMB * 0.75;
+const TILE: f32 = THUMB + 2.0 * theme::space::SM;
+const OPEN_WIDTH: f32 = 270.0;
+const LABELS: f32 = 128.0;
+const CHOOSE: f32 = 84.0;
+const CHECK: f32 = 8.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Section {
@@ -43,6 +49,16 @@ enum Card {
     Duplicate(PathBuf),
     Trash(PathBuf),
     Idle,
+}
+
+struct Tile<'a> {
+    key: &'a str,
+    bundle: &'a Path,
+    png: PathBuf,
+    name: &'a str,
+    caption: &'a str,
+    lines: usize,
+    there: bool,
 }
 
 enum Thumb {
@@ -79,6 +95,9 @@ pub struct Start {
     focused: bool,
     thumbs: BTreeMap<String, Thumb>,
     pub connect: crate::connect::Connect,
+    cards_height: f32,
+    checker: Option<TextureHandle>,
+    icon: Option<TextureHandle>,
 }
 
 fn repaired_words(done: &klad_core::bundle::Repaired) -> String {
@@ -122,6 +141,9 @@ impl Start {
             connect: crate::connect::Connect::here(),
             focused: false,
             thumbs: BTreeMap::new(),
+            cards_height: 0.0,
+            checker: None,
+            icon: None,
         }
     }
 
@@ -188,23 +210,32 @@ impl Start {
             return None;
         }
         widgets::section_header(ui, icon::IMAGE, "Samples");
-        ui.label(
-            RichText::new("Open one to look around or draw on it: it opens as a copy in your drawings folder.")
-                .color(theme::WEAK),
-        );
-        ui.add_space(6.0);
+        ui.label(widgets::secondary_text(
+            "Open one to look around or draw on it: it opens as a copy in your drawings folder.",
+        ));
+        ui.add_space(theme::space::SM);
         let mut chosen = None;
         let shown = self.samples.clone();
         row(ui, "samples", |ui| {
             shown.iter().for_each(|sample| {
                 ui.vertical(|ui| {
-                    ui.set_width(THUMB + 8.0);
+                    ui.set_width(TILE);
                     let key = sample.path.display().to_string();
                     let picked = self
-                        .picture(ui, &key, &sample.path, sample_thumb(&sample.path), &sample.name, true)
+                        .picture(
+                            ui,
+                            Tile {
+                                key: &key,
+                                bundle: &sample.path,
+                                png: sample_thumb(&sample.path),
+                                name: &sample.name,
+                                caption: &sample.about,
+                                lines: 2,
+                                there: true,
+                            },
+                        )
                         .on_hover_text(&sample.about)
                         .clicked();
-                    ui.add(egui::Label::new(RichText::new(&sample.about).color(theme::WEAK).size(theme::LABEL)).wrap());
                     if picked {
                         match samples::copy(sample, &settings.drawings_folder()) {
                             Ok(path) => {
@@ -223,22 +254,9 @@ impl Start {
     pub fn ui(&mut self, ui: &mut egui::Ui, settings: &mut Settings) -> Option<PathBuf> {
         let mut chosen = None;
         egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
-            ui.horizontal_top(|ui| {
-                widgets::card(ui, |ui| {
-                    ui.vertical(|ui| {
-                        ui.set_width(420.0);
-                        chosen = chosen.take().or_else(|| self.new_section(ui, settings));
-                    });
-                });
-                widgets::card(ui, |ui| {
-                    ui.vertical(|ui| {
-                        ui.set_width(290.0);
-                        chosen = chosen.take().or_else(|| self.open_section(ui, settings));
-                    });
-                });
-            });
+            chosen = self.top_cards(ui, settings);
             if let Some(error) = self.error.clone() {
-                ui.add_space(4.0);
+                ui.add_space(theme::space::SM);
                 ui.colored_label(theme::ERROR, error);
                 if let Some(path) = self.repair.clone()
                     && ui.button("Repair and open").clicked()
@@ -254,13 +272,49 @@ impl Start {
                     }
                 }
             }
-            ui.add_space(10.0);
+            ui.add_space(theme::space::XL);
             chosen = chosen.take().or_else(|| self.recent_section(ui, settings));
-            ui.add_space(14.0);
+            ui.add_space(theme::space::XL);
             chosen = chosen.take().or_else(|| self.samples_section(ui, settings));
         });
         self.connect_window(ui, settings);
         self.focused = true;
+        chosen
+    }
+
+    fn top_cards(&mut self, ui: &mut egui::Ui, settings: &mut Settings) -> Option<PathBuf> {
+        let mut chosen = None;
+        let gap = theme::space::LG;
+        let inset = widgets::card_frame().total_margin().sum().x;
+        let new = (ui.available_width() - gap - 2.0 * inset - OPEN_WIDTH).max(LABELS * 3.0);
+        let tall = self.cards_height;
+        let mut heights = [0.0_f32; 2];
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            widgets::card(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(new);
+                    let top = ui.cursor().top();
+                    chosen = self.new_section(ui, settings, new);
+                    heights[0] = ui.cursor().top() - top;
+                    ui.add_space((tall - heights[0]).max(0.0));
+                });
+            });
+            widgets::card(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(OPEN_WIDTH);
+                    let top = ui.cursor().top();
+                    chosen = chosen.take().or_else(|| self.open_section(ui, settings));
+                    heights[1] = ui.cursor().top() - top;
+                    ui.add_space((tall - heights[1]).max(0.0));
+                });
+            });
+        });
+        let want = heights[0].max(heights[1]);
+        if (want - self.cards_height).abs() > 0.5 {
+            self.cards_height = want;
+            ui.ctx().request_repaint();
+        }
         chosen
     }
 
@@ -283,10 +337,9 @@ impl Start {
         self.connecting = open;
     }
 
-    fn new_section(&mut self, ui: &mut egui::Ui, settings: &mut Settings) -> Option<PathBuf> {
-        ui.horizontal(|ui| {
-            widgets::section_header(ui, icon::FILE_PLUS, "New drawing");
-            ui.add_space(12.0);
+    fn new_section(&mut self, ui: &mut egui::Ui, settings: &mut Settings, width: f32) -> Option<PathBuf> {
+        let field = width - LABELS - theme::space::MD;
+        widgets::heading_row(ui, icon::FILE_PLUS, "New drawing", |ui| {
             if let Some(pixel) = widgets::segmented(
                 ui,
                 self.pixel,
@@ -305,39 +358,46 @@ impl Start {
                 }
             }
         });
-        ui.add_space(6.0);
+        ui.add_space(theme::space::MD);
         let mut entered = false;
         egui::Grid::new("start new")
             .num_columns(2)
-            .spacing(vec2(10.0, 8.0))
+            .spacing(vec2(theme::space::MD, theme::space::SM))
+            .min_col_width(LABELS)
             .show(ui, |ui| {
-                let label = ui.label("Name");
-                let name = ui.add(widgets::field(&mut self.name, 260.0)).labelled_by(label.id);
+                let label = widgets::form_label(ui, "Name");
+                let name = ui.add(widgets::field(&mut self.name, field)).labelled_by(label.id);
                 if !self.focused && self.section == Section::New {
                     name.request_focus();
                     theme::select_all(ui.ctx(), name.id, &self.name);
                 }
                 entered = name.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 ui.end_row();
-                let label = ui.label("Folder");
+                let label = widgets::form_label(ui, "Folder");
                 ui.horizontal(|ui| {
-                    ui.add(widgets::field(&mut self.folder, 200.0)).labelled_by(label.id);
+                    let room = match picker::NATIVE {
+                        true => field - CHOOSE - ui.spacing().item_spacing.x,
+                        false => field,
+                    };
+                    widgets::path_field(ui, &mut self.folder, room).labelled_by(label.id);
                     if picker::NATIVE
-                        && ui.button("Choose").clicked()
+                        && ui
+                            .add(widgets::secondary_button("Choose").min_size(vec2(CHOOSE, theme::CONTROL)))
+                            .clicked()
                         && let Some(dir) = picker::choose_folder(Some(&expand(&self.folder)), "Choose")
                     {
                         self.folder = dir.display().to_string();
                     }
                 });
                 ui.end_row();
-                let label = ui.label("Size");
+                let label = widgets::form_label(ui, "Size");
                 let shown = match self.pixel {
                     true => self.pixel_preset.map_or("custom".to_string(), pixel_preset_name),
                     false => self.preset.map_or("custom".to_string(), preset_name),
                 };
                 egui::ComboBox::from_id_salt("start size")
                     .selected_text(shown)
-                    .width(260.0)
+                    .width(field)
                     .show_ui(ui, |ui| match self.pixel {
                         true => {
                             (0..PIXEL_PRESETS.len()).for_each(|i| {
@@ -356,7 +416,7 @@ impl Start {
                     .labelled_by(label.id);
                 ui.end_row();
                 if self.pixel && self.pixel_preset.is_none() {
-                    ui.label("Width and height");
+                    widgets::form_label(ui, "Width and height");
                     ui.horizontal(|ui| {
                         ui.add(
                             egui::DragValue::new(&mut self.pixel_width)
@@ -373,7 +433,7 @@ impl Start {
                     ui.end_row();
                 }
                 if !self.pixel && self.preset.is_none() {
-                    ui.label("Width and height");
+                    widgets::form_label(ui, "Width and height");
                     ui.horizontal(|ui| {
                         ui.add(egui::DragValue::new(&mut self.width).range(1..=16384).suffix(" px"));
                         ui.label("by");
@@ -381,39 +441,47 @@ impl Start {
                     });
                     ui.end_row();
                 }
-                ui.label("Background");
+                widgets::form_label(ui, "Background");
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.paper, "Colour");
-                    match self.paper {
-                        true => {
-                            if let Some(rgba) = crate::color::Square::new(
-                                ui,
-                                "start.paper",
-                                crate::color::from_srgb(self.colour),
-                                "the paper colour",
-                            )
-                            .pick(ui)
-                            {
-                                self.colour = crate::color::to_srgb(rgba);
-                            }
-                        }
-                        false => {
-                            ui.label(RichText::new("transparent").color(theme::WEAK));
-                        }
+                    if let Some(paper) = widgets::segmented(
+                        ui,
+                        self.paper,
+                        &[
+                            (
+                                false,
+                                "Transparent",
+                                "the drawing starts see-through, with no paper under it",
+                            ),
+                            (true, "Colour", "a paper colour under everything you paint"),
+                        ],
+                    ) {
+                        self.paper = paper;
+                    }
+                    if self.paper
+                        && let Some(rgba) = crate::color::Square::new(
+                            ui,
+                            "start.paper",
+                            crate::color::from_srgb(self.colour),
+                            "the paper colour",
+                        )
+                        .pick(ui)
+                    {
+                        self.colour = crate::color::to_srgb(rgba);
                     }
                 });
                 ui.end_row();
-                let label = ui.label("Frames per second");
+                let label = widgets::form_label(ui, "Frames per second");
                 ui.add(egui::DragValue::new(&mut self.fps).range(1..=120))
                     .labelled_by(label.id);
                 ui.end_row();
             });
         if !self.pixel {
+            ui.add_space(theme::space::XS);
             ui.checkbox(&mut self.sketch, "A sketch layer for blocking in shapes");
         }
-        ui.add_space(6.0);
+        ui.add_space(theme::space::MD);
         if !(ui
-            .add(widgets::primary_button("Create").min_size(vec2(96.0, theme::CONTROL)))
+            .add(widgets::primary_button("Create").min_size(vec2(LABELS, theme::CONTROL)))
             .clicked()
             || entered)
         {
@@ -432,19 +500,20 @@ impl Start {
     }
 
     fn open_section(&mut self, ui: &mut egui::Ui, settings: &Settings) -> Option<PathBuf> {
-        widgets::section_header(ui, icon::FOLDER_OPEN, "Open a drawing");
-        ui.add_space(6.0);
+        widgets::heading_row(ui, icon::FOLDER_OPEN, "Open a drawing", |_| {});
+        ui.add_space(theme::space::MD);
         let mut picked = None;
+        let whole = vec2(OPEN_WIDTH, theme::CONTROL);
         if picker::NATIVE
             && ui
-                .add(egui::Button::new(picker::CHOOSE_DRAWING).min_size(vec2(200.0, 28.0)))
+                .add(widgets::secondary_button(picker::CHOOSE_DRAWING).min_size(whole))
                 .clicked()
         {
             picked = picker::choose_drawing(Some(&settings.drawings_folder()), "Open");
         }
         if picker::NATIVE
             && ui
-                .add(egui::Button::new("Choose an Aseprite file...").min_size(vec2(200.0, 28.0)))
+                .add(widgets::secondary_button("Choose an Aseprite file...").min_size(whole))
                 .on_hover_text(
                     "an .aseprite or .ase file, or a PNG or JPEG picture, opens as a new klad drawing next to it",
                 )
@@ -452,21 +521,31 @@ impl Start {
         {
             picked = picker::choose_file(Some(&settings.drawings_folder()), "Open");
         }
-        ui.add_space(6.0);
-        let label = ui.label(RichText::new("Or paste its path").color(theme::WEAK));
+        if picker::NATIVE {
+            ui.add_space(theme::space::SM);
+        }
+        let label = widgets::form_label(ui, "Or paste its path");
         ui.horizontal(|ui| {
-            let field = ui.add(widgets::field(&mut self.path, 220.0)).labelled_by(label.id);
+            let room = OPEN_WIDTH - CHOOSE - ui.spacing().item_spacing.x;
+            let field = ui.add(widgets::field(&mut self.path, room)).labelled_by(label.id);
             if !self.focused && self.section == Section::Open {
                 field.request_focus();
             }
             let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if ui.button("Open").clicked() || entered {
+            if ui
+                .add(widgets::secondary_button("Open").min_size(vec2(CHOOSE, theme::CONTROL)))
+                .clicked()
+                || entered
+            {
                 picked = Some(expand(self.path.trim()));
             }
         });
-        ui.label(
-            RichText::new("The path of an Aseprite file (.aseprite, .ase) or a picture (.png, .jpg) works too.")
-                .color(theme::WEAK),
+        ui.add_space(theme::space::XS);
+        ui.add(
+            egui::Label::new(widgets::caption(
+                "The path of an Aseprite file (.aseprite, .ase) or a picture (.png, .jpg) works too.",
+            ))
+            .wrap(),
         );
         let path = picked?;
         if foreign(&path) {
@@ -493,7 +572,7 @@ impl Start {
         row(ui, "recent", |ui| {
             documents.iter().for_each(|doc| {
                 ui.vertical(|ui| {
-                    ui.set_width(THUMB + 8.0);
+                    ui.set_width(TILE);
                     match self.card(ui, doc) {
                         Card::Open(path) => chosen = Some(path),
                         Card::Forget => {
@@ -535,43 +614,105 @@ impl Start {
         chosen
     }
 
-    fn picture(
-        &mut self,
-        ui: &mut egui::Ui,
-        key: &str,
-        bundle: &Path,
-        png: PathBuf,
-        name: &str,
-        there: bool,
-    ) -> egui::Response {
-        let (rect, response) = ui.allocate_exact_size(vec2(THUMB + 8.0, THUMB + 32.0), egui::Sense::click());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, there, name));
-        let look = ui.style().interact(&response);
-        let fill = match there {
-            true => look.weak_bg_fill,
-            false => ui.visuals().faint_bg_color,
-        };
-        ui.painter()
-            .rect(rect, 6.0, fill, look.bg_stroke, egui::StrokeKind::Inside);
-        let picture = egui::Rect::from_min_size(rect.min + vec2(4.0, 4.0), vec2(THUMB, THUMB));
-        if let Some(texture) = there.then(|| self.thumb(ui.ctx(), key, bundle, png)).flatten() {
-            let at = egui::Rect::from_center_size(picture.center(), fit(texture.size_vec2()));
-            checks(ui.painter(), at);
-            egui::Image::new(&texture).paint_at(ui, at);
-        }
-        let colour = match there {
-            true => look.text_color(),
-            false => theme::WEAK,
-        };
-        let galley = egui::WidgetText::from(name).into_galley(
+    fn picture(&mut self, ui: &mut egui::Ui, tile: Tile<'_>) -> egui::Response {
+        let Tile {
+            key,
+            bundle,
+            png,
+            name,
+            caption,
+            lines,
+            there,
+        } = tile;
+        let space = theme::space::SM;
+        let title = egui::WidgetText::from(RichText::new(name).font(theme::medium(theme::BODY))).into_galley(
             ui,
             Some(egui::TextWrapMode::Truncate),
-            THUMB - 8.0,
+            THUMB,
             egui::TextStyle::Body,
         );
-        ui.painter()
-            .galley(egui::pos2(rect.min.x + 8.0, rect.max.y - 24.0), galley, colour);
+        let mut job =
+            egui::text::LayoutJob::simple(caption.to_string(), theme::regular(theme::LABEL), theme::WEAK, THUMB);
+        job.wrap.max_rows = lines;
+        job.wrap.overflow_character = Some('\u{2026}');
+        let line = ui
+            .painter()
+            .layout_no_wrap("Ag".into(), theme::regular(theme::LABEL), theme::WEAK)
+            .size()
+            .y;
+        let height =
+            space + PICTURE + space + title.size().y + theme::space::XS + line * lines as f32 + theme::space::MD;
+        let (rect, response) = ui.allocate_exact_size(vec2(TILE, height), egui::Sense::click());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, there, name));
+        let lit = ui
+            .ctx()
+            .animate_bool_with_time(response.id.with("lit"), there && response.hovered(), theme::EASE);
+        let fill = theme::PANEL.lerp_to_gamma(theme::CONTROL_FILL, lit);
+        let edge = theme::BORDER.lerp_to_gamma(theme::PRESSED, lit);
+        ui.painter().rect(
+            rect,
+            theme::radius::CARD,
+            fill,
+            egui::Stroke::new(theme::HAIRLINE, edge),
+            egui::StrokeKind::Inside,
+        );
+        let picture = egui::Rect::from_min_size(rect.min + egui::Vec2::splat(space), vec2(THUMB, PICTURE));
+        ui.painter().rect_filled(picture, theme::radius::CONTROL, theme::BG);
+        if let Some(texture) = there.then(|| self.thumb(ui.ctx(), key, bundle, png)).flatten() {
+            let at = egui::Rect::from_center_size(picture.center(), fit_in(texture.size_vec2(), picture.size()));
+            let checks = self.checker(ui.ctx());
+            let tiles = egui::Rect::from_min_size(egui::Pos2::ZERO, at.size() / (2.0 * CHECK));
+            ui.painter().add(
+                egui::epaint::RectShape::filled(at, theme::radius::CONTROL, egui::Color32::WHITE)
+                    .with_texture(checks, tiles),
+            );
+            egui::Image::new(&texture)
+                .corner_radius(theme::radius::CONTROL)
+                .paint_at(ui, at);
+        }
+        let colour = match there {
+            true => theme::TEXT,
+            false => theme::WEAK,
+        };
+        let below = egui::Rect::from_min_size(
+            egui::pos2(picture.left(), picture.bottom() + space),
+            vec2(THUMB, title.size().y),
+        );
+        ui.painter().galley(below.min, title.clone(), colour);
+        let words = egui::Rect::from_min_size(
+            below.left_bottom() + vec2(0.0, theme::space::XS),
+            vec2(THUMB, line * lines as f32),
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(words)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+            |ui| ui.add(egui::Label::new(egui::WidgetText::LayoutJob(job.into())).selectable(false)),
+        );
         response
+    }
+
+    fn checker(&mut self, ctx: &egui::Context) -> egui::TextureId {
+        self.checker
+            .get_or_insert_with(|| {
+                let [l, d] = [theme::CHECK_LIGHT, theme::CHECK_DARK].map(|c| [c.r(), c.g(), c.b(), 255]);
+                let image = egui::ColorImage::from_rgba_unmultiplied([2, 2], &[l, d, d, l].concat());
+                ctx.load_texture("start checks", image, egui::TextureOptions::NEAREST_REPEAT)
+            })
+            .id()
+    }
+
+    pub fn icon(&mut self, ctx: &egui::Context) -> Option<TextureHandle> {
+        if self.icon.is_none() {
+            let picture = crate::home::window_icon()?;
+            let image = egui::ColorImage::from_rgba_unmultiplied(
+                [picture.width as usize, picture.height as usize],
+                &picture.rgba,
+            );
+            let options = egui::TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
+            self.icon = Some(ctx.load_texture("klad icon", image, options));
+        }
+        self.icon.clone()
     }
 
     fn card(&mut self, ui: &mut egui::Ui, doc: &str) -> Card {
@@ -580,11 +721,23 @@ impl Start {
         let name = path
             .file_stem()
             .map_or_else(|| doc.to_string(), |s| s.to_string_lossy().to_string());
-        let response = self.picture(ui, doc, &path, path.join(".cache").join("thumb.png"), &name, there);
         let folder = path
             .parent()
             .and_then(Path::file_name)
             .map_or_else(String::new, |s| s.to_string_lossy().to_string());
+        let caption = format!("in {folder}");
+        let response = self.picture(
+            ui,
+            Tile {
+                key: doc,
+                bundle: &path,
+                png: path.join(".cache").join("thumb.png"),
+                name: &name,
+                caption: &caption,
+                lines: 1,
+                there,
+            },
+        );
         let mut asked = None;
         if there {
             response.context_menu(|ui| {
@@ -608,20 +761,12 @@ impl Start {
             return card;
         }
         let clicked = there && response.on_hover_text(doc).clicked();
-        ui.add(
-            egui::Label::new(
-                RichText::new(format!("in {folder}"))
-                    .color(theme::WEAK)
-                    .size(theme::LABEL),
-            )
-            .truncate(),
-        );
         if clicked {
             return Card::Open(path);
         }
         if !there {
             ui.label(RichText::new("moved or deleted").color(theme::REFUSED));
-            if ui.button(format!("Remove {name}")).clicked() {
+            if ui.add(widgets::secondary_button(format!("Remove {name}"))).clicked() {
                 return Card::Forget;
             }
         }
@@ -660,34 +805,19 @@ impl Start {
 }
 
 fn row(ui: &mut egui::Ui, salt: &str, cards: impl FnOnce(&mut egui::Ui)) {
-    ui.spacing_mut().scroll = crate::theme::shown_scroll();
+    ui.spacing_mut().scroll.fade = egui::style::ScrollFadeStyle {
+        strength: 1.0,
+        size: 2.0 * theme::space::XL,
+    };
     egui::ScrollArea::horizontal()
         .id_salt(salt)
         .auto_shrink([false, true])
         .show(ui, |ui| {
             ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing = vec2(12.0, 12.0);
+                ui.spacing_mut().item_spacing = vec2(theme::space::MD, theme::space::SM);
                 cards(ui);
             });
-            ui.add_space(14.0);
-        });
-}
-
-const CHECK: f32 = 8.0;
-
-fn checks(painter: &egui::Painter, rect: egui::Rect) {
-    painter.rect_filled(rect, 0.0, theme::CHECK_LIGHT);
-    let (cols, rows) = (
-        (rect.width() / CHECK).ceil() as usize,
-        (rect.height() / CHECK).ceil() as usize,
-    );
-    (0..rows)
-        .flat_map(|r| (0..cols).map(move |c| (r, c)))
-        .filter(|(r, c)| (r + c) % 2 == 1)
-        .for_each(|(r, c)| {
-            let min = rect.min + vec2(c as f32 * CHECK, r as f32 * CHECK);
-            let cell = egui::Rect::from_min_size(min, vec2(CHECK, CHECK)).intersect(rect);
-            painter.rect_filled(cell, 0.0, theme::CHECK_DARK);
+            ui.add_space(theme::space::MD);
         });
 }
 
@@ -701,8 +831,8 @@ fn pixel_preset_name(i: usize) -> String {
     format!("{w} x {h}  {name}")
 }
 
-fn fit(size: egui::Vec2) -> egui::Vec2 {
-    size * (THUMB / size.x.max(size.y).max(1.0))
+fn fit_in(size: egui::Vec2, room: egui::Vec2) -> egui::Vec2 {
+    size * (room.x / size.x.max(1.0)).min(room.y / size.y.max(1.0))
 }
 
 pub fn expand(text: &str) -> PathBuf {

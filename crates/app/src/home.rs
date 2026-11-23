@@ -6,7 +6,7 @@ use crate::messages::Tone;
 use crate::picker;
 use crate::settings::{self, Settings};
 use crate::start::{self, Section, Start};
-use crate::theme;
+use crate::theme::{self, Hint};
 use crate::updates;
 use crate::welcome::{Outcome, Welcome};
 use anyhow::{Result, anyhow};
@@ -568,19 +568,32 @@ impl Home {
                 if since < crate::welcome::SHOWN {
                     ctx.request_repaint();
                 }
-                egui::CentralPanel::default().show(ui, |ui| {
+                let page = egui::Frame::central_panel(ui.style()).fill(theme::BG);
+                egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     ui.multiply_opacity(crate::welcome::ease(since / crate::welcome::SHOWN));
-                    let margin = ((ui.available_width() - WIDTH) / 2.0).max(16.0);
-                    ui.add_space(32.0);
+                    let margin = ((ui.available_width() - WIDTH) / 2.0).max(theme::space::LG);
+                    ui.add_space(theme::space::XXL);
                     ui.horizontal_top(|ui| {
                         ui.add_space(margin);
                         ui.vertical(|ui| {
                             ui.set_max_width(WIDTH);
+                            let icon = start.icon(ui.ctx());
                             ui.horizontal(|ui| {
-                                ui.heading(RichText::new("klad").font(theme::wordmark(theme::DISPLAY)));
-                                ui.label(
-                                    RichText::new(format!("version {}", crate::VERSION)).color(crate::theme::WEAK),
+                                ui.spacing_mut().item_spacing.x = theme::space::SM;
+                                if let Some(icon) = icon {
+                                    ui.add(
+                                        egui::Image::new(&icon)
+                                            .fit_to_exact_size(egui::Vec2::splat(theme::DISPLAY + theme::space::XS))
+                                            .corner_radius(theme::radius::CARD),
+                                    );
+                                }
+                                ui.heading(
+                                    RichText::new("klad")
+                                        .font(theme::wordmark(theme::DISPLAY))
+                                        .color(theme::TEXT),
                                 );
+                                ui.label(RichText::new(env!("CARGO_PKG_VERSION")).color(theme::WEAK))
+                                    .hint(format!("version {}", crate::VERSION));
                             });
                             if let Some(release) = &self.update {
                                 ui.horizontal(|ui| {
@@ -588,7 +601,7 @@ impl Home {
                                     ui.hyperlink_to("what changed", &release.url);
                                 });
                             }
-                            ui.add_space(12.0);
+                            ui.add_space(theme::space::XL);
                             chosen = start.ui(ui, &mut self.settings);
                         });
                     });
@@ -770,8 +783,7 @@ impl eframe::App for Home {
     }
 }
 
-#[cfg_attr(target_os = "macos", allow(dead_code))]
-fn window_icon() -> Option<egui::IconData> {
+pub(crate) fn window_icon() -> Option<egui::IconData> {
     let ico: &[u8] = include_bytes!("../../../packaging/icon/klad.ico");
     let long = |at: usize| {
         ico.get(at..at + 4)
@@ -1443,7 +1455,13 @@ mod tests {
             r#"{"tag_name":"v9.0.0","html_url":"https://github.com/klad-app/klad/releases/tag/v9.0.0","body":"- Paint over"}"#,
         );
         let h = harness(first);
-        assert!(h.query_by_label(&format!("version {}", crate::VERSION)).is_some());
+        assert!(h.query_by_label(env!("CARGO_PKG_VERSION")).is_some());
+        assert!(
+            theme::hints(&h.ctx)
+                .iter()
+                .any(|(_, words)| *words == format!("version {}", crate::VERSION)),
+            "the whole build string is the version's hover text"
+        );
         assert!(h.query_by_label("klad 9.0.0 is out: Paint over").is_some());
         assert!(h.query_by_label("what changed").is_some());
         std::fs::remove_dir_all(&dir).unwrap();

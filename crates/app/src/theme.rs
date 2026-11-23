@@ -31,6 +31,8 @@ pub mod space {
     pub const SM: f32 = 8.0;
     pub const MD: f32 = 12.0;
     pub const LG: f32 = 16.0;
+    pub const XL: f32 = 24.0;
+    pub const XXL: f32 = 32.0;
 }
 
 pub mod radius {
@@ -282,20 +284,7 @@ pub fn apply(style: &mut Style) {
     s.combo_width = 140.0;
     s.window_margin = Margin::same(space::MD as i8);
     s.menu_margin = Margin::same(space::XS as i8);
-    s.scroll = ScrollStyle {
-        bar_width: 8.0,
-        floating_width: 4.0,
-        handle_min_length: CONTROL,
-        bar_inner_margin: 2.0,
-        bar_outer_margin: 2.0,
-        dormant_handle_opacity: 0.0,
-        active_handle_opacity: 0.35,
-        interact_handle_opacity: 0.7,
-        dormant_background_opacity: 0.0,
-        active_background_opacity: 0.0,
-        interact_background_opacity: 0.0,
-        ..ScrollStyle::floating()
-    };
+    s.scroll = scroll();
     style.interaction.tooltip_delay = 0.35;
     style.interaction.show_tooltips_only_when_still = true;
     style.animation_time = EASE;
@@ -455,10 +444,27 @@ impl StyleProvider<SeparatorStyle> for Look {
     }
 }
 
-pub fn shown_scroll() -> egui::style::ScrollStyle {
-    egui::style::ScrollStyle {
-        dormant_handle_opacity: 0.5,
-        ..egui::style::ScrollStyle::floating()
+fn scroll() -> ScrollStyle {
+    ScrollStyle {
+        bar_width: 8.0,
+        floating_width: 4.0,
+        handle_min_length: CONTROL,
+        bar_inner_margin: 2.0,
+        bar_outer_margin: 2.0,
+        dormant_handle_opacity: 0.0,
+        active_handle_opacity: 0.35,
+        interact_handle_opacity: 0.7,
+        dormant_background_opacity: 0.0,
+        active_background_opacity: 0.0,
+        interact_background_opacity: 0.0,
+        ..ScrollStyle::floating()
+    }
+}
+
+pub fn shown_scroll() -> ScrollStyle {
+    ScrollStyle {
+        dormant_handle_opacity: 0.12,
+        ..scroll()
     }
 }
 
