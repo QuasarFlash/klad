@@ -234,16 +234,25 @@ fn klad_mcp_installs_itself_in_an_agent_apps_settings_and_takes_itself_out() {
     assert!(ok && said.contains("Codex's settings"), "{said}");
     let config = std::fs::read_to_string(dir.join(".codex/config.toml")).unwrap();
     assert!(
-        config.contains("[mcp_servers.klad]") && config.contains("args = [\"mcp\"]"),
+        config.contains("[mcp_servers.klad]") && config.contains("args = [\"mcp\", \"--client\", \"codex\"]"),
         "{config}"
     );
     let (_, status) = run(&["--status"]);
     assert!(
         status
             .lines()
-            .any(|l| l.starts_with("Codex") && l.contains("connected")),
-        "{status}"
+            .any(|l| l.starts_with("Codex") && l.contains("connected") && l.contains("not started yet")),
+        "until Codex starts klad, it waits: {status}"
     );
+    let _ = run(&["--client", "codex"]);
+    let (_, status) = run(&["--status"]);
+    let codex = status.lines().find(|l| l.starts_with("Codex")).unwrap_or_default();
+    assert!(
+        codex.contains("connected") && !codex.contains("not started yet"),
+        "once Codex has started klad mcp --client codex, it has klad: {status}"
+    );
+    let (ok, said) = run(&["--client", "photoshop"]);
+    assert!(!ok && said.contains("claude-desktop, codex"), "{said}");
     let (ok, printed) = run(&["--print", "claude-desktop"]);
     assert!(
         ok && printed.contains("\"mcpServers\"") && printed.contains("goes in"),

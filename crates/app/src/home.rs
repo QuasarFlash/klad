@@ -1325,6 +1325,18 @@ mod tests {
                 .is_some(),
             "the row says it is connected and what finishes it"
         );
+        let places = klad_mcp::Places {
+            home: dir.join("apps"),
+            os: klad_mcp::Os::Mac,
+        };
+        assert!(klad_mcp::App::ClaudeDesktop.waiting(&places));
+        klad_mcp::App::ClaudeDesktop.started(&places);
+        settle(&mut h);
+        assert!(
+            h.query_by_label_contains("Quit Claude Desktop").is_none()
+                && h.query_by_label(&format!("{} Connected", theme::icon::CHECK)).is_some(),
+            "once Claude Desktop has started klad, its row just says Connected"
+        );
         assert!(
             h.query_by_label_contains("Then ask Claude Desktop for a drawing")
                 .is_some()
@@ -1478,6 +1490,7 @@ mod tests {
         klad_mcp::App::ClaudeCode
             .connect(&places, &klad_mcp::Entry::serving(&apps.join("klad")))
             .unwrap();
+        klad_mcp::App::ClaudeCode.started(&places);
         let shot = |h: &mut Harness<'static, Home>, step: usize| {
             if only.is_none_or(|n| n == step) {
                 h.render().unwrap().save(out.join(format!("step-{step}.png"))).unwrap();

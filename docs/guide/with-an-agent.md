@@ -10,7 +10,7 @@ No terminal needed.
 
 1. The first time klad opens, click **Get started** in the welcome: its second screen connects your agent app. Later, choose **File > Connect an agent app…**, or **Help > Welcome to klad** to see the welcome again.
 2. Each agent app on your computer has a row: Claude Desktop, Codex, Claude Code, Cursor or VS Code. Click **Connect** on yours. klad adds itself to that app's settings and leaves the rest of them alone.
-3. Quit the app and open it again, as its row says. klad shows up among its tools.
+3. Quit the app and open it again, as its row says. klad shows up among its tools, and its row in klad turns from amber to green.
 4. Ask in your own words: "Paint a red apple in a new klad drawing and open it in klad." **Copy** next to the example puts it on the clipboard. The app may ask before it uses klad the first time: allow it.
 
 Agents work in your drawings folder and the folders of drawings you opened lately. To let them work somewhere else, open **Where your agent may work** in the same window and click **Add a folder…**.

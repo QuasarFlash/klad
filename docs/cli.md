@@ -5147,6 +5147,9 @@ Options:
       --status
           Which agent apps are on this computer, and which have klad
 
+      --client <APP>
+          The agent app starting this server (--install and the editor write it), so klad knows that app has started klad
+
   -h, --help
           Print help (see a summary with '-h')
 ```

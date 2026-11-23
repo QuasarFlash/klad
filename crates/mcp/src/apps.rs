@@ -1,5 +1,6 @@
 use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const NAME: &str = "klad";
 
@@ -43,11 +44,31 @@ pub struct Entry {
     pub args: Vec<String>,
 }
 
+pub const CLIENT: &str = "--client";
+
 impl Entry {
     pub fn serving(program: &Path) -> Self {
         Self {
             command: program.to_path_buf(),
             args: vec!["mcp".into()],
+        }
+    }
+
+    pub fn with_client(&self, app: App) -> Self {
+        let mut args: Vec<String> = Vec::new();
+        let mut rest = self.args.iter();
+        while let Some(arg) = rest.next() {
+            match arg == CLIENT {
+                true => {
+                    rest.next();
+                }
+                false => args.push(arg.clone()),
+            }
+        }
+        args.extend([CLIENT.to_string(), app.word().to_string()]);
+        Self {
+            command: self.command.clone(),
+            args,
         }
     }
 }
@@ -91,6 +112,10 @@ impl Places {
             .collect();
         found.sort();
         found.into_iter().next()
+    }
+
+    pub fn record(&self) -> PathBuf {
+        self.support().join("klad").join("agents.json")
     }
 
     fn claude(&self) -> PathBuf {
@@ -224,6 +249,7 @@ impl App {
     }
 
     pub fn snippet(self, entry: &Entry) -> String {
+        let entry = &entry.with_client(self);
         match self.shape() {
             Shape::Codex => {
                 let mut doc = toml_edit::DocumentMut::new();
@@ -239,15 +265,69 @@ impl App {
     }
 
     pub fn connect(self, places: &Places, entry: &Entry) -> Result<PathBuf, String> {
-        write(self, places, Some(entry))
+        let file = write(self, places, Some(&entry.with_client(self)))?;
+        keep(places, |all| {
+            all.insert(self.word().into(), json!({ "connected": now() }));
+        });
+        Ok(file)
     }
 
     pub fn disconnect(self, places: &Places) -> Result<bool, String> {
+        keep(places, |all| {
+            all.remove(self.word());
+        });
         match read_entry(self, &self.file(places)) {
             Some(_) => write(self, places, None).map(|_| true),
             None => Ok(false),
         }
     }
+
+    pub fn started(self, places: &Places) {
+        keep(places, |all| {
+            let mark = all.entry(self.word()).or_insert_with(|| json!({}));
+            if let Some(mark) = mark.as_object_mut() {
+                mark.insert("started".into(), json!(now()));
+            }
+        });
+    }
+
+    pub fn waiting(self, places: &Places) -> bool {
+        let all = record(places);
+        let at = |key: &str| all.get(self.word()).and_then(|m| m.get(key)).and_then(Value::as_f64);
+        match (at("connected"), at("started")) {
+            (Some(connected), Some(started)) => started < connected,
+            (Some(_), None) => true,
+            _ => false,
+        }
+    }
+}
+
+fn now() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64())
+}
+
+fn record(places: &Places) -> Map<String, Value> {
+    std::fs::read_to_string(places.record())
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
+}
+
+fn keep(places: &Places, change: impl FnOnce(&mut Map<String, Value>)) {
+    let mut all = record(places);
+    change(&mut all);
+    let file = places.record();
+    let Some(folder) = file.parent() else {
+        return;
+    };
+    let partial = file.with_extension(format!("{}.partial", std::process::id()));
+    let text = serde_json::to_string_pretty(&Value::Object(all)).unwrap_or_default() + "\n";
+    let _ = std::fs::create_dir_all(folder)
+        .and_then(|_| std::fs::write(&partial, text))
+        .and_then(|_| std::fs::rename(&partial, &file));
 }
 
 fn server_json(shape: Shape, entry: &Entry) -> Value {
@@ -467,9 +547,16 @@ mod tests {
             "the other server stays"
         );
         assert_eq!(written["theme"], "dark", "and every other setting");
-        assert_eq!(written["mcpServers"]["klad"]["args"], json!(["mcp"]));
+        assert_eq!(
+            written["mcpServers"]["klad"]["args"],
+            json!(["mcp", "--client", "claude-desktop"]),
+            "the entry says which app starts it"
+        );
         assert!(file.with_file_name("claude_desktop_config.json.before-klad").exists());
-        assert_eq!(App::ClaudeDesktop.status(&places), Status::Connected(entry.clone()));
+        assert_eq!(
+            App::ClaudeDesktop.status(&places),
+            Status::Connected(entry.with_client(App::ClaudeDesktop))
+        );
         std::fs::remove_file(&entry.command).unwrap();
         assert!(
             matches!(App::ClaudeDesktop.status(&places), Status::Moved(_)),
@@ -504,8 +591,11 @@ mod tests {
             text.contains("[mcp_servers.docs]") && text.contains("[mcp_servers.klad]"),
             "{text}"
         );
-        assert!(text.contains("args = [\"mcp\"]"), "{text}");
-        assert_eq!(App::Codex.status(&places), Status::Connected(entry));
+        assert!(text.contains("args = [\"mcp\", \"--client\", \"codex\"]"), "{text}");
+        assert_eq!(
+            App::Codex.status(&places),
+            Status::Connected(entry.with_client(App::Codex))
+        );
         App::Codex.disconnect(&places).unwrap();
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(
@@ -539,6 +629,42 @@ mod tests {
         assert!(App::Codex.snippet(&entry).contains("[mcp_servers.klad]"));
         assert!(App::ClaudeDesktop.snippet(&entry).contains("\"mcpServers\""));
         assert_eq!(App::parse("claude-desktop"), Some(App::ClaudeDesktop));
+        let _ = std::fs::remove_dir_all(&places.home);
+    }
+
+    #[test]
+    fn an_app_waits_after_connecting_until_it_starts_klad() {
+        let places = home("waiting");
+        let entry = klad(&places);
+        assert!(
+            !App::ClaudeDesktop.waiting(&places),
+            "nothing connected, nothing to wait for"
+        );
+        App::ClaudeDesktop.connect(&places, &entry).unwrap();
+        App::Cursor.connect(&places, &entry).unwrap();
+        assert!(App::ClaudeDesktop.waiting(&places) && App::Cursor.waiting(&places));
+        App::ClaudeDesktop.started(&places);
+        assert!(
+            !App::ClaudeDesktop.waiting(&places),
+            "started since connecting: it has klad"
+        );
+        assert!(App::Cursor.waiting(&places), "each app on its own");
+        App::ClaudeDesktop.connect(&places, &entry).unwrap();
+        assert!(App::ClaudeDesktop.waiting(&places), "connecting again waits again");
+        App::ClaudeDesktop.disconnect(&places).unwrap();
+        assert!(!App::ClaudeDesktop.waiting(&places));
+        let kept: Value = serde_json::from_str(&std::fs::read_to_string(places.record()).unwrap()).unwrap();
+        assert!(
+            kept.get("claude-desktop").is_none() && kept.get("cursor").is_some(),
+            "{kept}"
+        );
+        App::ClaudeCode.started(&places);
+        assert!(
+            !App::ClaudeCode.waiting(&places),
+            "an app connected before klad kept a record does not wait"
+        );
+        let twice = entry.with_client(App::Codex).with_client(App::Cursor);
+        assert_eq!(twice.args, ["mcp", "--client", "cursor"]);
         let _ = std::fs::remove_dir_all(&places.home);
     }
 }

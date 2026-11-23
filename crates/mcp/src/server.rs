@@ -25,6 +25,7 @@ pub struct Config {
     pub version: String,
     pub roots: Vec<PathBuf>,
     pub app: Option<PathBuf>,
+    pub client: Option<crate::App>,
 }
 
 #[derive(Clone)]
@@ -555,6 +556,9 @@ impl ServerHandler for Server {
 }
 
 pub fn serve(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+    if let (Some(client), Some(places)) = (config.client, crate::Places::here()) {
+        client.started(&places);
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     runtime.block_on(async move {
         let service = Server::new(config).serve(rmcp::transport::stdio()).await?;
@@ -587,6 +591,7 @@ mod tests {
             version: "test".into(),
             roots: vec![root.clone()],
             app: None,
+            client: None,
         });
         let inside = server.place("art/cat.klad").unwrap();
         assert!(

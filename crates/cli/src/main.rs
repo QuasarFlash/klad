@@ -2985,6 +2985,13 @@ enum Command {
         print: Option<String>,
         #[arg(long, help = "Which agent apps are on this computer, and which have klad")]
         status: bool,
+        #[arg(
+            long,
+            value_name = "APP",
+            conflicts_with_all = ["install", "uninstall", "print", "status"],
+            help = "The agent app starting this server (--install and the editor write it), so klad knows that app has started klad"
+        )]
+        client: Option<String>,
     },
 }
 
@@ -2994,6 +3001,7 @@ fn mcp(
     uninstall: Option<String>,
     print: Option<String>,
     status: bool,
+    client: Option<String>,
 ) -> Result<()> {
     use klad_mcp::{App, Entry, Places, Status};
     let program = std::env::current_exe().context("finding klad itself")?;
@@ -3008,6 +3016,11 @@ fn mcp(
             let state = match a.status(&places) {
                 Status::Missing => "not on this computer".to_string(),
                 Status::Found => format!("found, without klad (klad mcp --install {})", a.word()),
+                Status::Connected(e) if a.waiting(&places) => format!(
+                    "connected ({}), not started yet: {}",
+                    e.command.display(),
+                    a.next_step()
+                ),
                 Status::Connected(e) => format!("connected ({})", e.command.display()),
                 Status::Moved(e) => format!(
                     "set to a klad that is gone ({}): klad mcp --install {} again",
@@ -3066,11 +3079,13 @@ fn mcp(
         .ancestors()
         .find(|p| p.extension().is_some_and(|e| e == "app"))
         .map(Path::to_path_buf);
+    let client = client.map(|word| app(&word)).transpose()?;
     klad_mcp::serve(klad_mcp::Config {
         program,
         version: env!("CARGO_PKG_VERSION").to_string(),
         roots,
         app: app_bundle,
+        client,
     })
     .map_err(|e| anyhow!("{e}"))
 }
@@ -6338,7 +6353,8 @@ fn run() -> Result<()> {
             uninstall,
             print,
             status,
-        } => mcp(root, install, uninstall, print, status)?,
+            client,
+        } => mcp(root, install, uninstall, print, status, client)?,
         #[cfg(feature = "editor")]
         Command::Open { bundle } => klad_app::run(bundle)?,
     }

@@ -10,7 +10,6 @@ pub(crate) struct Connect {
     pub places: Option<Places>,
     pub program: PathBuf,
     pub said: Option<Said>,
-    fresh: Vec<App>,
     copied: bool,
     steps_height: f32,
     reveal: bool,
@@ -29,6 +28,7 @@ const INTRO: &str = "Your agent app can draw in klad: Claude Desktop, Codex and 
 
 pub(crate) const WIDTH: f32 = 568.0;
 const OPENING: f32 = 0.22;
+const LOOK_AGAIN: std::time::Duration = std::time::Duration::from_secs(1);
 const DOT: f32 = 8.0;
 const RING: f32 = 1.5;
 const GAP: f32 = 14.0;
@@ -68,7 +68,6 @@ impl Connect {
             places: if cfg!(test) { None } else { Places::here() },
             program: if sibling.is_file() { sibling } else { exe },
             said: None,
-            fresh: Vec::new(),
             copied: false,
             steps_height: 120.0,
             reveal: false,
@@ -95,11 +94,6 @@ impl Connect {
                 Err(e) => Said::Failed(e),
             },
         };
-        match &said {
-            Said::Connected(app) if !self.fresh.contains(app) => self.fresh.push(*app),
-            Said::Disconnected(app) => self.fresh.retain(|a| a != app),
-            _ => {}
-        }
         self.said = Some(said);
     }
 
@@ -129,6 +123,14 @@ impl Connect {
             .into_iter()
             .map(|app| (app, app.status(&places)))
             .partition(|(_, s)| matches!(s, Status::Missing));
+        let waiting: Vec<App> = shown
+            .iter()
+            .filter(|(app, status)| matches!(status, Status::Connected(_)) && app.waiting(&places))
+            .map(|(app, _)| *app)
+            .collect();
+        if !waiting.is_empty() {
+            ui.ctx().request_repaint_after(LOOK_AGAIN);
+        }
         let open =
             ui.ctx()
                 .animate_bool_with_time(egui::Id::unique("connect next steps"), self.said.is_some(), OPENING);
@@ -151,8 +153,7 @@ impl Connect {
                 });
             }
             shown.iter().enumerate().for_each(|(k, (app, status))| {
-                let fresh = self.fresh.contains(app);
-                if let Some(connect) = row(ui, *app, status, fresh, Place::of(k, count)) {
+                if let Some(connect) = row(ui, *app, status, waiting.contains(app), Place::of(k, count)) {
                     picked = Some((*app, connect));
                 }
             });
@@ -247,9 +248,9 @@ impl Connect {
     }
 }
 
-fn row(ui: &mut egui::Ui, app: App, status: &Status, fresh: bool, place: Place) -> Option<bool> {
+fn row(ui: &mut egui::Ui, app: App, status: &Status, waiting: bool, place: Place) -> Option<bool> {
     let state = match status {
-        Status::Connected(_) if fresh => Row::Restart,
+        Status::Connected(_) if waiting => Row::Restart,
         Status::Connected(_) => Row::Connected,
         Status::Moved(_) => Row::Moved,
         Status::Found | Status::Missing => Row::Open,
