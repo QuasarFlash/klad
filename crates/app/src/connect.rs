@@ -25,6 +25,7 @@ pub(crate) const EXAMPLE: &str = "Paint a red apple in a new klad drawing and op
 const INTRO: &str = "Your agent app can draw in klad: Claude Desktop, Codex and others. It paints stroke by stroke while you watch, and you can fix any stroke by hand.";
 
 const CARD: f32 = 470.0;
+const ACTION: f32 = 128.0;
 const OPENING: f32 = 0.22;
 
 pub(crate) fn here_word() -> &'static str {
@@ -85,9 +86,9 @@ impl Connect {
         let width = ui.available_width().min(CARD);
         ui.set_max_width(width);
         ui.add(egui::Label::new(INTRO).wrap());
-        ui.add_space(8.0);
+        ui.add_space(theme::space::SM);
         self.chooser(ui, width);
-        ui.add_space(8.0);
+        ui.add_space(theme::space::SM);
         folders(ui, settings)
     }
 
@@ -116,7 +117,7 @@ impl Connect {
         );
         inner.set_clip_rect(room.intersect(ui.clip_rect()));
         inner.multiply_opacity(open);
-        inner.add_space(6.0);
+        inner.add_space(theme::space::SM);
         self.next_steps(&mut inner, &said, width);
         self.steps_height = inner.min_rect().height();
         if open < 1.0 {
@@ -152,7 +153,7 @@ impl Connect {
             if let Some(connect) = card(ui, app, &status, width) {
                 self.act(app, places, connect);
             }
-            ui.add_space(4.0);
+            ui.add_space(theme::space::XS);
         });
         if !missing.is_empty() {
             ui.label(
@@ -176,11 +177,11 @@ impl Connect {
                         .color(theme::DONE)
                         .strong(),
                     );
-                    ui.add_space(4.0);
+                    ui.add_space(theme::space::XS);
                     numbered(ui, "1", &format!("{}.", capital(app.next_step())));
                     numbered(ui, "2", "Ask it for a drawing in your own words, for example:");
-                    ui.horizontal(|ui| {
-                        ui.add_space(18.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add_space(theme::space::LG);
                         ui.label(RichText::new(format!("\u{201c}{EXAMPLE}\u{201d}")).italics());
                         let word = match self.copied {
                             true => format!("{} Copied", icon::CHECK),
@@ -195,7 +196,7 @@ impl Connect {
                             self.copied = true;
                         }
                     });
-                    ui.add_space(4.0);
+                    ui.add_space(theme::space::XS);
                     ui.add(
                         egui::Label::new(
                             RichText::new(format!(
@@ -221,7 +222,10 @@ impl Connect {
 }
 
 fn framed(ui: &mut egui::Ui, width: f32, add: impl FnOnce(&mut egui::Ui)) {
-    let frame = widgets::card_frame();
+    framed_as(ui, widgets::card_frame(), width, add);
+}
+
+fn framed_as(ui: &mut egui::Ui, frame: egui::Frame, width: f32, add: impl FnOnce(&mut egui::Ui)) {
     let inset = frame.total_margin().sum().x;
     frame.show(ui, |ui| {
         ui.set_width(width - inset);
@@ -263,7 +267,16 @@ fn card(ui: &mut egui::Ui, app: App, status: &Status, width: f32) -> Option<bool
         Status::Connected(_) => theme::WEAK.lerp_to_gamma(colour, on),
         _ => colour,
     };
-    framed(ui, width, |ui| {
+    let frame = match status {
+        Status::Connected(_) => widgets::card_frame()
+            .fill(theme::PANEL.lerp_to_gamma(theme::DONE_SUBTLE, on))
+            .stroke(egui::Stroke::new(
+                theme::HAIRLINE,
+                theme::BORDER.lerp_to_gamma(theme::DONE_EDGE, on),
+            )),
+        _ => widgets::card_frame(),
+    };
+    framed_as(ui, frame, width, |ui| {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.label(RichText::new(app.name()).font(theme::medium(theme::BODY)));
@@ -274,7 +287,7 @@ fn card(ui: &mut egui::Ui, app: App, status: &Status, width: f32) -> Option<bool
                     true => widgets::primary_button(button),
                     false => widgets::secondary_button(button),
                 };
-                clicked = ui.add(made.min_size(vec2(104.0, theme::CONTROL))).hint(hint).clicked();
+                clicked = ui.add(made.min_size(vec2(ACTION, theme::CONTROL))).hint(hint).clicked();
             });
         });
     });
@@ -299,7 +312,7 @@ fn folders(ui: &mut egui::Ui, settings: &mut Settings) -> bool {
                 )
                 .wrap(),
             );
-            ui.add_space(4.0);
+            ui.add_space(theme::space::XS);
             let drawings = settings.drawings_folder();
             let added: Vec<PathBuf> = settings.agent_folders.iter().map(PathBuf::from).collect();
             let recent: Vec<PathBuf> = settings

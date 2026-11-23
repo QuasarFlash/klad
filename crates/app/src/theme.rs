@@ -64,6 +64,8 @@ pub const ACCENT_SUBTLE: Color32 = Color32::from_rgb(36, 56, 87);
 pub const ACCENT_SUBTLE_HOVER: Color32 = Color32::from_rgb(42, 66, 102);
 
 pub const DONE: Color32 = Color32::from_rgb(120, 200, 140);
+pub const DONE_SUBTLE: Color32 = Color32::from_rgb(29, 44, 33);
+pub const DONE_EDGE: Color32 = Color32::from_rgb(52, 88, 62);
 pub const REFUSED: Color32 = Color32::from_rgb(232, 190, 110);
 pub const ERROR: Color32 = Color32::from_rgb(240, 120, 120);
 

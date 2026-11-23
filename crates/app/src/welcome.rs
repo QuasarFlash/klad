@@ -10,7 +10,8 @@ const IN: f64 = 0.26;
 const STAGGER: f64 = 0.05;
 const RISE: f32 = 12.0;
 const COLUMN: f32 = 470.0;
-const BAR: f32 = 112.0;
+const FRAME: f32 = 500.0;
+const FOOT: f32 = theme::space::LG + theme::CONTROL + theme::space::XL + DOT;
 const CENTRE: f32 = 0.42;
 pub(crate) const SHOWN: f64 = 0.2;
 const TILE: f32 = 168.0;
@@ -26,7 +27,7 @@ const DOT: f32 = 6.0;
 const PILL: f32 = 18.0;
 const SETTLED: f64 = 1.8;
 
-pub(crate) const STAGE: Color32 = Color32::from_gray(27);
+pub(crate) const STAGE: Color32 = theme::BG;
 pub(crate) const LINE: &str = "Paint by hand or let your agent paint.\nEvery stroke stays yours to change.";
 pub(crate) const AGENT_LINE: &str =
     "Your agent app paints in klad while you watch, and you can fix any stroke by hand.";
@@ -37,7 +38,6 @@ const CHIPS: [(&str, &str); 4] = [
     (icon::POINTS, "Reshape a stroke"),
     (icon::SPARKLE, "Your agent changes it"),
 ];
-const CHIP: f32 = 90.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Step {
@@ -327,23 +327,23 @@ impl Welcome {
             false => (1.0 - ease(self.since(now) / IN)) * RISE,
         };
         let index = self.step.index();
-        let room = stage.height() - BAR;
-        let centred = stage.top() + ((room - self.heights[index]) * CENTRE).max(24.0);
-        let top = match self.still || self.since(now) < IN {
-            true => centred,
-            false => ui
-                .ctx()
-                .animate_value_with_time(egui::Id::unique(("welcome top", index)), centred, 0.25),
+        let frame = FRAME.min(stage.height() - FOOT - 2.0 * theme::space::XL).max(0.0);
+        let top = stage.top() + ((stage.height() - frame - FOOT) * CENTRE).max(theme::space::XL);
+        let inset = match self.step {
+            Step::Hello => ((frame - self.heights[index]) / 2.0).max(0.0),
+            _ => 0.0,
         };
+        let x = stage.center().x;
         let column = Rect::from_min_max(
-            pos2(stage.center().x - COLUMN / 2.0, top + rise),
-            pos2(stage.center().x + COLUMN / 2.0, stage.bottom() - BAR),
+            pos2(x - COLUMN / 2.0, top + inset + rise),
+            pos2(x + COLUMN / 2.0, top + frame),
         );
-        let bar = Rect::from_center_size(
-            pos2(stage.center().x, stage.bottom() - BAR + 36.0),
-            vec2(COLUMN.min(stage.width() - 32.0), 40.0),
+        let width = COLUMN.min(stage.width() - 2.0 * theme::space::LG);
+        let bar = Rect::from_min_size(
+            pos2(x - width / 2.0, top + frame + theme::space::LG),
+            vec2(width, theme::CONTROL),
         );
-        let dots = Rect::from_center_size(pos2(stage.center().x, stage.bottom() - 26.0), vec2(COLUMN, DOT));
+        let dots = Rect::from_center_size(pos2(x, bar.bottom() + theme::space::XL), vec2(COLUMN, DOT));
         let mut act = None;
         let mut height = None;
         ui.scope_builder(
@@ -382,10 +382,10 @@ impl Welcome {
     }
 
     fn hello(&mut self, ui: &mut egui::Ui, now: f64) -> Option<Act> {
-        ui.add_space(12.0);
+        ui.add_space(theme::space::MD);
         let (tile, _) = ui.allocate_exact_size(vec2(TILE, TILE), Sense::hover());
         self.paint_tile(ui, tile, now);
-        ui.add_space(22.0);
+        ui.add_space(theme::space::XL);
         self.appear(ui, now, WORDS, |ui| {
             ui.label(
                 RichText::new("klad")
@@ -393,16 +393,16 @@ impl Welcome {
                     .color(theme::TEXT),
             );
         });
-        ui.add_space(8.0);
+        ui.add_space(theme::space::SM);
         self.appear(ui, now, WORDS + STAGGER * 2.0, |ui| {
             ui.set_max_width(400.0);
             ui.add(egui::Label::new(RichText::new(LINE).size(theme::HEADING).color(theme::WEAK)).wrap());
         });
-        ui.add_space(28.0);
+        ui.add_space(theme::space::XL);
         let mut act = None;
         self.appear(ui, now, BUTTON, |ui| {
             if ui
-                .add(widgets::primary_button("Get started").min_size(vec2(180.0, 36.0)))
+                .add(widgets::primary_button("Get started").min_size(vec2(180.0, theme::CONTROL)))
                 .hint("then connect your agent app and take the first steps, or skip them")
                 .clicked()
             {
@@ -453,59 +453,72 @@ impl Welcome {
             });
     }
 
-    fn title(&self, ui: &mut egui::Ui, now: f64, title: &str, line: &str) {
+    fn title(&self, ui: &mut egui::Ui, now: f64, glyph: &str, title: &str, line: &str) {
         self.appear(ui, now, 0.0, |ui| {
-            ui.label(
-                RichText::new(title)
-                    .font(theme::semibold(theme::DISPLAY))
-                    .color(theme::TEXT),
-            );
+            ui.label(widgets::heading_text(glyph, title, theme::DISPLAY));
         });
-        ui.add_space(6.0);
+        ui.add_space(theme::space::SM);
         self.appear(ui, now, STAGGER, |ui| {
-            ui.set_max_width(440.0);
+            ui.set_max_width(COLUMN - theme::space::XL);
             ui.add(egui::Label::new(RichText::new(line).size(theme::HEADING).color(theme::WEAK)).wrap());
         });
-        ui.add_space(18.0);
+        ui.add_space(theme::space::XL);
     }
 
     fn agent(&mut self, ui: &mut egui::Ui, now: f64) -> Option<Act> {
-        self.title(ui, now, &format!("{} Connect your agent app", icon::LINK), AGENT_LINE);
+        self.title(ui, now, icon::LINK, "Connect your agent app", AGENT_LINE);
         let shown = self.fade(now, STAGGER * 2.0);
         ui.scope(|ui| {
             ui.multiply_opacity(shown);
             ui.with_layout(Layout::top_down(Align::Min), |ui| {
-                ui.set_max_width(470.0);
-                self.connect.chooser(ui, 470.0);
+                ui.set_max_width(COLUMN);
+                self.connect.chooser(ui, COLUMN);
             });
         });
         None
     }
 
     fn steps(&mut self, ui: &mut egui::Ui, now: f64) -> Option<Act> {
-        self.title(ui, now, &format!("{} Take the first steps", icon::BRUSH), STEPS_LINE);
-        ui.horizontal(|ui| {
-            let count = CHIPS.len() as f32;
-            let width = count * (CHIP + 20.0) + (count - 1.0) * ui.spacing().item_spacing.x;
-            ui.add_space(((ui.available_width() - width) / 2.0).max(0.0));
-            CHIPS.iter().enumerate().for_each(|(k, (glyph, words))| {
-                self.appear(ui, now, STAGGER * (2.0 + 1.6 * k as f64), |ui| {
-                    egui::Frame::new()
-                        .fill(ui.visuals().faint_bg_color)
-                        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
-                        .corner_radius(8)
-                        .inner_margin(egui::Margin::symmetric(10, 12))
-                        .show(ui, |ui| {
-                            ui.set_width(CHIP);
-                            ui.set_min_height(78.0);
-                            ui.vertical_centered(|ui| {
-                                ui.label(RichText::new(*glyph).size(theme::ICON_LARGE).color(theme::ACCENT));
-                                ui.add_space(4.0);
-                                ui.add(egui::Label::new(RichText::new(*words).font(theme::medium(theme::BODY))).wrap());
-                            });
+        self.title(ui, now, icon::BRUSH, "Take the first steps", STEPS_LINE);
+        let gap = theme::space::LG;
+        let widths: Vec<f32> = CHIPS
+            .iter()
+            .map(|(glyph, words)| {
+                let wide = |text: RichText| {
+                    egui::WidgetText::from(text)
+                        .into_galley(
+                            ui,
+                            Some(egui::TextWrapMode::Extend),
+                            f32::INFINITY,
+                            egui::TextStyle::Body,
+                        )
+                        .size()
+                        .x
+                };
+                wide(RichText::new(*glyph).size(theme::ICON_LARGE))
+                    .max(wide(RichText::new(*words).font(theme::medium(theme::BODY))))
+            })
+            .collect();
+        let whole = widths.iter().sum::<f32>() + gap * (widths.len() - 1) as f32;
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.add_space(((ui.available_width() - whole) / 2.0).max(0.0));
+            CHIPS
+                .iter()
+                .zip(&widths)
+                .enumerate()
+                .for_each(|(k, ((glyph, words), width))| {
+                    if k > 0 {
+                        ui.add_space(gap);
+                    }
+                    self.appear(ui, now, STAGGER * (2.0 + 1.6 * k as f64), |ui| {
+                        ui.allocate_ui_with_layout(vec2(*width, 0.0), Layout::top_down(Align::Center), |ui| {
+                            ui.label(RichText::new(*glyph).size(theme::ICON_LARGE).color(theme::ACCENT));
+                            ui.add_space(theme::space::XS);
+                            ui.label(RichText::new(*words).font(theme::medium(theme::BODY)));
                         });
+                    });
                 });
-            });
         });
         None
     }
@@ -527,7 +540,7 @@ impl Welcome {
                     _ => Step::Hello,
                 };
                 if ui
-                    .add(widgets::secondary_button("Back").min_size(vec2(80.0, 32.0)))
+                    .add(widgets::secondary_button("Back").min_size(vec2(96.0, theme::CONTROL)))
                     .hint("the screen before")
                     .clicked()
                 {
@@ -552,8 +565,8 @@ impl Welcome {
                             ),
                         };
                         let button = match connected {
-                            true => widgets::primary_button(words).min_size(vec2(120.0, 32.0)),
-                            false => widgets::secondary_button(words).min_size(vec2(96.0, 32.0)),
+                            true => widgets::primary_button(words).min_size(vec2(120.0, theme::CONTROL)),
+                            false => widgets::secondary_button(words).min_size(vec2(96.0, theme::CONTROL)),
                         };
                         if ui.add(button).hint(hint).clicked() {
                             act = Some(Act::To(Step::Steps));
@@ -561,14 +574,14 @@ impl Welcome {
                     }
                     Step::Steps => {
                         if ui
-                            .add(widgets::primary_button("Start first steps").min_size(vec2(170.0, 32.0)))
+                            .add(widgets::primary_button("Start first steps").min_size(vec2(170.0, theme::CONTROL)))
                             .hint("opens a drawing made for the first steps, with the steps beside it")
                             .clicked()
                         {
                             act = Some(Act::End(Outcome::FirstSteps));
                         }
                         if ui
-                            .add(widgets::secondary_button("Skip").min_size(vec2(80.0, 32.0)))
+                            .add(widgets::secondary_button("Skip").min_size(vec2(96.0, theme::CONTROL)))
                             .hint("to your drawings; Help > First steps is there whenever you want it")
                             .clicked()
                         {
@@ -609,7 +622,7 @@ impl Welcome {
             .for_each(|(rect, step)| {
                 let colour = match step == self.step {
                     true => theme::TEXT,
-                    false => Color32::from_gray(84),
+                    false => theme::DISABLED,
                 };
                 painter.rect_filled(rect, DOT / 2.0, colour.gamma_multiply(ui.opacity()));
             });
