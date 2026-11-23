@@ -1,5 +1,6 @@
-use crate::connect::{Connect, main_button};
+use crate::connect::Connect;
 use crate::theme::{self, Hint, icon};
+use crate::widgets;
 use anyhow::{Result, anyhow};
 use egui::{Align, Color32, Layout, Rect, RichText, Sense, TextureHandle, TextureOptions, UiBuilder, pos2, vec2};
 use std::collections::BTreeMap;
@@ -401,7 +402,7 @@ impl Welcome {
         let mut act = None;
         self.appear(ui, now, BUTTON, |ui| {
             if ui
-                .add(main_button(ui, "Get started", vec2(180.0, 36.0)))
+                .add(widgets::primary_button("Get started").min_size(vec2(180.0, 36.0)))
                 .hint("then connect your agent app and take the first steps, or skip them")
                 .clicked()
             {
@@ -526,7 +527,7 @@ impl Welcome {
                     _ => Step::Hello,
                 };
                 if ui
-                    .add(egui::Button::new("Back").min_size(vec2(80.0, 32.0)))
+                    .add(widgets::secondary_button("Back").min_size(vec2(80.0, 32.0)))
                     .hint("the screen before")
                     .clicked()
                 {
@@ -551,8 +552,8 @@ impl Welcome {
                             ),
                         };
                         let button = match connected {
-                            true => main_button(ui, words, vec2(120.0, 32.0)),
-                            false => egui::Button::new(words).min_size(vec2(96.0, 32.0)),
+                            true => widgets::primary_button(words).min_size(vec2(120.0, 32.0)),
+                            false => widgets::secondary_button(words).min_size(vec2(96.0, 32.0)),
                         };
                         if ui.add(button).hint(hint).clicked() {
                             act = Some(Act::To(Step::Steps));
@@ -560,14 +561,14 @@ impl Welcome {
                     }
                     Step::Steps => {
                         if ui
-                            .add(main_button(ui, "Start first steps", vec2(170.0, 32.0)))
+                            .add(widgets::primary_button("Start first steps").min_size(vec2(170.0, 32.0)))
                             .hint("opens a drawing made for the first steps, with the steps beside it")
                             .clicked()
                         {
                             act = Some(Act::End(Outcome::FirstSteps));
                         }
                         if ui
-                            .add(egui::Button::new("Skip").min_size(vec2(80.0, 32.0)))
+                            .add(widgets::secondary_button("Skip").min_size(vec2(80.0, 32.0)))
                             .hint("to your drawings; Help > First steps is there whenever you want it")
                             .clicked()
                         {

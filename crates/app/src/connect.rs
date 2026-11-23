@@ -1,5 +1,6 @@
 use crate::settings::Settings;
 use crate::theme::{self, Hint, icon};
+use crate::widgets;
 use egui::{RichText, vec2};
 use klad_mcp::{App, Entry, Places, Status};
 use std::path::{Path, PathBuf};
@@ -220,15 +221,12 @@ impl Connect {
 }
 
 fn framed(ui: &mut egui::Ui, width: f32, add: impl FnOnce(&mut egui::Ui)) {
-    egui::Frame::new()
-        .fill(ui.visuals().faint_bg_color)
-        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
-        .corner_radius(6)
-        .inner_margin(egui::Margin::symmetric(12, 10))
-        .show(ui, |ui| {
-            ui.set_width(width - 26.0);
-            add(ui);
-        });
+    let frame = widgets::card_frame();
+    let inset = frame.total_margin().sum().x;
+    frame.show(ui, |ui| {
+        ui.set_width(width - inset);
+        add(ui);
+    });
 }
 
 fn card(ui: &mut egui::Ui, app: App, status: &Status, width: f32) -> Option<bool> {
@@ -273,20 +271,14 @@ fn card(ui: &mut egui::Ui, app: App, status: &Status, width: f32) -> Option<bool
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let made = match connect {
-                    true => main_button(ui, button, vec2(104.0, 28.0)),
-                    false => egui::Button::new(button).min_size(vec2(96.0, 24.0)),
+                    true => widgets::primary_button(button),
+                    false => widgets::secondary_button(button),
                 };
-                clicked = ui.add(made).hint(hint).clicked();
+                clicked = ui.add(made.min_size(vec2(104.0, theme::CONTROL))).hint(hint).clicked();
             });
         });
     });
     clicked.then_some(connect)
-}
-
-pub(crate) fn main_button<'a>(ui: &egui::Ui, text: &str, size: egui::Vec2) -> egui::Button<'a> {
-    egui::Button::new(RichText::new(text).strong().color(egui::Color32::WHITE))
-        .fill(ui.visuals().selection.bg_fill)
-        .min_size(size)
 }
 
 fn numbered(ui: &mut egui::Ui, number: &str, text: &str) {

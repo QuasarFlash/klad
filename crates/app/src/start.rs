@@ -1,6 +1,7 @@
 use crate::picker;
 use crate::settings::Settings;
-use crate::theme::{self, Hint, icon};
+use crate::theme::{self, icon};
+use crate::widgets;
 use anyhow::{Result, anyhow, bail};
 use egui::{RichText, TextureHandle, vec2};
 use klad_core::bundle::{Blank, Bundle};
@@ -186,7 +187,7 @@ impl Start {
         if self.samples.is_empty() {
             return None;
         }
-        ui.label(RichText::new(format!("{} Samples", icon::IMAGE)).font(theme::semibold(theme::HEADING)));
+        widgets::section_header(ui, icon::IMAGE, "Samples");
         ui.label(
             RichText::new("Open one to look around or draw on it: it opens as a copy in your drawings folder.")
                 .color(theme::WEAK),
@@ -223,13 +224,13 @@ impl Start {
         let mut chosen = None;
         egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
             ui.horizontal_top(|ui| {
-                ui.group(|ui| {
+                widgets::card(ui, |ui| {
                     ui.vertical(|ui| {
                         ui.set_width(420.0);
                         chosen = chosen.take().or_else(|| self.new_section(ui, settings));
                     });
                 });
-                ui.group(|ui| {
+                widgets::card(ui, |ui| {
                     ui.vertical(|ui| {
                         ui.set_width(290.0);
                         chosen = chosen.take().or_else(|| self.open_section(ui, settings));
@@ -284,15 +285,24 @@ impl Start {
 
     fn new_section(&mut self, ui: &mut egui::Ui, settings: &mut Settings) -> Option<PathBuf> {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{} New drawing", icon::FILE_PLUS)).font(theme::semibold(theme::HEADING)));
+            widgets::section_header(ui, icon::FILE_PLUS, "New drawing");
             ui.add_space(12.0);
-            let was = self.pixel;
-            ui.selectable_value(&mut self.pixel, false, "Painting")
-                .hint("brushes, shapes and text at any size");
-            ui.selectable_value(&mut self.pixel, true, "Pixel art")
-                .hint("a small drawing of whole pixels, bound to a palette, shown enlarged");
-            if self.pixel && !was {
-                self.paper = false;
+            if let Some(pixel) = widgets::segmented(
+                ui,
+                self.pixel,
+                &[
+                    (false, "Painting", "brushes, shapes and text at any size"),
+                    (
+                        true,
+                        "Pixel art",
+                        "a small drawing of whole pixels, bound to a palette, shown enlarged",
+                    ),
+                ],
+            ) {
+                self.pixel = pixel;
+                if pixel {
+                    self.paper = false;
+                }
             }
         });
         ui.add_space(6.0);
@@ -302,9 +312,7 @@ impl Start {
             .spacing(vec2(10.0, 8.0))
             .show(ui, |ui| {
                 let label = ui.label("Name");
-                let name = ui
-                    .add(egui::TextEdit::singleline(&mut self.name).desired_width(260.0))
-                    .labelled_by(label.id);
+                let name = ui.add(widgets::field(&mut self.name, 260.0)).labelled_by(label.id);
                 if !self.focused && self.section == Section::New {
                     name.request_focus();
                     theme::select_all(ui.ctx(), name.id, &self.name);
@@ -313,8 +321,7 @@ impl Start {
                 ui.end_row();
                 let label = ui.label("Folder");
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut self.folder).desired_width(200.0))
-                        .labelled_by(label.id);
+                    ui.add(widgets::field(&mut self.folder, 200.0)).labelled_by(label.id);
                     if picker::NATIVE
                         && ui.button("Choose").clicked()
                         && let Some(dir) = picker::choose_folder(Some(&expand(&self.folder)), "Choose")
@@ -405,7 +412,11 @@ impl Start {
             ui.checkbox(&mut self.sketch, "A sketch layer for blocking in shapes");
         }
         ui.add_space(6.0);
-        if !(ui.add(egui::Button::new("Create").min_size(vec2(96.0, 28.0))).clicked() || entered) {
+        if !(ui
+            .add(widgets::primary_button("Create").min_size(vec2(96.0, theme::CONTROL)))
+            .clicked()
+            || entered)
+        {
             return None;
         }
         match self.create(settings) {
@@ -421,7 +432,7 @@ impl Start {
     }
 
     fn open_section(&mut self, ui: &mut egui::Ui, settings: &Settings) -> Option<PathBuf> {
-        ui.label(RichText::new(format!("{} Open a drawing", icon::FOLDER_OPEN)).font(theme::semibold(theme::HEADING)));
+        widgets::section_header(ui, icon::FOLDER_OPEN, "Open a drawing");
         ui.add_space(6.0);
         let mut picked = None;
         if picker::NATIVE
@@ -444,9 +455,7 @@ impl Start {
         ui.add_space(6.0);
         let label = ui.label(RichText::new("Or paste its path").color(theme::WEAK));
         ui.horizontal(|ui| {
-            let field = ui
-                .add(egui::TextEdit::singleline(&mut self.path).desired_width(220.0))
-                .labelled_by(label.id);
+            let field = ui.add(widgets::field(&mut self.path, 220.0)).labelled_by(label.id);
             if !self.focused && self.section == Section::Open {
                 field.request_focus();
             }
@@ -473,7 +482,7 @@ impl Start {
     }
 
     fn recent_section(&mut self, ui: &mut egui::Ui, settings: &mut Settings) -> Option<PathBuf> {
-        ui.label(RichText::new(format!("{} Recent", icon::HISTORY)).font(theme::semibold(theme::HEADING)));
+        widgets::section_header(ui, icon::HISTORY, "Recent");
         ui.add_space(6.0);
         if settings.documents.is_empty() {
             ui.label(RichText::new("Drawings you open show up here.").color(theme::WEAK));

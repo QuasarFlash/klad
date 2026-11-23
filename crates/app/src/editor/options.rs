@@ -643,20 +643,21 @@ impl Editor {
 
     fn pick_scope(&mut self, ui: &mut egui::Ui) {
         let all = self.settings.pick_all_layers;
-        [
-            (false, "this layer", "a click picks strokes on the active layer only"),
-            (
-                true,
-                "all layers",
-                "a click picks what you see, on any layer, and makes its layer active",
-            ),
-        ]
-        .into_iter()
-        .for_each(|(scope, label, hint)| {
-            if ui.selectable_label(all == scope, label).hint(hint).clicked() && all != scope {
-                self.queued.push(Cmd::PickAllLayers);
-            }
-        });
+        let picked = crate::widgets::segmented(
+            ui,
+            all,
+            &[
+                (false, "this layer", "a click picks strokes on the active layer only"),
+                (
+                    true,
+                    "all layers",
+                    "a click picks what you see, on any layer, and makes its layer active",
+                ),
+            ],
+        );
+        if picked.is_some() {
+            self.queued.push(Cmd::PickAllLayers);
+        }
         ui.separator();
     }
 

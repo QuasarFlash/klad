@@ -30,6 +30,7 @@ pub mod space {
     pub const XS: f32 = 4.0;
     pub const SM: f32 = 8.0;
     pub const MD: f32 = 12.0;
+    pub const LG: f32 = 16.0;
 }
 
 pub mod radius {
@@ -362,6 +363,7 @@ pub fn apply(style: &mut Style) {
 
 pub const PRIMARY: &str = "klad::primary";
 pub const GHOST: &str = "klad::ghost";
+pub const CENTRED: &str = "klad::centred";
 
 pub fn focus_ring() -> Stroke {
     Stroke::new(1.5, ACCENT)
@@ -402,6 +404,9 @@ impl StyleProvider<ButtonStyle> for Look {
         }
         if primary {
             layout.image_tint = ON_ACCENT;
+        }
+        if primary || args.classes.has_class(CENTRED) {
+            layout.align2 = Some(egui::Align2::CENTER_CENTER);
         }
         look
     }

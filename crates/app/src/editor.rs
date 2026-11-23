@@ -6213,13 +6213,14 @@ impl Editor {
     fn colour_channels(&mut self, ui: &mut egui::Ui) {
         let mut model = self.settings.colour_model;
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            ui.spacing_mut().button_padding.x = 4.0;
-            color::Model::ALL.into_iter().for_each(|m| {
-                if ui.selectable_label(model == m, m.name()).hint(m.about()).clicked() {
-                    model = m;
-                }
-            });
+            ui.spacing_mut().button_padding.x = crate::theme::space::SM;
+            let options: Vec<(color::Model, &str, &str)> = color::Model::ALL
+                .into_iter()
+                .map(|m| (m, m.name(), m.about()))
+                .collect();
+            if let Some(m) = crate::widgets::segmented(ui, model, &options) {
+                model = m;
+            }
         });
         if model != self.settings.colour_model {
             self.settings.colour_model = model;

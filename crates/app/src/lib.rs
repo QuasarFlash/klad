@@ -28,6 +28,7 @@ mod theme;
 pub mod updates;
 mod view;
 mod welcome;
+mod widgets;
 
 pub use home::run;
 

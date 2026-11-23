@@ -681,27 +681,23 @@ impl Editor {
                 .layout(Flow::left_to_right(Align::Center)),
         );
         let caret = if collapsed { icon::FOLDED } else { icon::OPEN };
-        let toggle = child
-            .add(
-                egui::Button::new(RichText::new(caret).size(theme::ICON))
-                    .frame(false)
-                    .min_size(vec2(theme::CONTROL, theme::CONTROL)),
-            )
-            .hint(match collapsed {
+        let toggle = crate::widgets::icon_button(
+            &mut child,
+            caret,
+            match collapsed {
                 true => format!("open {}", pane.title()),
                 false => format!("fold {} to its title", pane.title()),
-            });
-        child.label(RichText::new(pane.title()).strong());
+            },
+        );
+        child.label(RichText::new(pane.title()).font(theme::medium(theme::BODY)));
         let mut close = false;
         child.with_layout(Flow::right_to_left(Align::Center), |ui| {
-            close = ui
-                .add(
-                    egui::Button::new(RichText::new(icon::CLOSE).size(theme::ICON))
-                        .frame(false)
-                        .min_size(vec2(theme::CONTROL, theme::CONTROL)),
-                )
-                .hint(format!("close {}; cmd K brings it back", pane.title()))
-                .clicked();
+            close = crate::widgets::quiet_icon_button(
+                ui,
+                icon::CLOSE,
+                format!("close {}; cmd K brings it back", pane.title()),
+            )
+            .clicked();
             if pane == Pane::Layers && !collapsed {
                 self.check(|e| e.layer_header(ui));
             }
@@ -872,7 +868,7 @@ impl Editor {
             ui.with_layout(Flow::right_to_left(Align::Center), |ui| {
                 if let Some(view) = self.view {
                     let degrees = view.angle.to_degrees().rem_euclid(360.0);
-                    let flat = |text: String| egui::Button::new(RichText::new(text).color(theme::WEAK)).frame(false);
+                    let flat = |text: String| crate::widgets::ghost_button(RichText::new(text).color(theme::WEAK));
                     let zoom = ui
                         .add(flat(format!("{:.0}%", view.zoom * ui.ctx().pixels_per_point() * 100.0)))
                         .hint("zoom; click for 100%, double-click to fit the canvas");
