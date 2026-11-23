@@ -1343,6 +1343,51 @@ mod tests {
     }
 
     #[test]
+    fn with_every_agent_app_found_the_next_steps_stay_above_the_buttons() {
+        let dir = folder("welcome-every-app");
+        [(860.0, true), (560.0, false)].into_iter().for_each(|(tall, fits)| {
+            let mut h = Harness::builder()
+                .with_size(vec2(1280.0, tall))
+                .build_ui_state(|ui, home: &mut Home| home.frame(ui), first_start(&dir));
+            h.run_steps(3);
+            let apps = dir.join("apps");
+            [".codex", ".claude", ".cursor", "Library/Application Support/Code"]
+                .iter()
+                .for_each(|sign| std::fs::create_dir_all(apps.join(sign)).unwrap());
+            let config = with_claude_desktop(&mut h, &dir);
+            h.get_by_label("Get started").click();
+            h.run_steps(40);
+            assert_eq!(h.get_all_by_label("Connect").count(), 5, "every app has a card");
+            assert!(h.query_by_label_contains("Also works with").is_none());
+            let skip = h.get_by_label("Skip").rect();
+            h.get_all_by_label("Connect").next().unwrap().click();
+            h.run_steps(60);
+            let line = h.get_by_label_contains("Two more steps").rect();
+            let last = h.get_by_label_contains("The first time, Claude Desktop asks").rect();
+            let bar = h.get_by_label("Continue").rect();
+            assert!(
+                line.bottom() < bar.top() && bar.bottom() <= tall,
+                "{tall}: the next steps come into sight above the buttons ({line:?}, {bar:?})"
+            );
+            match fits {
+                true => {
+                    assert!(
+                        last.bottom() < bar.top(),
+                        "{tall}: the buttons move down under the whole box ({last:?}, {bar:?})"
+                    );
+                    assert!(bar.top() > skip.top(), "they sat higher before the box opened");
+                }
+                false => assert!(
+                    (bar.top() - skip.top()).abs() < 1.0,
+                    "{tall}: a window too short scrolls, and the buttons stay at its foot"
+                ),
+            }
+            std::fs::remove_file(config).unwrap();
+        });
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn help_welcome_and_file_connect_work_from_the_start_window_and_a_drawing() {
         let dir = folder("welcome-again");
         let made = dir.join("ledge.klad");
@@ -1862,6 +1907,29 @@ mod tests {
         h.run_steps(40);
         shot(&mut h, "6-onboarding-steps");
         drop(h);
+
+        let apps = dir.join("apps");
+        [".claude", ".cursor", "Library/Application Support/Code"]
+            .iter()
+            .for_each(|sign| std::fs::create_dir_all(apps.join(sign)).unwrap());
+        [(1000.0, "7-onboarding-every-app"), (560.0, "8-onboarding-short-window")]
+            .into_iter()
+            .for_each(|(tall, name)| {
+                let mut h = Harness::builder()
+                    .with_size(vec2(1600.0, tall))
+                    .with_pixels_per_point(2.0)
+                    .with_step_dt(1.0 / 30.0)
+                    .wgpu()
+                    .build_ui_state(|ui, home: &mut Home| home.frame(ui), first_start(&dir));
+                let config = with_claude_desktop(&mut h, &dir);
+                std::fs::remove_file(&config).ok();
+                h.run_steps(90);
+                h.get_by_label("Get started").click();
+                h.run_steps(30);
+                h.get_all_by_label("Connect").next().unwrap().click();
+                h.run_steps(40);
+                shot(&mut h, name);
+            });
 
         let shown: Vec<PathBuf> = [
             "samples/lemons/lemons.klad",

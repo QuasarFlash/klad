@@ -1,7 +1,7 @@
 use crate::settings::Settings;
 use crate::theme::{self, Hint, icon};
 use crate::widgets;
-use egui::{RichText, vec2};
+use egui::{Rect, RichText, vec2};
 use klad_mcp::{App, Entry, Places, Status};
 use std::path::{Path, PathBuf};
 
@@ -11,6 +11,7 @@ pub(crate) struct Connect {
     pub said: Option<Said>,
     copied: bool,
     steps_height: f32,
+    reveal: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -54,6 +55,7 @@ impl Connect {
             said: None,
             copied: false,
             steps_height: 150.0,
+            reveal: false,
         }
     }
 
@@ -66,6 +68,7 @@ impl Connect {
     fn act(&mut self, app: App, places: &Places, connect: bool) {
         let entry = Entry::serving(&self.program);
         self.copied = false;
+        self.reveal = true;
         self.said = Some(match connect {
             true => match app.connect(places, &entry) {
                 Ok(_) => Said::Connected(app),
@@ -120,6 +123,10 @@ impl Connect {
         inner.add_space(theme::space::SM);
         self.next_steps(&mut inner, &said, width);
         self.steps_height = inner.min_rect().height();
+        if self.reveal && ui.stack().contained_in(egui::UiKind::ScrollArea) {
+            ui.scroll_to_rect(Rect::from_min_size(room.min, vec2(width, self.steps_height)), None);
+        }
+        self.reveal &= open < 1.0;
         if open < 1.0 {
             ui.ctx().request_repaint();
         }

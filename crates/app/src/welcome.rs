@@ -327,8 +327,16 @@ impl Welcome {
             false => (1.0 - ease(self.since(now) / IN)) * RISE,
         };
         let index = self.step.index();
-        let frame = FRAME.min(stage.height() - FOOT - 2.0 * theme::space::XL).max(0.0);
-        let top = stage.top() + ((stage.height() - frame - FOOT) * CENTRE).max(theme::space::XL);
+        let room = (stage.height() - FOOT - 2.0 * theme::space::XL).max(0.0);
+        let wanted = match self.step {
+            Step::Hello => FRAME,
+            _ => FRAME.max(self.heights[index].ceil()),
+        };
+        let frame = wanted.min(room);
+        let anchored = stage.top() + ((stage.height() - FRAME.min(room) - FOOT) * CENTRE).max(theme::space::XL);
+        let top = anchored
+            .min(stage.bottom() - theme::space::XL - FOOT - frame)
+            .max(stage.top() + theme::space::XL);
         let inset = match self.step {
             Step::Hello => ((frame - self.heights[index]) / 2.0).max(0.0),
             _ => 0.0,
@@ -351,6 +359,10 @@ impl Welcome {
                 .max_rect(column)
                 .layout(Layout::top_down(Align::Center)),
             |ui| {
+                ui.spacing_mut().scroll.fade = egui::style::ScrollFadeStyle {
+                    strength: 1.0,
+                    size: 2.0 * theme::space::XL,
+                };
                 let shown = egui::ScrollArea::vertical()
                     .id_salt("welcome")
                     .auto_shrink([false, true])
