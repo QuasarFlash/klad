@@ -4770,6 +4770,7 @@ impl Editor {
             painter.circle_filled(knob, HANDLE / 2.0 + 1.0, Color32::WHITE);
             painter.circle_stroke(knob, HANDLE / 2.0 + 1.0, egui::Stroke::new(1.0, accent));
         }
+        self.draw_canvas_edge(&painter, |c| self.screen(view, rect, c));
         self.draw_pins(&painter, |c| self.screen(view, rect, c));
         self.crop_overlay(&painter, |c| self.screen(view, rect, c));
         self.draw_guides(&painter, rect, |c| self.screen(view, rect, c));
@@ -5596,6 +5597,36 @@ impl Editor {
         pending.filter(|p| (p - current).abs() > f32::EPSILON)
     }
 
+    fn fraction(&mut self, ui: &mut egui::Ui, key: &str, label: &str, current: f32, hint: &str) -> Option<f32> {
+        let mut value = self.edits.get(key).copied().unwrap_or(current);
+        let response = ui
+            .add(
+                egui::DragValue::new(&mut value)
+                    .speed(0.01)
+                    .range(0.0..=1.0)
+                    .prefix(label)
+                    .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                    .custom_parser(|text| {
+                        let trimmed = text.trim();
+                        let shown = trimmed.trim_end_matches('%').trim().parse::<f64>().ok()?;
+                        Some(match trimmed.ends_with('%') || shown > 1.0 {
+                            true => shown / 100.0,
+                            false => shown,
+                        })
+                    }),
+            )
+            .hint(hint);
+        if response.dragged() || response.has_focus() {
+            self.edits.insert(key.to_string(), value);
+            return None;
+        }
+        let pending = self.edits.remove(key);
+        if response.drag_stopped() || response.lost_focus() || response.changed() {
+            return Some(value);
+        }
+        pending.filter(|p| (p - current).abs() > f32::EPSILON)
+    }
+
     fn text(&mut self, ui: &mut egui::Ui, key: &str, label: &str, current: &str, hint: &str) -> Option<String> {
         let mut value = self.texts.get(key).cloned().unwrap_or_else(|| current.to_string());
         let label = ui.label(label);
@@ -6099,7 +6130,7 @@ impl Editor {
             }
         };
         if !self.settings.recent.is_empty() {
-            ui.label("recent");
+            crate::widgets::form_label(ui, "recent");
             let recent = self.settings.recent.clone();
             let current = color::hex(self.color);
             ui.horizontal_wrapped(|ui| {
@@ -6156,7 +6187,7 @@ impl Editor {
     }
 
     fn palette_part(&mut self, ui: &mut egui::Ui) -> Option<klad_core::ops::PaletteEdit> {
-        ui.label("palette");
+        crate::widgets::form_label(ui, "palette");
         let edit = self.palette_row(ui);
         let variants: Vec<String> = self
             .scene
@@ -6185,26 +6216,23 @@ impl Editor {
             });
         }
         ui.horizontal_wrapped(|ui| {
-            let label = ui.label("name");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.swatch_name)
-                    .hint_text("optional")
-                    .desired_width(110.0),
-            )
-            .labelled_by(label.id)
-            .hint("a name for the colour; agents can use it in place of the hex");
-            self.command_button(ui, Cmd::AddSwatch, Some("add colour"));
+            ui.spacing_mut().item_spacing.x = crate::theme::space::XS;
+            let label = crate::widgets::form_label(ui, "name");
+            ui.add(crate::widgets::field(&mut self.swatch_name, 88.0).hint_text("optional"))
+                .labelled_by(label.id)
+                .hint("a name for the colour; agents can use it in place of the hex");
+            self.command_plain(ui, Cmd::AddSwatch, "add colour");
             if self.can_run(Cmd::UpdateSwatch).is_none() {
-                self.command_button(ui, Cmd::UpdateSwatch, Some("update"));
+                self.command_plain(ui, Cmd::UpdateSwatch, "update");
             }
-            self.command_button(ui, Cmd::AddRamp, Some("ramp"));
-            self.command_button(ui, Cmd::LoadPalette, Some("palettes"));
+            self.command_plain(ui, Cmd::AddRamp, "ramp");
+            self.command_plain(ui, Cmd::LoadPalette, "palettes");
             if variants.len() > 1 || self.can_run(Cmd::NewVariant).is_none() {
-                self.command_button(ui, Cmd::NewVariant, Some("new variant"));
+                self.command_plain(ui, Cmd::NewVariant, "new variant");
             }
             if !self.scene.bundle.doc.variants.shown.is_empty() {
-                self.command_button(ui, Cmd::RenameVariant, Some("rename variant"));
-                self.command_button(ui, Cmd::RemoveVariant, Some("remove variant"));
+                self.command_plain(ui, Cmd::RenameVariant, "rename variant");
+                self.command_plain(ui, Cmd::RemoveVariant, "remove variant");
             }
         });
         edit.or(show.map(|name| klad_core::ops::PaletteEdit::Variant { name }))
@@ -6212,16 +6240,13 @@ impl Editor {
 
     fn colour_channels(&mut self, ui: &mut egui::Ui) {
         let mut model = self.settings.colour_model;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().button_padding.x = crate::theme::space::SM;
-            let options: Vec<(color::Model, &str, &str)> = color::Model::ALL
-                .into_iter()
-                .map(|m| (m, m.name(), m.about()))
-                .collect();
-            if let Some(m) = crate::widgets::segmented(ui, model, &options) {
-                model = m;
-            }
-        });
+        let options: Vec<(color::Model, &str, &str)> = color::Model::ALL
+            .into_iter()
+            .map(|m| (m, m.name(), m.about()))
+            .collect();
+        if let Some(m) = crate::widgets::segmented_wide(ui, model, &options) {
+            model = m;
+        }
         if model != self.settings.colour_model {
             self.settings.colour_model = model;
             self.settings_dirty = true;
@@ -6244,15 +6269,18 @@ impl Editor {
         let [r, g, b, _] = self.color;
         let row = |ui: &mut egui::Ui, channel: &color::Channel, value: &mut f32, ramp: &dyn Fn(f32) -> [f32; 3]| {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
+                let gap = crate::theme::space::XS;
+                let value_box = 44.0;
+                ui.spacing_mut().item_spacing.x = gap;
                 ui.add_sized(
                     [10.0, crate::theme::CONTROL],
                     egui::Label::new(egui::RichText::new(channel.name).color(crate::theme::WEAK)),
                 );
-                let width = (ui.available_width() - 48.0).max(CHANNEL_TRACK);
+                let width = (ui.available_width() - value_box - gap).max(CHANNEL_TRACK);
                 let slid = color::channel_slider(ui, channel, value, width, ramp).changed();
                 let typed = ui
-                    .add(
+                    .add_sized(
+                        [value_box, crate::theme::CONTROL],
                         egui::DragValue::new(value)
                             .range(channel.lo..=channel.hi)
                             .speed((channel.hi - channel.lo) / 200.0)
@@ -6338,19 +6366,27 @@ impl Editor {
         self.fill.reference = reference;
         let f = &mut self.fill;
         options::whole(ui, "close gaps px", |ui| {
-            ui.add(egui::Slider::new(&mut f.gap, 0.0..=fill::MAX_GAP).text("close gaps px"))
+            crate::widgets::labelled_slider(ui, "close gaps px", egui::Slider::new(&mut f.gap, 0.0..=fill::MAX_GAP))
         })
         .hint("openings in the lines up to this wide count as closed");
         options::whole(ui, "tolerance", |ui| {
-            ui.add(egui::Slider::new(&mut f.tolerance, 0.0..=1.0).text("tolerance"))
+            crate::widgets::labelled_slider(ui, "tolerance", egui::Slider::new(&mut f.tolerance, 0.0..=1.0))
         })
         .hint("how different a pixel may be from where you click and still fill");
         options::whole(ui, "grow under lines px", |ui| {
-            ui.add(egui::Slider::new(&mut f.expand, 0.0..=fill::MAX_EXPAND).text("grow under lines px"))
+            crate::widgets::labelled_slider(
+                ui,
+                "grow under lines px",
+                egui::Slider::new(&mut f.expand, 0.0..=fill::MAX_EXPAND),
+            )
         })
         .hint("the fill reaches this far under the lines, so no paper shows between line and colour");
         options::whole(ui, "opacity", |ui| {
-            ui.add(egui::Slider::new(&mut f.opacity, 0.05..=1.0).text("opacity"))
+            crate::widgets::labelled_slider(
+                ui,
+                "opacity",
+                crate::widgets::percent(egui::Slider::new(&mut f.opacity, 0.05..=1.0)),
+            )
         })
         .hint("the fill's opacity");
         options::note(

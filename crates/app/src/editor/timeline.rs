@@ -1198,23 +1198,22 @@ impl Editor {
         let folded = self.settings.layout.timeline_folded;
         ui.horizontal_wrapped(|ui| {
             let caret = if folded { icon::FOLDED } else { icon::OPEN };
-            if ui
-                .add(
-                    egui::Button::new(RichText::new(caret).size(theme::ICON))
-                        .min_size(vec2(theme::CONTROL, theme::CONTROL)),
-                )
-                .hint(match folded {
+            if crate::widgets::icon_button(
+                ui,
+                caret,
+                match folded {
                     true => "open the timeline: its layers and frames",
                     false => "fold the timeline to this row",
-                })
-                .clicked()
+                },
+            )
+            .clicked()
             {
                 self.settings.layout.timeline_folded = !folded;
                 self.settings_dirty = true;
             }
             let shown = self.shown_frame();
             let mut typed = shown;
-            let label = ui.label(RichText::new("frame").strong());
+            let label = crate::widgets::bar_label(ui, "frame");
             let field = ui
                 .add(egui::DragValue::new(&mut typed).range(0..=t.frames - 1))
                 .labelled_by(label.id)
@@ -1244,7 +1243,7 @@ impl Editor {
             if let Some((a, b)) = range.as_mut() {
                 ui.add(egui::DragValue::new(a).range(0..=t.frames - 1))
                     .hint("the loop range's first frame");
-                ui.label("to");
+                crate::widgets::bar_label(ui, "to");
                 ui.add(egui::DragValue::new(b).range(0..=t.frames - 1))
                     .hint("the loop range's last frame");
                 *b = (*b).max(*a);
@@ -1257,7 +1256,8 @@ impl Editor {
             self.command_button(ui, Cmd::Onion, None);
             self.command_button(ui, Cmd::OnionSettings, None);
             ui.separator();
-            ui.label("shift K on");
+            crate::widgets::bar_label(ui, "shift K on")
+                .hint("where shift K puts the next drawing: one, two or three frames after this one");
             [
                 (Cmd::ExposeOnes, "1s"),
                 (Cmd::ExposeTwos, "2s"),
@@ -1268,11 +1268,11 @@ impl Editor {
                 self.command_button(ui, cmd, Some(label));
             });
             ui.separator();
-            ui.label("fps");
+            crate::widgets::bar_label(ui, "fps");
             let fps = ui
                 .add(egui::DragValue::new(&mut self.timeline.fps).range(1..=240))
                 .hint("frames per second of the document; drag, or double-click and type");
-            ui.label("length");
+            crate::widgets::bar_label(ui, "length");
             let length = ui
                 .add(egui::DragValue::new(&mut self.timeline.length).range(1..=100_000))
                 .hint("the timeline's length in frames");
@@ -1284,9 +1284,12 @@ impl Editor {
                     origin: None,
                 });
             }
-            ui.label("zoom");
-            ui.add(egui::Slider::new(&mut self.timeline.cell, 8.0..=40.0).show_value(false))
-                .hint("the width of a frame in the timeline");
+            crate::widgets::labelled_slider(
+                ui,
+                "zoom",
+                egui::Slider::new(&mut self.timeline.cell, 8.0..=40.0).show_value(false),
+            )
+            .hint("the width of a frame in the timeline");
         });
         self.timeline_apply(ops)?;
         if let Some(frame) = go {
@@ -1323,9 +1326,13 @@ impl Editor {
             ui.selectable_value(&mut onion.by, By::Frames, "frames")
                 .hint("count frames: on twos the nearest drawing is two frames off and fainter");
         });
-        ui.add(egui::Slider::new(&mut onion.opacity, 0.05..=1.0).text("opacity"))
-            .hint("the nearest ghost's opacity");
-        ui.add(egui::Slider::new(&mut onion.falloff, 0.1..=1.0).text("falloff"))
+        crate::widgets::labelled_slider(
+            ui,
+            "opacity",
+            crate::widgets::percent(egui::Slider::new(&mut onion.opacity, 0.05..=1.0)),
+        )
+        .hint("the nearest ghost's opacity");
+        crate::widgets::labelled_slider(ui, "falloff", egui::Slider::new(&mut onion.falloff, 0.1..=1.0))
             .hint("each step further keeps this much of the opacity");
         ui.checkbox(&mut onion.tint, "tint: red before, green after")
             .hint("off: the ghosts keep their own colours");

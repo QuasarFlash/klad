@@ -40,8 +40,13 @@ pub(super) fn whole(ui: &mut egui::Ui, key: &str, add: impl FnOnce(&mut egui::Ui
     if width > ui.available_size_before_wrap().x + 0.5 && !at_row_start(ui) {
         ui.end_row();
     }
+    let before = ui.cursor().min;
     let response = add(ui);
-    let drawn = response.rect.width();
+    let after = ui.cursor().min;
+    let drawn = match (after.y - before.y).abs() < 0.5 {
+        true => after.x - before.x - ui.spacing().item_spacing.x,
+        false => response.rect.width(),
+    };
     if (drawn - width).abs() > 0.5 {
         ui.data_mut(|d| d.insert_temp(id, drawn));
         ui.ctx().request_repaint();
@@ -273,15 +278,15 @@ impl Editor {
             self.pick(&id);
         }
         whole(ui, "size", |ui| {
-            ui.add(
-                egui::Slider::new(&mut self.size, 0.5..=800.0)
-                    .logarithmic(true)
-                    .text("size"),
+            crate::widgets::labelled_slider(
+                ui,
+                "size",
+                egui::Slider::new(&mut self.size, 0.5..=800.0).logarithmic(true),
             )
         })
         .hint("brush size in canvas px ([ and ], or hold cmd alt and drag sideways on the canvas)");
         if let Some(mut feather) = self.eraser_feather() && whole(ui, "feather", |ui| {
-            ui.add(egui::Slider::new(&mut feather, 0.0..=1.0).text("feather"))
+            crate::widgets::labelled_slider(ui, "feather", egui::Slider::new(&mut feather, 0.0..=1.0))
         })
         .hint(
             "how far in the eraser's edge fades: 0 cuts clean, 1 fades out like an airbrush; the pen's eraser end too",
@@ -291,11 +296,19 @@ impl Editor {
             self.set_eraser_feather(feather);
         }
         whole(ui, "opacity", |ui| {
-            ui.add(egui::Slider::new(&mut self.opacity, 0.05..=1.0).text("opacity"))
+            crate::widgets::labelled_slider(
+                ui,
+                "opacity",
+                crate::widgets::percent(egui::Slider::new(&mut self.opacity, 0.05..=1.0)),
+            )
         })
         .hint("a stroke never gets darker than this on its own");
         whole(ui, "flow", |ui| {
-            ui.add(egui::Slider::new(&mut self.flow, 0.02..=1.0).text("flow"))
+            crate::widgets::labelled_slider(
+                ui,
+                "flow",
+                crate::widgets::percent(egui::Slider::new(&mut self.flow, 0.02..=1.0)),
+            )
         })
         .hint("how much each dab lays down");
     }
@@ -326,12 +339,12 @@ impl Editor {
         let erasing = self.is_on(Cmd::Eraser) == Some(true);
         let t = &mut self.tuning;
         if let Some(hardness) = t.hardness.as_mut().filter(|_| !erasing) {
-            ui.add(egui::Slider::new(hardness, 0.0..=1.0).text("hardness"))
+            crate::widgets::labelled_slider(ui, "hardness", egui::Slider::new(hardness, 0.0..=1.0))
                 .hint("soft to hard edge; changing it draws as a variant of the brush");
-            ui.add(egui::Slider::new(&mut t.feather, 0.0..=1.0).text("feather"))
+            crate::widgets::labelled_slider(ui, "feather", egui::Slider::new(&mut t.feather, 0.0..=1.0))
                 .hint("how far in the edge fades out like an airbrush, without dabs building it back up");
         }
-        ui.add(egui::Slider::new(&mut t.size_min, 0.0..=1.0).text("lightest size"))
+        crate::widgets::labelled_slider(ui, "lightest size", egui::Slider::new(&mut t.size_min, 0.0..=1.0))
             .hint("the size at the lightest press, as a part of the full size");
         ui.add(
             egui::Slider::new(&mut t.size_gamma, 0.3..=3.0)
@@ -339,14 +352,18 @@ impl Editor {
                 .text("pressure curve"),
         )
         .hint("below 1 light presses get wider sooner, above 1 later");
-        ui.add(egui::Slider::new(&mut t.taper[0], 0.0..=200.0).text("taper in px"))
+        crate::widgets::labelled_slider(ui, "taper in px", egui::Slider::new(&mut t.taper[0], 0.0..=200.0))
             .hint("how long the start of a stroke takes to reach full size");
-        ui.add(egui::Slider::new(&mut t.taper[1], 0.0..=200.0).text("taper out px"))
+        crate::widgets::labelled_slider(ui, "taper out px", egui::Slider::new(&mut t.taper[1], 0.0..=200.0))
             .hint("how long the end of a stroke takes to come to a point");
-        ui.add(egui::Slider::new(&mut t.stabilizer, 0.0..=200.0).text("stabiliser ms"))
+        crate::widgets::labelled_slider(ui, "stabiliser ms", egui::Slider::new(&mut t.stabilizer, 0.0..=200.0))
             .hint("the line follows the average of the pen's last this many ms; it catches up when you lift");
-        ui.add(egui::Slider::new(&mut t.smoothing, 0.0..=100.0).text("pressure smoothing ms"))
-            .hint("evens out pressure over this many ms");
+        crate::widgets::labelled_slider(
+            ui,
+            "pressure smoothing ms",
+            egui::Slider::new(&mut t.smoothing, 0.0..=100.0),
+        )
+        .hint("evens out pressure over this many ms");
         if ui
             .button("reset brush")
             .hint("the brush's own settings again")
@@ -663,10 +680,9 @@ impl Editor {
 
     pub(super) fn brush_tiles(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            ui.label("size");
+            crate::widgets::form_label(ui, "size");
             SIZES.iter().for_each(|s| {
-                if ui
-                    .selectable_label((self.size - s).abs() < 0.01, format!("{s:.0}"))
+                if crate::widgets::chip(ui, (self.size - s).abs() < 0.01, format!("{s:.0}"))
                     .hint(format!("brush size {s:.0} px"))
                     .clicked()
                 {

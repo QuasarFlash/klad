@@ -52,6 +52,20 @@ pub fn field(text: &mut String, width: f32) -> TextEdit<'_> {
 }
 
 pub fn segmented<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, &str, &str)]) -> Option<T> {
+    segmented_in(ui, current, options, None)
+}
+
+pub fn segmented_wide<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, &str, &str)]) -> Option<T> {
+    let each = ui.available_width() / options.len().max(1) as f32;
+    segmented_in(ui, current, options, Some(each))
+}
+
+fn segmented_in<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    current: T,
+    options: &[(T, &str, &str)],
+    each: Option<f32>,
+) -> Option<T> {
     let mut picked = None;
     Frame::new()
         .fill(theme::CONTROL_FILL)
@@ -63,7 +77,8 @@ pub fn segmented<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, &s
                     let on = *value == current;
                     let button = Button::selectable(on, *label)
                         .with_class(theme::GHOST)
-                        .min_size(vec2(0.0, theme::CONTROL));
+                        .with_class(theme::CENTRED)
+                        .min_size(vec2(each.unwrap_or(0.0), theme::CONTROL));
                     if ui.add(button).hint(*hint).clicked() && !on {
                         picked = Some(*value);
                     }
@@ -109,6 +124,10 @@ pub fn heading_row(ui: &mut Ui, glyph: &str, text: &str, beside: impl FnOnce(&mu
         ui.add_space(space::MD);
         beside(ui);
     });
+}
+
+pub fn bar_label(ui: &mut Ui, text: &str) -> Response {
+    ui.label(RichText::new(text).color(theme::WEAK))
 }
 
 pub fn form_label(ui: &mut Ui, text: &str) -> Response {
@@ -185,4 +204,43 @@ fn from_the_end(ui: &Ui, text: &str, width: f32) -> std::sync::Arc<egui::Galley>
         .map(|k| lay(format!("\u{2026}{}", chars[k..].iter().collect::<String>())))
         .find(|g| g.size().x <= width)
         .unwrap_or_else(|| lay("\u{2026}".into()))
+}
+
+pub fn chip(ui: &mut Ui, selected: bool, text: impl Into<WidgetText>) -> Response {
+    ui.add(
+        Button::new(text)
+            .selected(selected)
+            .with_class(theme::CENTRED)
+            .min_size(vec2(theme::CONTROL, theme::CONTROL)),
+    )
+}
+
+pub const VALUE_BOX: f32 = 44.0;
+
+pub fn labelled_slider(ui: &mut Ui, label: &str, slider: egui::Slider<'_>) -> Response {
+    let in_a_row = ui.layout().main_dir() == egui::Direction::LeftToRight
+        && ui.available_size_before_wrap().x < ui.max_rect().width() - 0.5;
+    if in_a_row {
+        ui.add_space(space::SM);
+    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = space::XS;
+        ui.spacing_mut().interact_size.x = VALUE_BOX;
+        let name = bar_label(ui, label);
+        ui.add(slider).labelled_by(name.id)
+    })
+    .inner
+}
+
+pub fn percent(slider: egui::Slider<'_>) -> egui::Slider<'_> {
+    slider
+        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+        .custom_parser(|text| {
+            let trimmed = text.trim();
+            let shown = trimmed.trim_end_matches('%').trim().parse::<f64>().ok()?;
+            Some(match trimmed.ends_with('%') || shown > 1.0 {
+                true => shown / 100.0,
+                false => shown,
+            })
+        })
 }

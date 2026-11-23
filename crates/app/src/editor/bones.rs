@@ -1461,34 +1461,34 @@ impl Editor {
                 });
                 ui.spacing_mut().slider_width = 48.0;
                 super::options::whole(ui, "weights size", |ui| {
-                    ui.add(
-                        egui::Slider::new(&mut self.bones.radius, 4.0..=200.0)
-                            .logarithmic(true)
-                            .text("size"),
+                    crate::widgets::labelled_slider(
+                        ui,
+                        "size",
+                        egui::Slider::new(&mut self.bones.radius, 4.0..=200.0).logarithmic(true),
                     )
                 })
                 .hint("the weight brush's radius in px");
                 super::options::whole(ui, "weights weight", |ui| {
-                    ui.add(
-                        egui::Slider::new(&mut self.bones.strength, 0.0..=1.0)
-                            .fixed_decimals(2)
-                            .text("weight"),
+                    crate::widgets::labelled_slider(
+                        ui,
+                        "weight",
+                        egui::Slider::new(&mut self.bones.strength, 0.0..=1.0).fixed_decimals(2),
                     )
                 })
                 .hint(
                     "the weight a dab paints toward, or adds and takes away (alt I picks it up from under the pointer)",
                 );
                 theme::held_menu(ui, icon::MORE, |ui| {
-                    ui.add(
-                        egui::Slider::new(&mut self.bones.flow, 0.0..=1.0)
-                            .fixed_decimals(2)
-                            .text("strength"),
+                    crate::widgets::labelled_slider(
+                        ui,
+                        "strength",
+                        egui::Slider::new(&mut self.bones.flow, 0.0..=1.0).fixed_decimals(2),
                     )
                     .hint("how far one dab goes toward its weight: 0.1 builds it up over strokes, 1 sets it at once; the pen's pressure scales it");
-                    ui.add(
-                        egui::Slider::new(&mut self.bones.hardness, 0.0..=1.0)
-                            .fixed_decimals(2)
-                            .text("hardness"),
+                    crate::widgets::labelled_slider(
+                        ui,
+                        "hardness",
+                        egui::Slider::new(&mut self.bones.hardness, 0.0..=1.0).fixed_decimals(2),
                     )
                     .hint("0: a soft edge all the way in; 1: full strength to the edge");
                     ui.checkbox(&mut self.bones.pressure, "pressure sets the strength")
@@ -1583,7 +1583,7 @@ impl Editor {
                         }
                         if let Some(r) = self.bones.reach.get_mut(&end) {
                             ui.spacing_mut().slider_width = 56.0;
-                            ui.add(egui::Slider::new(&mut r.mix, 0.0..=1.0).text("mix"))
+                            crate::widgets::labelled_slider(ui, "mix", egui::Slider::new(&mut r.mix, 0.0..=1.0))
                                 .hint("0: the limb's own turns; 1: it reaches the target");
                         }
                     }

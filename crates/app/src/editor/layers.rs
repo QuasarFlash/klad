@@ -261,12 +261,15 @@ impl Editor {
         let active = self.scene.active == row.path;
         let also = self.also.contains(&row.id);
         let painter = ui.painter_at(rect);
-        if active {
-            painter.rect_filled(rect, 3.0, Color32::from_gray(54));
-        } else if also {
-            painter.rect_filled(rect, 3.0, Color32::from_gray(47));
-        } else if response.hovered() {
-            painter.rect_filled(rect, 3.0, Color32::from_gray(42));
+        let fill = match (active, also, response.hovered()) {
+            (true, _, false) => Some(theme::ACCENT_SUBTLE),
+            (true, _, true) => Some(theme::ACCENT_SUBTLE_HOVER),
+            (false, true, _) => Some(theme::HOVER),
+            (false, false, true) => Some(theme::CONTROL_FILL),
+            (false, false, false) => None,
+        };
+        if let Some(fill) = fill {
+            painter.rect_filled(rect, theme::radius::CONTROL, fill);
         }
         if also {
             painter.rect_filled(
@@ -653,13 +656,11 @@ impl Editor {
         if blend != layer.blend {
             props.push(("blend".to_string(), json!(blend)));
         }
-        if let Some(v) = self.number(
+        if let Some(v) = self.fraction(
             ui,
             &format!("{id}.o"),
             "opacity ",
             layer.opacity,
-            0.0..=1.0,
-            0.01,
             "the active layer's opacity",
         ) {
             props.push(("opacity".to_string(), json!(v)));
@@ -670,13 +671,14 @@ impl Editor {
     pub(super) fn layers_body(&mut self, ui: &mut egui::Ui, height: f32) -> f32 {
         let top = ui.cursor().top();
         egui::Frame::new()
-            .inner_margin(egui::Margin {
-                left: 8,
-                right: 8,
-                top: 6,
-                bottom: 5,
-            })
-            .show(ui, |ui| self.layers_bar(ui));
+            .inner_margin(egui::Margin::symmetric(theme::space::SM as i8, 0))
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.horizontal(|ui| {
+                    self.check(|e| e.layer_header(ui));
+                });
+                self.layers_bar(ui);
+            });
         let bar = ui.cursor().top() - top;
         let rows = self.layer_rows(Where::Panel);
         let kept = rows.len().min(layout::LAYER_ROWS_KEPT) as f32;
@@ -730,9 +732,10 @@ impl Editor {
         let mut placed = Vec::new();
         let mut responses = Vec::new();
         ui.spacing_mut().item_spacing.y = 0.0;
+        let pressing = ui.input(|i| i.pointer.any_down());
         rows.into_iter().for_each(|row| {
             let (rect, _) = ui.allocate_exact_size(vec2(width, ROW), Sense::hover());
-            if self.scene.active == row.path && self.layer_in_sight.as_ref() != Some(&row.id) {
+            if self.scene.active == row.path && self.layer_in_sight.as_ref() != Some(&row.id) && !pressing {
                 match ui.clip_rect().contains_rect(rect) {
                     true => self.layer_in_sight = Some(row.id.clone()),
                     false => ui.scroll_to_rect_animation(rect, None, egui::style::ScrollAnimation::none()),

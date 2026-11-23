@@ -448,7 +448,7 @@ impl Journey {
             Some((body, floor)) => {
                 at.y < canvas.bottom()
                     && ((at.y < body && at.y >= body - crate::layout::TITLE)
-                        || (r.top() >= body - 1.0 && r.bottom() <= floor + 1.0))
+                        || (r.top() >= body - 4.0 && r.bottom() <= floor + 1.0))
             }
             None => {
                 at.y < canvas.bottom()

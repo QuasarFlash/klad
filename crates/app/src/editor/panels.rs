@@ -349,10 +349,9 @@ impl Editor {
                     .vertical_centered(|ui| {
                         ui.add_space(6.0);
                         STRIP_TOOLS.iter().for_each(|cmd| {
-                            let r = self.command_sized(ui, *cmd, None, icons.0, tool);
-                            self.key_letter(ui, r.rect, *cmd);
+                            self.command_sized(ui, *cmd, None, icons.0, tool);
                         });
-                        ui.add_space(4.0);
+                        ui.separator();
                         self.colour_pair(ui);
                         ui.separator();
                         [Cmd::Undo, Cmd::Redo].iter().for_each(|cmd| {
@@ -698,9 +697,6 @@ impl Editor {
                 format!("close {}; cmd K brings it back", pane.title()),
             )
             .clicked();
-            if pane == Pane::Layers && !collapsed {
-                self.check(|e| e.layer_header(ui));
-            }
         });
         if toggle.clicked() {
             match collapsed {
@@ -836,14 +832,14 @@ impl Editor {
                 ui.separator();
             }
             let frames = self.scene.bundle.doc.timeline.frames;
-            ui.label(RichText::new(format!("frame {} of {frames}", self.shown_frame())).strong());
+            ui.label(RichText::new(format!("frame {} of {frames}", self.shown_frame())).color(theme::WEAK));
             if self.timeline.player.is_some() {
                 ui.label(
                     RichText::new(format!("{} playing {}", icon::PLAY, self.timeline.playing)).color(theme::ACCENT),
                 );
             }
             ui.separator();
-            ui.label(self.draws_into());
+            ui.label(RichText::new(self.draws_into()).color(theme::WEAK));
             if let Some(keys) = self.drag_keys() {
                 ui.separator();
                 ui.label(RichText::new(keys).color(theme::ACCENT));

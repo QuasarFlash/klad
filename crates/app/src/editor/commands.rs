@@ -1675,13 +1675,24 @@ impl Editor {
     }
 
     pub(super) fn command_words(&mut self, ui: &mut egui::Ui, cmd: Cmd, words: &str) -> egui::Response {
-        let button = egui::Button::new(words)
+        let button = crate::widgets::ghost_button(words)
             .selected(self.is_on(cmd) == Some(true))
             .min_size(egui::vec2(theme::CONTROL, theme::CONTROL));
         let enabled = self.can_run(cmd).is_none();
         let response = ui.add_enabled(enabled, button).hint(self.command_hint(cmd));
         let name = cmd.spec().name;
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
+        if response.clicked() {
+            self.queued.push(cmd);
+        }
+        response
+    }
+
+    pub(super) fn command_plain(&mut self, ui: &mut egui::Ui, cmd: Cmd, words: &str) -> egui::Response {
+        let button = crate::widgets::secondary_button(words).selected(self.is_on(cmd) == Some(true));
+        let response = ui
+            .add_enabled(self.can_run(cmd).is_none(), button)
+            .hint(self.command_hint(cmd));
         if response.clicked() {
             self.queued.push(cmd);
         }
@@ -1704,6 +1715,10 @@ impl Editor {
         let button = egui::Button::new(RichText::new(text).size(size))
             .selected(self.is_on(cmd) == Some(true))
             .min_size(min);
+        let button = match label {
+            Some(_) => button,
+            None => egui::class::HasClasses::with_class(button, theme::GHOST),
+        };
         let response = ui
             .add_enabled(self.can_run(cmd).is_none(), button)
             .hint(self.command_hint(cmd));
@@ -1722,23 +1737,6 @@ impl Editor {
             self.queued.push(cmd);
         }
         response
-    }
-
-    pub(super) fn key_letter(&self, ui: &egui::Ui, rect: egui::Rect, cmd: Cmd) {
-        if let Some(k) = self
-            .bindings
-            .keys(cmd)
-            .first()
-            .filter(|k| !k.command && !k.alt && !k.shift)
-        {
-            ui.painter().text(
-                rect.right_bottom() - egui::vec2(3.0, 2.0),
-                egui::Align2::RIGHT_BOTTOM,
-                k.label(),
-                theme::regular(theme::SMALL),
-                theme::WEAK,
-            );
-        }
     }
 }
 

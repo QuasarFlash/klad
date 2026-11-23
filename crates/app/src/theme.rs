@@ -50,6 +50,9 @@ pub const HOVER: Color32 = Color32::from_gray(53);
 pub const PRESSED: Color32 = Color32::from_gray(61);
 pub const BORDER: Color32 = Color32::from_gray(52);
 pub const SURROUND: [u8; 3] = [58, 58, 58];
+pub const CANVAS_EDGE: Color32 = Color32::from_black_alpha(120);
+pub const RULER_TICK: Color32 = Color32::from_gray(76);
+pub const RULER_INK: Color32 = Color32::from_gray(138);
 
 pub const TEXT: Color32 = Color32::from_gray(230);
 pub const WEAK: Color32 = Color32::from_gray(168);
@@ -316,7 +319,7 @@ pub fn apply(style: &mut Style) {
     v.weak_text_color = Some(WEAK);
     v.override_text_color = None;
     v.slider_trailing_fill = true;
-    v.handle_shape = egui::style::HandleShape::Circle;
+    v.handle_shape = egui::style::HandleShape::Rect { aspect_ratio: 0.35 };
     let w = &mut v.widgets;
     w.noninteractive.bg_fill = PANEL;
     w.noninteractive.weak_bg_fill = PANEL;

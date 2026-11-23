@@ -116,7 +116,7 @@ impl Pane {
         match self {
             Pane::Tool => 260.0,
             Pane::Brush => 150.0,
-            Pane::Layers => 240.0,
+            Pane::Layers => 240.0 + crate::theme::CONTROL,
             Pane::Inspector => 220.0,
             Pane::Notes => 90.0,
             Pane::History => 160.0,

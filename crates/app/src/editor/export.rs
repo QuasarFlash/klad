@@ -765,7 +765,7 @@ impl Editor {
                     if form.paper.is_empty() {
                         label(ui, "resolution");
                         ui.horizontal(|ui| {
-                            ui.add(egui::Slider::new(&mut form.dpi, 36.0..=600.0).logarithmic(true).text("pixels per inch"))
+                            crate::widgets::labelled_slider(ui, "pixels per inch", egui::Slider::new(&mut form.dpi, 36.0..=600.0).logarithmic(true))
                                 .hint("how many of the drawing's pixels make an inch on the page; 72 makes a pixel a point");
                             ui.label(
                                 RichText::new(format!(
@@ -886,9 +886,9 @@ impl Editor {
                 if what == What::Sheet {
                     label(ui, "sheet");
                     ui.vertical(|ui| {
-                        ui.add(egui::Slider::new(&mut form.padding, 0..=16).text("padding px"))
+                        crate::widgets::labelled_slider(ui, "padding px", egui::Slider::new(&mut form.padding, 0..=16))
                             .hint("space between the cells of the sheet");
-                        ui.add(egui::Slider::new(&mut form.max, 512..=8192).text("page size px"))
+                        crate::widgets::labelled_slider(ui, "page size px", egui::Slider::new(&mut form.max, 512..=8192))
                             .hint("the largest sheet page; more frames go on more pages");
                     });
                     ui.end_row();
@@ -910,7 +910,7 @@ impl Editor {
                             || (what == What::Gif && form.webp && !form.lossless)
                             || what == What::Video;
                         if squeezed {
-                            ui.add(egui::Slider::new(&mut form.quality, 1.0..=100.0).fixed_decimals(0).text("quality"))
+                            crate::widgets::labelled_slider(ui, "quality", egui::Slider::new(&mut form.quality, 1.0..=100.0).fixed_decimals(0))
                                 .hint("higher keeps more detail and makes a bigger file");
                         }
                         if matches!(what, What::Image | What::Gif | What::Pdf | What::Video) {

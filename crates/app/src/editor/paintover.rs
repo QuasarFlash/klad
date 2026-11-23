@@ -143,7 +143,7 @@ impl Editor {
                 .labelled_by(label.id)
                 .hint("any brush id of this drawing or the library");
         });
-        ui.add(egui::Slider::new(&mut form.threshold, 1.0..=25.0).text("how close"))
+        crate::widgets::labelled_slider(ui, "how close", egui::Slider::new(&mut form.threshold, 1.0..=25.0))
             .hint("lower paints more and smaller strokes, until the painting is this close to the source");
         ui.horizontal(|ui| {
             ui.add(
@@ -161,9 +161,9 @@ impl Editor {
             )
             .hint("the longest stroke, in brush widths");
         });
-        ui.add(egui::Slider::new(&mut form.curve, 0.0..=1.0).text("follow the forms"))
+        crate::widgets::labelled_slider(ui, "follow the forms", egui::Slider::new(&mut form.curve, 0.0..=1.0))
             .hint("0 straight strokes, 1 strokes that turn with every bend");
-        ui.add(egui::Slider::new(&mut form.vary, 0.0..=0.1).text("break the colour"))
+        crate::widgets::labelled_slider(ui, "break the colour", egui::Slider::new(&mut form.vary, 0.0..=0.1))
             .hint("each stroke a little warmer or cooler, lighter or darker");
         ui.horizontal(|ui| {
             let label = ui.label("only in");

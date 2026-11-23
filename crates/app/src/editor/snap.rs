@@ -245,6 +245,16 @@ impl Editor {
         Ok(())
     }
 
+    pub(super) fn draw_canvas_edge(&self, painter: &egui::Painter, to_screen: impl Fn(Vec2) -> Pos2) {
+        let doc = &self.scene.bundle.doc;
+        let (w, h) = (doc.canvas.width as f32, doc.canvas.height as f32);
+        let corners = [Vec2::ZERO, vec2(w, 0.0), vec2(w, h), vec2(0.0, h)].map(to_screen);
+        painter.add(egui::Shape::closed_line(
+            corners.to_vec(),
+            Stroke::new(theme::HAIRLINE, theme::CANVAS_EDGE),
+        ));
+    }
+
     pub(super) fn draw_guides(&self, painter: &egui::Painter, rect: Rect, to_screen: impl Fn(Vec2) -> Pos2) {
         let doc = &self.scene.bundle.doc;
         let g = &doc.guides;
@@ -338,7 +348,7 @@ impl Editor {
 }
 
 fn draw_ruler(painter: &egui::Painter, area: Rect, across: bool, to_screen: &impl Fn(Vec2) -> Pos2, length: f32) {
-    painter.rect_filled(area, 0.0, Color32::from_gray(36));
+    painter.rect_filled(area, 0.0, theme::PANEL);
     let unit = |v: f32| match across {
         true => to_screen(vec2(v, 0.0)).x,
         false => to_screen(vec2(0.0, v)).y,
@@ -360,7 +370,7 @@ fn draw_ruler(painter: &egui::Painter, area: Rect, across: bool, to_screen: &imp
             false => (pos2(area.right() - tick, s), pos2(area.right(), s)),
         };
         if area.contains(a) || area.contains(b) {
-            painter.line_segment([a, b], Stroke::new(1.0, theme::WEAK));
+            painter.line_segment([a, b], Stroke::new(theme::HAIRLINE / 2.0, theme::RULER_TICK));
             if big {
                 let at = match across {
                     true => pos2(s + 2.0, area.top() + 1.0),
@@ -371,7 +381,7 @@ fn draw_ruler(painter: &egui::Painter, area: Rect, across: bool, to_screen: &imp
                     egui::Align2::LEFT_TOP,
                     format!("{}", v as i64),
                     font.clone(),
-                    theme::WEAK,
+                    theme::RULER_INK,
                 );
             }
         }
