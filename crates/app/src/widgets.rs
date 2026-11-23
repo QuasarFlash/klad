@@ -126,6 +126,128 @@ pub fn heading_row(ui: &mut Ui, glyph: &str, text: &str, beside: impl FnOnce(&mu
     });
 }
 
+pub fn large_primary_button<'a>(text: impl Into<WidgetText>) -> Button<'a> {
+    primary_button(text)
+        .with_class(theme::LARGE)
+        .min_size(vec2(0.0, theme::CONTROL_LARGE))
+}
+
+pub fn large_ghost_button<'a>(text: impl Into<WidgetText>) -> Button<'a> {
+    ghost_button(text)
+        .with_class(theme::LARGE)
+        .with_class(theme::CENTRED)
+        .min_size(vec2(0.0, theme::CONTROL_LARGE))
+}
+
+pub const ROW_BUTTON: f32 = 112.0;
+
+pub fn row_button<'a>(text: &str, filled: bool) -> Button<'a> {
+    let words = RichText::new(text).size(theme::CALLOUT);
+    let button = match filled {
+        true => secondary_button(words),
+        false => ghost_button(words).with_class(theme::CENTRED),
+    };
+    button
+        .min_size(vec2(ROW_BUTTON, theme::CONTROL_ROW))
+        .corner_radius(radius::CARD)
+        .stroke(Stroke::new(theme::HAIRLINE, theme::BORDER_STRONG))
+}
+
+pub fn app_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    let id = egui::Id::unique("klad app icon");
+    if let Some(texture) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+        return Some(texture);
+    }
+    let picture = crate::home::window_icon()?;
+    let image =
+        egui::ColorImage::from_rgba_unmultiplied([picture.width as usize, picture.height as usize], &picture.rgba);
+    let options = egui::TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
+    let texture = ctx.load_texture("klad icon", image, options);
+    ctx.data_mut(|d| d.insert_temp(id, texture.clone()));
+    Some(texture)
+}
+
+pub const LIST_ROW: f32 = 76.0;
+pub const LIST_PAD: f32 = 20.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Place {
+    pub first: bool,
+    pub last: bool,
+}
+
+impl Place {
+    pub fn of(index: usize, count: usize) -> Self {
+        Self {
+            first: index == 0,
+            last: index + 1 == count,
+        }
+    }
+}
+
+pub fn list_panel<R>(ui: &mut Ui, width: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    Frame::new()
+        .fill(theme::PANEL)
+        .stroke(Stroke::new(theme::HAIRLINE, theme::BORDER))
+        .corner_radius(CornerRadius::same(radius::PANEL))
+        .show(ui, |ui| {
+            ui.set_width(width - 2.0 * theme::HAIRLINE);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            add(ui)
+        })
+        .inner
+}
+
+fn list_frame(ui: &mut Ui, place: Place, fill: egui::Color32) -> Frame {
+    if !place.first {
+        let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), theme::HAIRLINE), egui::Sense::hover());
+        ui.painter().rect_filled(line, 0.0, theme::BORDER);
+    }
+    let inner = radius::PANEL - theme::HAIRLINE as u8;
+    let top = if place.first { inner } else { 0 };
+    let bottom = if place.last { inner } else { 0 };
+    Frame::new()
+        .fill(fill)
+        .corner_radius(CornerRadius {
+            nw: top,
+            ne: top,
+            sw: bottom,
+            se: bottom,
+        })
+        .inner_margin(Margin::symmetric(LIST_PAD as i8, 0))
+}
+
+pub fn list_row<R>(ui: &mut Ui, place: Place, fill: egui::Color32, gap: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let tall = LIST_ROW - if place.first { 0.0 } else { theme::HAIRLINE };
+    list_frame(ui, place, fill)
+        .show(ui, |ui| {
+            let width = ui.available_width();
+            ui.allocate_ui_with_layout(
+                vec2(width, tall),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_min_size(vec2(width, tall));
+                    ui.spacing_mut().item_spacing.x = gap;
+                    add(ui)
+                },
+            )
+            .inner
+        })
+        .inner
+}
+
+pub fn list_section<R>(ui: &mut Ui, place: Place, add: impl FnOnce(&mut Ui) -> R) -> R {
+    list_frame(ui, place, egui::Color32::TRANSPARENT)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.add_space(space::LG);
+            let inner = add(ui);
+            ui.add_space(space::LG);
+            inner
+        })
+        .inner
+}
+
 pub fn bar_label(ui: &mut Ui, text: &str) -> Response {
     ui.label(RichText::new(text).color(theme::WEAK))
 }

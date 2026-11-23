@@ -1068,7 +1068,7 @@ impl Editor {
                 (format!("{} Connect an agent app", icon::LINK), Spot::Middle),
                 &mut open,
                 |ui| {
-                    ui.set_width(470.0);
+                    ui.set_width(crate::connect::WIDTH);
                     if self.connect.panel(ui, &mut self.settings) {
                         self.settings_dirty = true;
                     }

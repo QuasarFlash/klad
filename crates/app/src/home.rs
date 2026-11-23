@@ -577,7 +577,7 @@ impl Home {
                         ui.add_space(margin);
                         ui.vertical(|ui| {
                             ui.set_max_width(WIDTH);
-                            let icon = start.icon(ui.ctx());
+                            let icon = crate::widgets::app_icon(ui.ctx());
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = theme::space::SM;
                                 if let Some(icon) = icon {
@@ -1321,10 +1321,15 @@ mod tests {
         let written = std::fs::read_to_string(&config).unwrap();
         assert!(written.contains("\"klad\""), "{written}");
         assert!(
-            h.query_by_label_contains("klad is connected to Claude Desktop")
+            h.query_by_label_contains("Connected. Quit Claude Desktop (cmd Q) and open it again")
+                .is_some(),
+            "the row says it is connected and what finishes it"
+        );
+        assert!(
+            h.query_by_label_contains("Then ask Claude Desktop for a drawing")
                 .is_some()
                 && h.query_by_label_contains("Paint a red apple").is_some(),
-            "the next steps and the example request show"
+            "the example request shows under the rows"
         );
         assert!(h.query_by_label("Continue").is_some() && h.query_by_label("Skip").is_none());
         h.get_by_label("Back").click();
@@ -1343,7 +1348,7 @@ mod tests {
     }
 
     #[test]
-    fn with_every_agent_app_found_the_next_steps_stay_above_the_buttons() {
+    fn with_every_agent_app_found_the_next_steps_show_inside_the_frame() {
         let dir = folder("welcome-every-app");
         [(860.0, true), (560.0, false)].into_iter().for_each(|(tall, fits)| {
             let mut h = Harness::builder()
@@ -1357,29 +1362,31 @@ mod tests {
             let config = with_claude_desktop(&mut h, &dir);
             h.get_by_label("Get started").click();
             h.run_steps(40);
-            assert_eq!(h.get_all_by_label("Connect").count(), 5, "every app has a card");
+            assert_eq!(h.get_all_by_label("Connect").count(), 5, "every app has a row");
             assert!(h.query_by_label_contains("Also works with").is_none());
             let skip = h.get_by_label("Skip").rect();
             h.get_all_by_label("Connect").next().unwrap().click();
             h.run_steps(60);
-            let line = h.get_by_label_contains("Two more steps").rect();
+            let then = h.get_by_label_contains("Then ask Claude Desktop").rect();
             let last = h.get_by_label_contains("The first time, Claude Desktop asks").rect();
-            let bar = h.get_by_label("Continue").rect();
+            let first = h.get_by_label("Claude Desktop").rect();
+            let foot = h.get_by_label("Continue").rect().bottom();
             assert!(
-                line.bottom() < bar.top() && bar.bottom() <= tall,
-                "{tall}: the next steps come into sight above the buttons ({line:?}, {bar:?})"
+                (foot - skip.bottom()).abs() < 0.5,
+                "{tall}: the buttons keep their place at the frame's foot"
+            );
+            assert!(
+                last.bottom() <= foot + 0.5 && then.top() < last.top(),
+                "{tall}: the next steps end inside the frame ({then:?}, {last:?}, foot {foot})"
             );
             match fits {
-                true => {
-                    assert!(
-                        last.bottom() < bar.top(),
-                        "{tall}: the buttons move down under the whole box ({last:?}, {bar:?})"
-                    );
-                    assert!(bar.top() > skip.top(), "they sat higher before the box opened");
-                }
+                true => assert!(
+                    first.top() >= foot - 540.0,
+                    "{tall}: the rows and the next steps fit the frame without scrolling ({first:?})"
+                ),
                 false => assert!(
-                    (bar.top() - skip.top()).abs() < 1.0,
-                    "{tall}: a window too short scrolls, and the buttons stay at its foot"
+                    first.top() < foot - (tall - 96.0) && then.top() >= foot - (tall - 96.0),
+                    "{tall}: a window too short scrolls the next steps into sight ({first:?}, {then:?})"
                 ),
             }
             std::fs::remove_file(config).unwrap();
@@ -1436,6 +1443,67 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "writes the three onboarding steps at the handoff's 1200 x 780 to scratch/ui/onboarding-port"]
+    fn onboarding_port_pictures() {
+        let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scratch/ui/onboarding-port");
+        std::fs::create_dir_all(&out).unwrap();
+        let only: Option<usize> = std::env::var("ONBOARDING_STEP").ok().and_then(|s| s.parse().ok());
+        let scale: f32 = std::env::var("ONBOARDING_SCALE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1.0);
+        let size = std::env::var("ONBOARDING_SIZE")
+            .ok()
+            .and_then(|s| {
+                s.split_once('x')
+                    .and_then(|(w, h)| Some(vec2(w.parse().ok()?, h.parse().ok()?)))
+            })
+            .unwrap_or(vec2(1200.0, 780.0));
+        let dir = folder("onboarding-port");
+        let apps = dir.join("apps");
+        [".codex", ".claude", ".cursor", "Library/Application Support/Code"]
+            .iter()
+            .for_each(|sign| std::fs::create_dir_all(apps.join(sign)).unwrap());
+        let mut h = Harness::builder()
+            .with_size(size)
+            .with_pixels_per_point(scale)
+            .with_step_dt(1.0 / 30.0)
+            .wgpu()
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first_start(&dir));
+        with_claude_desktop(&mut h, &dir);
+        let places = klad_mcp::Places {
+            home: apps.clone(),
+            os: klad_mcp::Os::Mac,
+        };
+        klad_mcp::App::ClaudeCode
+            .connect(&places, &klad_mcp::Entry::serving(&apps.join("klad")))
+            .unwrap();
+        let shot = |h: &mut Harness<'static, Home>, step: usize| {
+            if only.is_none_or(|n| n == step) {
+                h.render().unwrap().save(out.join(format!("step-{step}.png"))).unwrap();
+            }
+        };
+        h.run_steps(110);
+        shot(&mut h, 1);
+        h.get_by_label("Get started").click();
+        h.run_steps(30);
+        h.get_all_by_label("Connect").next().unwrap().click();
+        h.run_steps(40);
+        shot(&mut h, 2);
+        h.get_by_label("Continue").click();
+        h.run_steps(40);
+        shot(&mut h, 3);
+        h.get_by_label("Skip").click();
+        h.run_steps(30);
+        with_claude_desktop(&mut h, &dir);
+        menus::push(Picked::Run(Cmd::ConnectAgent));
+        h.run_steps(20);
+        shot(&mut h, 4);
+        drop(h);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     #[ignore = "writes pictures and frames of the onboarding to scratch/ui"]
     fn onboarding_pictures() {
         let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scratch/ui");
@@ -1466,7 +1534,7 @@ mod tests {
                     .unwrap();
             }
         };
-        film(&mut h, 75, Some("1-hello"));
+        film(&mut h, 110, Some("1-hello"));
         h.get_by_label("Get started").click();
         film(&mut h, 30, Some("2-agent"));
         h.get_all_by_label("Connect").next().unwrap().click();

@@ -10,6 +10,8 @@ use egui::{
 use std::sync::Arc;
 
 pub const CONTROL: f32 = 28.0;
+pub const CONTROL_ROW: f32 = 36.0;
+pub const CONTROL_LARGE: f32 = 44.0;
 pub const MENU_ROW: f32 = 24.0;
 pub const ROW: f32 = CONTROL;
 pub const GRAB: f32 = 12.0;
@@ -17,14 +19,28 @@ pub const GRAB: f32 = 12.0;
 pub const SMALL: f32 = 11.0;
 pub const LABEL: f32 = 12.0;
 pub const BODY: f32 = 13.0;
+pub const CALLOUT: f32 = 14.0;
 pub const HEADING: f32 = 15.0;
+pub const LEAD: f32 = 16.0;
+pub const INTRO: f32 = 17.0;
+pub const BRAND: f32 = 24.0;
 pub const DISPLAY: f32 = 28.0;
-pub const WORDMARK: f32 = 44.0;
+pub const TITLE: f32 = 32.0;
+pub const HERO: f32 = 72.0;
+
+pub mod leading {
+    pub const BODY: f32 = 18.0;
+    pub const HEADING: f32 = 20.0;
+    pub const LIST: f32 = 22.0;
+    pub const LEAD: f32 = 26.0;
+    pub const INTRO: f32 = 28.0;
+    pub const TITLE: f32 = 38.0;
+}
 
 pub const ICON_TINY: f32 = 9.0;
 pub const ICON_SMALL: f32 = 14.0;
 pub const ICON: f32 = 16.0;
-pub const ICON_LARGE: f32 = 24.0;
+pub const ICON_LARGE: f32 = 22.0;
 
 pub mod space {
     pub const XS: f32 = 4.0;
@@ -38,6 +54,7 @@ pub mod space {
 pub mod radius {
     pub const CONTROL: u8 = 4;
     pub const CARD: u8 = 8;
+    pub const PANEL: u8 = 12;
 }
 
 pub const HAIRLINE: f32 = 1.0;
@@ -49,6 +66,7 @@ pub const CONTROL_FILL: Color32 = Color32::from_gray(43);
 pub const HOVER: Color32 = Color32::from_gray(53);
 pub const PRESSED: Color32 = Color32::from_gray(61);
 pub const BORDER: Color32 = Color32::from_gray(52);
+pub const BORDER_STRONG: Color32 = Color32::from_gray(62);
 pub const SURROUND: [u8; 3] = [58, 58, 58];
 pub const CANVAS_EDGE: Color32 = Color32::from_black_alpha(120);
 pub const RULER_TICK: Color32 = Color32::from_gray(76);
@@ -68,13 +86,14 @@ pub const ACCENT_SUBTLE_HOVER: Color32 = Color32::from_rgb(42, 66, 102);
 
 pub const DONE: Color32 = Color32::from_rgb(120, 200, 140);
 pub const DONE_SUBTLE: Color32 = Color32::from_rgb(29, 44, 33);
-pub const DONE_EDGE: Color32 = Color32::from_rgb(52, 88, 62);
 pub const REFUSED: Color32 = Color32::from_rgb(232, 190, 110);
+pub const REFUSED_SUBTLE: Color32 = Color32::from_rgb(38, 35, 27);
 pub const ERROR: Color32 = Color32::from_rgb(240, 120, 120);
 
 pub const MARK: Color32 = Color32::from_rgb(64, 196, 255);
 pub const CHECK_LIGHT: Color32 = Color32::from_gray(240);
 pub const CHECK_DARK: Color32 = Color32::from_gray(205);
+pub const PLATE: Color32 = Color32::from_rgb(243, 234, 219);
 
 pub const MEDIUM: &str = "medium";
 pub const SEMIBOLD: &str = "semibold";
@@ -124,6 +143,7 @@ pub mod icon {
     pub const DOWNLOAD: &str = "\u{E20C}";
     pub const FIT: &str = "\u{E1D0}";
     pub const TURN: &str = "\u{E036}";
+    pub const RESTART: &str = "\u{E036}";
     pub const BONE: &str = "\u{E7F2}";
     pub const UNDO: &str = "\u{E08A}";
     pub const REDO: &str = "\u{E08C}";
@@ -358,6 +378,7 @@ pub fn apply(style: &mut Style) {
 pub const PRIMARY: &str = "klad::primary";
 pub const GHOST: &str = "klad::ghost";
 pub const CENTRED: &str = "klad::centred";
+pub const LARGE: &str = "klad::large";
 
 pub fn focus_ring() -> Stroke {
     Stroke::new(1.5, ACCENT)
@@ -401,6 +422,18 @@ impl StyleProvider<ButtonStyle> for Look {
         }
         if primary || args.classes.has_class(CENTRED) {
             layout.align2 = Some(egui::Align2::CENTER_CENTER);
+        }
+        if args.classes.has_class(LARGE) {
+            let side = match primary {
+                true => space::XL,
+                false => space::LG,
+            };
+            layout.frame.corner_radius = CornerRadius::same(radius::CARD);
+            layout.frame.inner_margin = Margin::symmetric(side as i8, 0);
+            layout.text_style.font_id = medium(HEADING);
+            if ghost && !selected && state == WidgetState::Inactive {
+                layout.text_style.color = WEAK;
+            }
         }
         look
     }

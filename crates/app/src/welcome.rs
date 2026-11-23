@@ -1,31 +1,67 @@
 use crate::connect::Connect;
-use crate::theme::{self, Hint, icon};
-use crate::widgets;
+use crate::theme::{self, Hint, icon, leading};
+use crate::widgets::{self, Place};
 use anyhow::{Result, anyhow};
-use egui::{Align, Color32, Layout, Rect, RichText, Sense, TextureHandle, TextureOptions, UiBuilder, pos2, vec2};
+use egui::{
+    Align, Color32, Layout, Pos2, Rect, RichText, Sense, Shape, Stroke, TextureHandle, TextureOptions, UiBuilder, Vec2,
+    emath::Rot2, pos2, vec2,
+};
 use std::collections::BTreeMap;
 
 const OUT: f64 = 0.12;
 const IN: f64 = 0.26;
 const STAGGER: f64 = 0.05;
 const RISE: f32 = 12.0;
-const COLUMN: f32 = 470.0;
-const FRAME: f32 = 500.0;
-const FOOT: f32 = theme::space::LG + theme::CONTROL + theme::space::XL + DOT;
-const CENTRE: f32 = 0.42;
+const FRAME: Vec2 = vec2(1040.0, 540.0);
+const MARGIN: f32 = 40.0;
+const COLUMN: f32 = 400.0;
+const GUTTER: f32 = 72.0;
+const BRAND: f32 = 72.0;
+const BRAND_GAP: f32 = 10.0;
+const BRAND_ICON: f32 = 28.0;
+const TO_PROGRESS: f32 = 40.0;
+const BAR: Vec2 = vec2(32.0, 4.0);
+const BAR_GAP: f32 = 6.0;
+const TO_HEADING: f32 = 20.0;
+const TO_BODY: f32 = 16.0;
+const READING: f32 = 380.0;
+const ACTION_GAP: f32 = 12.0;
+const STEP_GAP: f32 = 16.0;
+const TILE: f32 = 40.0;
 pub(crate) const SHOWN: f64 = 0.2;
-const TILE: f32 = 168.0;
-const SIDE: usize = 512;
-const REACH: f32 = 60.0;
+const SIDE: usize = 1024;
+const REACH: f32 = 120.0;
 const SOFT: f32 = 0.08;
-const PLATE: f64 = 0.35;
+const LOGO: f32 = 306.0;
 const EMBER: (f64, f64) = (0.3, 0.95);
 const INK: (f64, f64) = (0.85, 1.35);
-const WORDS: f64 = 1.3;
-const BUTTON: f64 = 0.15;
-const DOT: f32 = 6.0;
-const PILL: f32 = 18.0;
-const SETTLED: f64 = 1.8;
+const AGENT: f64 = INK.1 + 0.1;
+const YOU: f64 = AGENT + 0.6;
+const HANDLES: f64 = YOU + 0.6;
+const POP: f64 = 0.6;
+const HANDLES_IN: f64 = 0.5;
+const BOB: f64 = 2.8;
+const BOB_AFTER: f64 = 0.7;
+const SWAY: f32 = 4.0;
+const SETTLED: f64 = HANDLES + HANDLES_IN;
+const PILL: f32 = 22.0;
+const PILL_PAD: f32 = 10.0;
+const PILL_TEXT: f32 = 12.0;
+const ARROW: [Vec2; 4] = [vec2(0.0, 0.0), vec2(0.0, 15.0), vec2(4.0, 11.2), vec2(10.0, 11.2)];
+const ARROW_EDGE: f32 = 1.2;
+const AGENT_AT: Vec2 = vec2(14.0, 12.0);
+const YOU_AT: Vec2 = vec2(18.0, -8.0);
+const YOU_NUDGE: Vec2 = vec2(4.0, 3.0);
+const END_NUDGE: Vec2 = vec2(2.0, 2.0);
+const SPINE: f32 = 1.5;
+const SPINE_UNDER: f32 = 3.5;
+const ANCHOR: f32 = 9.0;
+const ANCHOR_EDGE: f32 = 2.0;
+const KNOB: f32 = 4.0;
+const KNOB_EDGE: f32 = 1.2;
+const POP_KEYS: [(f32, f32, f32); 4] = [(0.0, 0.0, -20.0), (0.55, 1.2, 7.0), (0.78, 0.93, -3.0), (1.0, 1.0, 0.0)];
+const PICTURE: &str =
+    "The klad logo painted stroke by stroke. One stroke is selected and shows handles for reshaping it by hand.";
 
 pub(crate) const STAGE: Color32 = theme::BG;
 pub(crate) const LINE: &str = "Paint by hand or let your agent paint.\nEvery stroke stays yours to change.";
@@ -85,9 +121,42 @@ struct Layer {
 }
 
 struct Hello {
-    plate: egui::ColorImage,
-    plate_texture: Option<TextureHandle>,
     layers: [Layer; 2],
+    bounds: Rect,
+    arm: [Pos2; 4],
+    end: Pos2,
+}
+
+#[derive(Clone, Copy)]
+struct Columns {
+    frame: Rect,
+    left: Rect,
+    right: Rect,
+}
+
+impl Columns {
+    fn of(stage: Rect) -> Self {
+        let size = (stage.size() - Vec2::splat(2.0 * MARGIN)).min(FRAME).max(Vec2::ZERO);
+        let frame = Rect::from_center_size(stage.center(), size);
+        let squeeze = (frame.width() / FRAME.x).min(1.0);
+        let left = Rect::from_min_size(frame.min, vec2(COLUMN * squeeze, frame.height()));
+        let right = Rect::from_min_max(pos2(left.right() + GUTTER * squeeze, frame.top()), frame.max);
+        Self { frame, left, right }
+    }
+
+    fn progress(&self) -> Rect {
+        Rect::from_min_size(
+            pos2(self.left.left(), self.frame.top() + BRAND + TO_PROGRESS),
+            vec2(3.0 * BAR.x + 2.0 * BAR_GAP, BAR.y),
+        )
+    }
+
+    fn actions(&self) -> Rect {
+        Rect::from_min_max(
+            pos2(self.left.left(), self.frame.bottom() - theme::CONTROL_LARGE),
+            pos2(self.left.right(), self.frame.bottom()),
+        )
+    }
 }
 
 fn decode(bytes: &[u8]) -> Result<Vec<u8>> {
@@ -133,10 +202,11 @@ pub(crate) fn reveal_order(rgba: &[u8], path: &[[f32; 2]]) -> Vec<f32> {
                 ((y + REACH).ceil() as usize).min(SIDE),
             );
             (y0..y1).for_each(|py| {
+                let dy = py as f32 + 0.5 - y;
                 (x0..x1).for_each(|px| {
-                    let near = (px as f32 + 0.5 - x).hypot(py as f32 + 0.5 - y) <= REACH;
                     let i = py * SIDE + px;
-                    if near && time[i].is_infinite() {
+                    let dx = px as f32 + 0.5 - x;
+                    if time[i].is_infinite() && dx * dx + dy * dy <= REACH * REACH {
                         time[i] = at;
                     }
                 });
@@ -166,14 +236,14 @@ impl Layer {
     }
 
     fn image(&self, progress: f32) -> egui::ColorImage {
-        let mut out = vec![0u8; SIDE * SIDE * 4];
+        let mut out = egui::ColorImage::filled([SIDE, SIDE], Color32::TRANSPARENT);
         self.painted.iter().for_each(|&i| {
             let cover = ((progress - self.time[i]) / SOFT).clamp(0.0, 1.0);
             let px = &self.rgba[i * 4..i * 4 + 4];
-            out[i * 4..i * 4 + 3].copy_from_slice(&px[..3]);
-            out[i * 4 + 3] = (f32::from(px[3]) * cover).round() as u8;
+            let alpha = (f32::from(px[3]) * cover).round() as u8;
+            out.pixels[i] = Color32::from_rgba_unmultiplied(px[0], px[1], px[2], alpha);
         });
-        egui::ColorImage::from_rgba_unmultiplied([SIDE, SIDE], &out)
+        out
     }
 
     fn texture(&mut self, ctx: &egui::Context, name: &str, progress: f32) -> egui::TextureId {
@@ -190,25 +260,68 @@ impl Layer {
             .as_ref()
             .map_or(egui::TextureId::default(), TextureHandle::id)
     }
+
+    fn alpha(&self, at: Pos2) -> u8 {
+        let (x, y) = (at.x.round(), at.y.round());
+        match (0.0..SIDE as f32).contains(&x) && (0.0..SIDE as f32).contains(&y) {
+            true => self.rgba[(y as usize * SIDE + x as usize) * 4 + 3],
+            false => 0,
+        }
+    }
+
+    fn bounds(&self) -> Rect {
+        self.painted.iter().fold(Rect::NOTHING, |b, &i| {
+            b.union(Rect::from_min_size(
+                pos2((i % SIDE) as f32, (i / SIDE) as f32),
+                Vec2::splat(1.0),
+            ))
+        })
+    }
+}
+
+fn bezier(curve: &[Pos2; 4], t: f32) -> Pos2 {
+    let u = 1.0 - t;
+    let p = curve[0].to_vec2() * u * u * u
+        + curve[1].to_vec2() * 3.0 * u * u * t
+        + curve[2].to_vec2() * 3.0 * u * t * t
+        + curve[3].to_vec2() * t * t * t;
+    p.to_pos2()
+}
+
+fn slope(curve: &[Pos2; 4], t: f32) -> Vec2 {
+    let u = 1.0 - t;
+    (curve[1] - curve[0]) * 3.0 * u * u + (curve[2] - curve[1]) * 6.0 * u * t + (curve[3] - curve[2]) * 3.0 * t * t
 }
 
 impl Hello {
     fn load() -> Result<Self> {
         let paths: BTreeMap<String, Vec<[f32; 2]>> = serde_json::from_str(include_str!("../assets/hello/paths.json"))?;
-        let half = |name: &str| -> Vec<[f32; 2]> {
-            paths
-                .get(name)
-                .map(|p| p.iter().map(|[x, y]| [x * 0.5, y * 0.5]).collect())
-                .unwrap_or_default()
+        let path = |name: &str| paths.get(name).cloned().unwrap_or_default();
+        let arm: [Pos2; 4] = path("arm")
+            .iter()
+            .map(|[x, y]| pos2(*x, *y))
+            .collect::<Vec<_>>()
+            .try_into()
+            .map_err(|_| anyhow!("the arm of the K is one curve of four points"))?;
+        let ember = Layer::new(decode(include_bytes!("../assets/hello/ember.png"))?, &path("ember"));
+        let ink = Layer::new(decode(include_bytes!("../assets/hello/ink.png"))?, &path("ink"));
+        let stem = path("ink");
+        let end = match stem.as_slice() {
+            [.., [ax, ay], [bx, by]] => {
+                let (tip, along) = (pos2(*bx, *by), (vec2(bx - ax, by - ay)).normalized());
+                (0..SIDE)
+                    .map(|k| tip + along * k as f32)
+                    .find(|at| ink.alpha(*at) < 16)
+                    .unwrap_or(tip)
+            }
+            _ => pos2(0.0, 0.0),
         };
-        let plate = decode(include_bytes!("../assets/hello/plate.png"))?;
+        let bounds = ember.bounds().union(ink.bounds());
         Ok(Self {
-            plate: egui::ColorImage::from_rgba_unmultiplied([SIDE, SIDE], &plate),
-            plate_texture: None,
-            layers: [
-                Layer::new(decode(include_bytes!("../assets/hello/ember.png"))?, &half("ember")),
-                Layer::new(decode(include_bytes!("../assets/hello/ink.png"))?, &half("ink")),
-            ],
+            layers: [ember, ink],
+            bounds,
+            arm,
+            end,
         })
     }
 }
@@ -216,6 +329,19 @@ impl Hello {
 pub(crate) fn ease(t: f64) -> f32 {
     let t = t.clamp(0.0, 1.0) as f32;
     1.0 - (1.0 - t).powi(3)
+}
+
+fn pop(t: f32) -> (f32, f32, f32) {
+    let alpha = (t / POP_KEYS[1].0).clamp(0.0, 1.0);
+    let (scale, turn) = match POP_KEYS.windows(2).find(|w| t < w[1].0) {
+        Some(w) => {
+            let u = ((t - w[0].0) / (w[1].0 - w[0].0)).clamp(0.0, 1.0);
+            let e = 1.0 - (1.0 - u) * (1.0 - u);
+            (w[0].1 + (w[1].1 - w[0].1) * e, w[0].2 + (w[1].2 - w[0].2) * e)
+        }
+        None => (1.0, 0.0),
+    };
+    (scale.max(0.0), turn.to_radians(), alpha)
 }
 
 #[cfg(target_os = "macos")]
@@ -236,6 +362,14 @@ fn reduce_motion() -> bool {
     false
 }
 
+struct Pill<'a> {
+    words: &'a str,
+    fill: Color32,
+    ink: Color32,
+    edge: Color32,
+    at: Vec2,
+}
+
 impl Welcome {
     pub fn new(connect: Connect) -> Self {
         Self {
@@ -245,7 +379,7 @@ impl Welcome {
             connect,
             hello: None,
             still: !cfg!(test) && reduce_motion(),
-            heights: [400.0, 420.0, 240.0],
+            heights: [FRAME.y, 2.0 * FRAME.y / 3.0, FRAME.y / 2.0],
         }
     }
 
@@ -270,23 +404,28 @@ impl Welcome {
         self.leaving.is_some() || self.entered.is_none() || self.since(now) < SETTLED
     }
 
+    fn bobbing(&self, ui: &egui::Ui) -> bool {
+        self.step == Step::Hello && !self.still && ui.input(|i| i.viewport().focused != Some(false))
+    }
+
     pub fn ui(&mut self, ui: &mut egui::Ui) -> Option<Outcome> {
         let ctx = ui.ctx().clone();
         let now = ctx.input(|i| i.time);
-        let stage = ui.max_rect();
+        let columns = Columns::of(ui.max_rect());
+        self.chrome(ui, columns);
         if let Some((from, at, shown)) = self.leaving {
             let gone = ((now - at) / OUT) as f32;
             match self.still || gone >= 1.0 {
                 true => self.leaving = None,
                 false => {
-                    ui.scope_builder(UiBuilder::new().max_rect(stage), |ui| {
+                    ui.scope_builder(UiBuilder::new().max_rect(ui.max_rect()), |ui| {
                         ui.disable();
                         ui.multiply_opacity(1.0 - gone);
                         let was = (
                             std::mem::replace(&mut self.step, from),
                             std::mem::replace(&mut self.entered, shown),
                         );
-                        self.screen(ui, stage, now);
+                        self.screen(ui, columns, now);
                         (self.step, self.entered) = was;
                     });
                     ctx.request_repaint();
@@ -295,8 +434,8 @@ impl Welcome {
             }
         }
         self.entered.get_or_insert(now);
-        let act = self.screen(ui, stage, now).or_else(|| self.keys(ui));
-        if self.animating(now) {
+        let act = self.screen(ui, columns, now).or_else(|| self.keys(ui));
+        if self.animating(now) || self.bobbing(ui) {
             ctx.request_repaint();
         }
         match act {
@@ -321,68 +460,100 @@ impl Welcome {
         }
     }
 
-    fn screen(&mut self, ui: &mut egui::Ui, stage: Rect, now: f64) -> Option<Act> {
+    fn chrome(&self, ui: &mut egui::Ui, columns: Columns) {
+        let ctx = ui.ctx().clone();
+        let branded =
+            ctx.animate_bool_with_time(egui::Id::unique("welcome brand"), self.step != Step::Hello, IN as f32);
+        if branded > 0.0 {
+            let slot = Rect::from_min_size(columns.frame.min, vec2(columns.left.width(), BRAND));
+            ui.scope_builder(
+                UiBuilder::new()
+                    .max_rect(slot)
+                    .layout(Layout::left_to_right(Align::Min)),
+                |ui| {
+                    ui.multiply_opacity(branded);
+                    ui.spacing_mut().item_spacing.x = BRAND_GAP;
+                    if let Some(texture) = widgets::app_icon(&ctx) {
+                        ui.add(egui::Image::new(&texture).fit_to_exact_size(Vec2::splat(BRAND_ICON)));
+                    }
+                    ui.allocate_ui_with_layout(
+                        vec2(columns.left.width(), BRAND_ICON),
+                        Layout::left_to_right(Align::Center),
+                        |ui| {
+                            ui.label(
+                                RichText::new("klad")
+                                    .font(theme::wordmark(theme::BRAND))
+                                    .color(theme::TEXT),
+                            );
+                        },
+                    );
+                },
+            );
+        }
+        let bars = columns.progress();
+        let index = self.step.index();
+        Step::ALL.iter().enumerate().for_each(|(k, step)| {
+            let on = ctx.animate_bool_with_time(egui::Id::unique(("welcome bar", step.index())), k <= index, 0.2);
+            let bar = Rect::from_min_size(bars.min + vec2(k as f32 * (BAR.x + BAR_GAP), 0.0), BAR);
+            ui.painter()
+                .rect_filled(bar, BAR.y / 2.0, theme::BORDER_STRONG.lerp_to_gamma(theme::TEXT, on));
+        });
+    }
+
+    fn screen(&mut self, ui: &mut egui::Ui, columns: Columns, now: f64) -> Option<Act> {
         let rise = match self.still {
             true => 0.0,
             false => (1.0 - ease(self.since(now) / IN)) * RISE,
         };
-        let index = self.step.index();
-        let room = (stage.height() - FOOT - 2.0 * theme::space::XL).max(0.0);
-        let wanted = match self.step {
-            Step::Hello => FRAME,
-            _ => FRAME.max(self.heights[index].ceil()),
+        let top = columns.progress().bottom() + TO_HEADING;
+        let words = Rect::from_min_max(pos2(columns.left.left(), top + rise), columns.left.max);
+        let (title, line) = match self.step {
+            Step::Hello => (
+                RichText::new("klad")
+                    .font(theme::wordmark(theme::HERO))
+                    .line_height(Some(theme::HERO))
+                    .extra_letter_spacing(-0.01 * theme::HERO),
+                RichText::new(LINE).size(theme::INTRO).line_height(Some(leading::INTRO)),
+            ),
+            Step::Agent => (Self::title("Connect your agent app"), Self::lead(AGENT_LINE)),
+            Step::Steps => (Self::title("Take the first steps"), Self::lead(STEPS_LINE)),
         };
-        let frame = wanted.min(room);
-        let anchored = stage.top() + ((stage.height() - FRAME.min(room) - FOOT) * CENTRE).max(theme::space::XL);
-        let top = anchored
-            .min(stage.bottom() - theme::space::XL - FOOT - frame)
-            .max(stage.top() + theme::space::XL);
-        let inset = match self.step {
-            Step::Hello => ((frame - self.heights[index]) / 2.0).max(0.0),
-            _ => 0.0,
-        };
-        let x = stage.center().x;
-        let column = Rect::from_min_max(
-            pos2(x - COLUMN / 2.0, top + inset + rise),
-            pos2(x + COLUMN / 2.0, top + frame),
-        );
-        let width = COLUMN.min(stage.width() - 2.0 * theme::space::LG);
-        let bar = Rect::from_min_size(
-            pos2(x - width / 2.0, top + frame + theme::space::LG),
-            vec2(width, theme::CONTROL),
-        );
-        let dots = Rect::from_center_size(pos2(x, bar.bottom() + theme::space::XL), vec2(COLUMN, DOT));
-        let mut act = None;
-        let mut height = None;
         ui.scope_builder(
-            UiBuilder::new()
-                .max_rect(column)
-                .layout(Layout::top_down(Align::Center)),
+            UiBuilder::new().max_rect(words).layout(Layout::top_down(Align::Min)),
             |ui| {
-                ui.spacing_mut().scroll.fade = egui::style::ScrollFadeStyle {
-                    strength: 1.0,
-                    size: 2.0 * theme::space::XL,
-                };
-                let shown = egui::ScrollArea::vertical()
-                    .id_salt("welcome")
-                    .auto_shrink([false, true])
-                    .show(ui, |ui| {
-                        ui.with_layout(Layout::top_down(Align::Center), |ui| {
-                            act = match self.step {
-                                Step::Hello => self.hello(ui, now),
-                                Step::Agent => self.agent(ui, now),
-                                Step::Steps => self.steps(ui, now),
-                            };
-                        });
-                    });
-                height = Some(shown.content_size.y);
+                ui.spacing_mut().item_spacing.y = 0.0;
+                self.appear(ui, now, 0.0, |ui| {
+                    ui.label(title.color(theme::TEXT));
+                });
+                ui.add_space(TO_BODY);
+                self.appear(ui, now, STAGGER, |ui| {
+                    ui.set_max_width(READING.min(columns.left.width()));
+                    ui.add(egui::Label::new(line.color(theme::WEAK)).wrap());
+                });
             },
         );
-        if let Some(height) = height {
-            self.heights[index] = height;
-        }
-        self.dots(ui, dots);
-        act.or_else(|| self.bar(ui, bar, now))
+        let right = columns.right.translate(vec2(0.0, rise));
+        let shown = self.fade(now, STAGGER * 2.0);
+        ui.scope_builder(UiBuilder::new().max_rect(right), |ui| {
+            ui.multiply_opacity(shown);
+            match self.step {
+                Step::Hello => self.hello(ui, right, now),
+                Step::Agent => self.side(ui, right, |welcome, ui, width| welcome.connect.chooser(ui, width)),
+                Step::Steps => self.side(ui, right, |_, ui, width| steps(ui, width)),
+            }
+        });
+        self.actions(ui, columns.actions(), now)
+    }
+
+    fn title(words: &str) -> RichText {
+        RichText::new(words)
+            .font(theme::semibold(theme::TITLE))
+            .line_height(Some(leading::TITLE))
+            .extra_letter_spacing(-0.02 * theme::TITLE)
+    }
+
+    fn lead(words: &str) -> RichText {
+        RichText::new(words).size(theme::LEAD).line_height(Some(leading::LEAD))
     }
 
     fn appear(&self, ui: &mut egui::Ui, now: f64, delay: f64, add: impl FnOnce(&mut egui::Ui)) {
@@ -393,252 +564,272 @@ impl Welcome {
         });
     }
 
-    fn hello(&mut self, ui: &mut egui::Ui, now: f64) -> Option<Act> {
-        ui.add_space(theme::space::MD);
-        let (tile, _) = ui.allocate_exact_size(vec2(TILE, TILE), Sense::hover());
-        self.paint_tile(ui, tile, now);
-        ui.add_space(theme::space::XL);
-        self.appear(ui, now, WORDS, |ui| {
-            ui.label(
-                RichText::new("klad")
-                    .font(theme::wordmark(theme::WORDMARK))
-                    .color(theme::TEXT),
-            );
-        });
-        ui.add_space(theme::space::SM);
-        self.appear(ui, now, WORDS + STAGGER * 2.0, |ui| {
-            ui.set_max_width(400.0);
-            ui.add(egui::Label::new(RichText::new(LINE).size(theme::HEADING).color(theme::WEAK)).wrap());
-        });
-        ui.add_space(theme::space::XL);
-        let mut act = None;
-        self.appear(ui, now, BUTTON, |ui| {
-            if ui
-                .add(widgets::primary_button("Get started").min_size(vec2(180.0, theme::CONTROL)))
-                .hint("then connect your agent app and take the first steps, or skip them")
-                .clicked()
-            {
-                act = Some(Act::To(Step::Agent));
-            }
-        });
-        act
+    fn side(&mut self, ui: &mut egui::Ui, room: Rect, add: impl FnOnce(&mut Self, &mut egui::Ui, f32)) {
+        let index = self.step.index();
+        let tall = self.heights[index].min(room.height());
+        let top = room.center().y - tall / 2.0;
+        let place = Rect::from_min_max(pos2(room.left(), top), room.max);
+        let mut height = None;
+        ui.scope_builder(
+            UiBuilder::new().max_rect(place).layout(Layout::top_down(Align::Min)),
+            |ui| {
+                ui.spacing_mut().scroll.fade = egui::style::ScrollFadeStyle {
+                    strength: 1.0,
+                    size: 2.0 * theme::space::XL,
+                };
+                let shown = egui::ScrollArea::vertical()
+                    .id_salt(("welcome side", index))
+                    .auto_shrink([false, true])
+                    .max_height(room.bottom() - top)
+                    .show(ui, |ui| add(self, ui, room.width()));
+                height = Some(shown.content_size.y);
+            },
+        );
+        if let Some(height) = height {
+            self.heights[index] = height;
+        }
     }
 
-    fn paint_tile(&mut self, ui: &mut egui::Ui, tile: Rect, now: f64) {
+    fn hello(&mut self, ui: &mut egui::Ui, panel: Rect, now: f64) {
+        let response = ui.interact(panel, egui::Id::unique("welcome picture"), Sense::hover());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, PICTURE));
+        let painter = ui.painter_at(panel.expand(theme::HAIRLINE));
+        painter.rect(
+            panel,
+            theme::radius::PANEL,
+            theme::PLATE,
+            Stroke::new(theme::HAIRLINE, theme::BORDER),
+            egui::StrokeKind::Inside,
+        );
         if self.hello.is_none() {
             match Hello::load() {
                 Ok(hello) => self.hello = Some(hello),
                 Err(_) => return,
             }
         }
+        let since = self.since(now);
+        let still = self.still;
+        let bob = self.bobbing(ui);
         let Some(hello) = self.hello.as_mut() else {
             return;
         };
         let ctx = ui.ctx().clone();
-        let since = self.entered.map_or(0.0, |at| now - at);
-        let full = |window: (f64, f64)| match self.still {
+        let scale = LOGO / hello.bounds.height();
+        let origin = panel.center() - hello.bounds.center().to_vec2() * scale;
+        let at = |p: Pos2| origin + p.to_vec2() * scale;
+        let picture = Rect::from_min_size(origin, Vec2::splat(SIDE as f32 * scale));
+        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+        let full = |window: (f64, f64)| match still {
             true => 1.0 + SOFT,
             false => ((since - window.0) / (window.1 - window.0)) as f32 * (1.0 + SOFT),
         };
-        let plate_in = match self.still {
-            true => 1.0,
-            false => ease(since / PLATE),
-        };
-        let rect = Rect::from_center_size(tile.center(), tile.size() * (0.94 + 0.06 * plate_in));
-        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-        let opacity = ui.opacity();
-        let tint = Color32::WHITE.gamma_multiply(plate_in * opacity);
-        let plate = hello
-            .plate_texture
-            .get_or_insert_with(|| ctx.load_texture("welcome plate", hello.plate.clone(), TextureOptions::LINEAR))
-            .id();
-        ui.painter().image(plate, rect, uv, tint);
-        let progress = [full(EMBER), full(INK)];
         hello
             .layers
             .iter_mut()
-            .zip(progress)
+            .zip([full(EMBER), full(INK)])
             .zip(["welcome ember", "welcome ink"])
             .for_each(|((layer, progress), name)| {
                 let id = layer.texture(&ctx, name, progress);
-                ui.painter().image(id, rect, uv, Color32::WHITE.gamma_multiply(opacity));
+                painter.image(id, picture, uv, Color32::WHITE);
             });
-    }
-
-    fn title(&self, ui: &mut egui::Ui, now: f64, glyph: &str, title: &str, line: &str) {
-        self.appear(ui, now, 0.0, |ui| {
-            ui.label(widgets::heading_text(glyph, title, theme::DISPLAY));
-        });
-        ui.add_space(theme::space::SM);
-        self.appear(ui, now, STAGGER, |ui| {
-            ui.set_max_width(COLUMN - theme::space::XL);
-            ui.add(egui::Label::new(RichText::new(line).size(theme::HEADING).color(theme::WEAK)).wrap());
-        });
-        ui.add_space(theme::space::XL);
-    }
-
-    fn agent(&mut self, ui: &mut egui::Ui, now: f64) -> Option<Act> {
-        self.title(ui, now, icon::LINK, "Connect your agent app", AGENT_LINE);
-        let shown = self.fade(now, STAGGER * 2.0);
-        ui.scope(|ui| {
-            ui.multiply_opacity(shown);
-            ui.with_layout(Layout::top_down(Align::Min), |ui| {
-                ui.set_max_width(COLUMN);
-                self.connect.chooser(ui, COLUMN);
-            });
-        });
-        None
-    }
-
-    fn steps(&mut self, ui: &mut egui::Ui, now: f64) -> Option<Act> {
-        self.title(ui, now, icon::BRUSH, "Take the first steps", STEPS_LINE);
-        let gap = theme::space::LG;
-        let widths: Vec<f32> = CHIPS
-            .iter()
-            .map(|(glyph, words)| {
-                let wide = |text: RichText| {
-                    egui::WidgetText::from(text)
-                        .into_galley(
-                            ui,
-                            Some(egui::TextWrapMode::Extend),
-                            f32::INFINITY,
-                            egui::TextStyle::Body,
-                        )
-                        .size()
-                        .x
-                };
-                wide(RichText::new(*glyph).size(theme::ICON_LARGE))
-                    .max(wide(RichText::new(*words).font(theme::medium(theme::BODY))))
-            })
-            .collect();
-        let whole = widths.iter().sum::<f32>() + gap * (widths.len() - 1) as f32;
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            ui.add_space(((ui.available_width() - whole) / 2.0).max(0.0));
-            CHIPS
-                .iter()
-                .zip(&widths)
-                .enumerate()
-                .for_each(|(k, ((glyph, words), width))| {
-                    if k > 0 {
-                        ui.add_space(gap);
-                    }
-                    self.appear(ui, now, STAGGER * (2.0 + 1.6 * k as f64), |ui| {
-                        ui.allocate_ui_with_layout(vec2(*width, 0.0), Layout::top_down(Align::Center), |ui| {
-                            ui.label(RichText::new(*glyph).size(theme::ICON_LARGE).color(theme::ACCENT));
-                            ui.add_space(theme::space::XS);
-                            ui.label(RichText::new(*words).font(theme::medium(theme::BODY)));
-                        });
-                    });
-                });
-        });
-        None
-    }
-
-    fn bar(&self, ui: &mut egui::Ui, bar: Rect, now: f64) -> Option<Act> {
-        if self.step == Step::Hello {
-            return None;
+        let after = |start: f64, span: f64| match still {
+            true => 1.0,
+            false => ((since - start) / span).clamp(0.0, 1.0) as f32,
+        };
+        let arm = hello.arm.map(&at);
+        let mid = bezier(&arm, 0.5);
+        let reach = slope(&arm, 0.5) / 6.0;
+        let handles = ease(f64::from(after(HANDLES, HANDLES_IN)));
+        if handles > 0.0 {
+            edit_handles(&painter, &arm, mid, reach, handles);
         }
-        let mut act = None;
+        let sway = |start: f64| match bob && !still && since > start {
+            true => -SWAY * (1.0 - (std::f64::consts::TAU * (since - start) / BOB).cos() as f32) / 2.0,
+            false => 0.0,
+        };
+        let agent = Pill {
+            words: "your agent",
+            fill: theme::BG,
+            ink: theme::TEXT,
+            edge: theme::PLATE,
+            at: AGENT_AT,
+        };
+        let you = Pill {
+            words: "you",
+            fill: theme::ACCENT_FILL,
+            ink: theme::ON_ACCENT,
+            edge: theme::ON_ACCENT,
+            at: YOU_AT,
+        };
+        let agent_tip = at(hello.end) + END_NUDGE + vec2(0.0, sway(AGENT + BOB_AFTER));
+        let you_tip = mid - reach + YOU_NUDGE + vec2(0.0, sway(AGENT + BOB_AFTER + BOB / 2.0));
+        [(agent, agent_tip, AGENT), (you, you_tip, YOU)]
+            .into_iter()
+            .for_each(|(pill, tip, start)| {
+                let t = after(start, POP);
+                if t > 0.0 {
+                    paint_pill(&painter, &pill, tip, pop(t));
+                }
+            });
+    }
+
+    fn actions(&self, ui: &mut egui::Ui, row: Rect, now: f64) -> Option<Act> {
         let shown = self.fade(now, STAGGER * 3.0);
+        let mut act = None;
         ui.scope_builder(
             UiBuilder::new()
-                .max_rect(bar)
+                .max_rect(row)
                 .layout(Layout::left_to_right(Align::Center)),
             |ui| {
                 ui.multiply_opacity(shown);
-                let back = match self.step {
-                    Step::Steps => Step::Agent,
-                    _ => Step::Hello,
+                ui.spacing_mut().item_spacing.x = ACTION_GAP;
+                let mut button = |ui: &mut egui::Ui, made: egui::Button<'_>, hint: &str, to: Act| {
+                    if ui.add(made).hint(hint).clicked() {
+                        act = Some(to);
+                    }
                 };
-                if ui
-                    .add(widgets::secondary_button("Back").min_size(vec2(96.0, theme::CONTROL)))
-                    .hint("the screen before")
-                    .clicked()
-                {
-                    act = Some(Act::To(back));
-                }
-            },
-        );
-        ui.scope_builder(
-            UiBuilder::new()
-                .max_rect(bar)
-                .layout(Layout::right_to_left(Align::Center)),
-            |ui| {
-                ui.multiply_opacity(shown);
                 match self.step {
+                    Step::Hello => button(
+                        ui,
+                        widgets::large_primary_button("Get started"),
+                        "then connect your agent app and take the first steps, or skip them",
+                        Act::To(Step::Agent),
+                    ),
                     Step::Agent => {
-                        let connected = self.connect.any_connected();
-                        let (words, hint) = match connected {
-                            true => ("Continue", "on to the first steps"),
-                            false => (
-                                "Skip",
-                                "on to the first steps; File > Connect an agent app\u{2026} does it later",
+                        match self.connect.any_connected() {
+                            true => button(
+                                ui,
+                                widgets::large_primary_button("Continue"),
+                                "on to the first steps",
+                                Act::To(Step::Steps),
                             ),
-                        };
-                        let button = match connected {
-                            true => widgets::primary_button(words).min_size(vec2(120.0, theme::CONTROL)),
-                            false => widgets::secondary_button(words).min_size(vec2(96.0, theme::CONTROL)),
-                        };
-                        if ui.add(button).hint(hint).clicked() {
-                            act = Some(Act::To(Step::Steps));
+                            false => button(
+                                ui,
+                                widgets::large_ghost_button("Skip"),
+                                "on to the first steps; File > Connect an agent app\u{2026} does it later",
+                                Act::To(Step::Steps),
+                            ),
                         }
+                        button(
+                            ui,
+                            widgets::large_ghost_button("Back"),
+                            "the screen before",
+                            Act::To(Step::Hello),
+                        );
                     }
                     Step::Steps => {
-                        if ui
-                            .add(widgets::primary_button("Start first steps").min_size(vec2(170.0, theme::CONTROL)))
-                            .hint("opens a drawing made for the first steps, with the steps beside it")
-                            .clicked()
-                        {
-                            act = Some(Act::End(Outcome::FirstSteps));
-                        }
-                        if ui
-                            .add(widgets::secondary_button("Skip").min_size(vec2(96.0, theme::CONTROL)))
-                            .hint("to your drawings; Help > First steps is there whenever you want it")
-                            .clicked()
-                        {
-                            act = Some(Act::End(Outcome::Done));
-                        }
+                        button(
+                            ui,
+                            widgets::large_primary_button("Start first steps"),
+                            "opens a drawing made for the first steps, with the steps beside it",
+                            Act::End(Outcome::FirstSteps),
+                        );
+                        button(
+                            ui,
+                            widgets::large_ghost_button("Skip"),
+                            "to your drawings; Help > First steps is there whenever you want it",
+                            Act::End(Outcome::Done),
+                        );
+                        button(
+                            ui,
+                            widgets::large_ghost_button("Back"),
+                            "the screen before",
+                            Act::To(Step::Agent),
+                        );
                     }
-                    Step::Hello => {}
                 }
             },
         );
         act
     }
+}
 
-    fn dots(&self, ui: &egui::Ui, row: Rect) {
-        let ctx = ui.ctx();
-        let widths: Vec<f32> = Step::ALL
-            .iter()
-            .map(|step| {
-                let on = ctx.animate_bool_with_time(
-                    egui::Id::unique(("welcome dot", step.index())),
-                    *step == self.step,
-                    0.2,
+fn steps(ui: &mut egui::Ui, width: f32) {
+    widgets::list_panel(ui, width, |ui| {
+        CHIPS.iter().enumerate().for_each(|(k, (glyph, words))| {
+            widgets::list_row(ui, Place::of(k, CHIPS.len()), Color32::TRANSPARENT, STEP_GAP, |ui| {
+                let (tile, _) = ui.allocate_exact_size(Vec2::splat(TILE), Sense::hover());
+                ui.painter().rect_filled(tile, theme::radius::CARD, theme::CONTROL_FILL);
+                ui.painter().text(
+                    tile.center(),
+                    egui::Align2::CENTER_CENTER,
+                    *glyph,
+                    egui::FontId::proportional(theme::ICON_LARGE),
+                    theme::ACCENT,
                 );
-                DOT + (PILL - DOT) * on
-            })
-            .collect();
-        let gap = 8.0;
-        let total: f32 = widths.iter().sum::<f32>() + gap * (widths.len() - 1) as f32;
-        let painter = ui.painter();
-        widths
-            .iter()
-            .zip(Step::ALL)
-            .scan(row.center().x - total / 2.0, |x, (w, step)| {
-                let rect = Rect::from_min_size(pos2(*x, row.center().y - DOT / 2.0), vec2(*w, DOT));
-                *x += w + gap;
-                Some((rect, step))
-            })
-            .for_each(|(rect, step)| {
-                let colour = match step == self.step {
-                    true => theme::TEXT,
-                    false => theme::DISABLED,
-                };
-                painter.rect_filled(rect, DOT / 2.0, colour.gamma_multiply(ui.opacity()));
+                ui.label(
+                    RichText::new(*words)
+                        .font(theme::medium(theme::LEAD))
+                        .line_height(Some(leading::LIST))
+                        .color(theme::TEXT),
+                );
             });
+        });
+    });
+}
+
+fn edit_handles(painter: &egui::Painter, arm: &[Pos2; 4], mid: Pos2, reach: Vec2, shown: f32) {
+    let blue = theme::ACCENT_FILL.gamma_multiply(shown);
+    let white = Color32::WHITE.gamma_multiply(shown);
+    [(SPINE_UNDER, white), (SPINE, blue)]
+        .into_iter()
+        .for_each(|(width, colour)| {
+            painter.add(egui::epaint::CubicBezierShape::from_points_stroke(
+                *arm,
+                false,
+                Color32::TRANSPARENT,
+                Stroke::new(width, colour),
+            ));
+        });
+    let ends = [mid - reach, mid + reach];
+    painter.line_segment(ends, Stroke::new(SPINE, blue));
+    ends.into_iter().for_each(|end| {
+        painter.circle(end, KNOB, blue, Stroke::new(KNOB_EDGE, white));
+    });
+    [arm[3], mid, arm[0]].into_iter().for_each(|anchor| {
+        painter.rect(
+            Rect::from_center_size(anchor, Vec2::splat(ANCHOR)),
+            0.0,
+            white,
+            Stroke::new(ANCHOR_EDGE, blue),
+            egui::StrokeKind::Middle,
+        );
+    });
+}
+
+fn paint_pill(painter: &egui::Painter, pill: &Pill<'_>, tip: Pos2, (scale, turn, alpha): (f32, f32, f32)) {
+    if scale <= 0.01 {
+        return;
     }
+    let spin = Rot2::from_angle(turn);
+    let place = |offset: Vec2| tip + spin * (offset * scale);
+    let fill = pill.fill.gamma_multiply(alpha);
+    let edge = pill.edge.gamma_multiply(alpha);
+    let arrow = ARROW.map(place);
+    [[arrow[0], arrow[1], arrow[2]], [arrow[0], arrow[2], arrow[3]]]
+        .into_iter()
+        .for_each(|triangle| {
+            painter.add(Shape::convex_polygon(triangle.to_vec(), fill, Stroke::NONE));
+        });
+    painter.add(Shape::closed_line(
+        arrow.to_vec(),
+        Stroke::new(ARROW_EDGE * scale, edge),
+    ));
+    let size = (PILL_TEXT * scale * 2.0).round() / 2.0;
+    if size < 1.0 {
+        return;
+    }
+    let galley = painter.layout_no_wrap(
+        pill.words.to_string(),
+        theme::semibold(size),
+        pill.ink.gamma_multiply(alpha),
+    );
+    let wide = galley.size().x / scale + 2.0 * PILL_PAD;
+    let body = Rect::from_min_size(tip + pill.at * scale, vec2(wide, PILL) * scale);
+    painter.add(egui::epaint::RectShape::filled(body, PILL * scale / 2.0, fill).with_angle_and_pivot(turn, tip));
+    let corner = body.center() - galley.size() / 2.0;
+    let text_at = tip + spin * (corner - tip);
+    painter.add(egui::epaint::TextShape::new(text_at, galley, pill.ink).with_angle(turn));
 }
 
 #[cfg(test)]
@@ -649,7 +840,7 @@ mod tests {
     fn the_k_is_painted_along_its_strokes_from_klads_own_pictures() {
         let hello = Hello::load().unwrap();
         let [ember, ink] = &hello.layers;
-        assert!(ember.painted.len() > 10_000 && ink.painted.len() > 10_000);
+        assert!(ember.painted.len() > 40_000 && ink.painted.len() > 40_000);
         let start = |layer: &Layer| {
             layer
                 .painted
@@ -661,11 +852,11 @@ mod tests {
         };
         let (x, y) = start(ember);
         assert!(
-            x > 300 && y < 200,
+            x > 600 && y < 400,
             "the ember stroke starts at the arm's tip, top right: {x} {y}"
         );
         let (_, y) = start(ink);
-        assert!(y < 150, "the stem starts at its top: {y}");
+        assert!(y < 300, "the stem starts at its top: {y}");
         assert!(
             ember.painted.iter().all(|i| ember.time[*i] <= 1.0),
             "every painted pixel shows by the end"
@@ -676,5 +867,38 @@ mod tests {
         assert!(shown(&half) > 0 && shown(&half) < shown(&all));
         assert_eq!(shown(&all), ember.painted.len());
         assert_eq!(shown(&ember.image(-SOFT)), 0);
+    }
+
+    #[test]
+    fn the_handles_sit_on_the_upper_arm_and_your_agent_waits_where_the_stem_ends() {
+        let hello = Hello::load().unwrap();
+        let [ember, ink] = &hello.layers;
+        let mid = bezier(&hello.arm, 0.5);
+        assert!(
+            [hello.arm[0], mid, hello.arm[3]].iter().all(|p| ember.alpha(*p) > 200),
+            "the three anchors lie on the painted arm"
+        );
+        let reach = slope(&hello.arm, 0.5) / 6.0;
+        assert!(
+            reach.x < 0.0 && reach.y > 0.0,
+            "the arm runs from its tip down to the stem: {reach:?}"
+        );
+        assert!(ink.alpha(hello.end) < 16 && ink.alpha(hello.end - vec2(0.0, 8.0)) > 0);
+        assert!(
+            hello.end.y > hello.bounds.bottom() - 40.0,
+            "the stem ends at the foot of the K: {:?} {:?}",
+            hello.end,
+            hello.bounds
+        );
+    }
+
+    #[test]
+    fn a_pill_pops_past_its_size_and_settles() {
+        let (start, _, hidden) = pop(0.0);
+        assert!(start == 0.0 && hidden == 0.0);
+        let peak = (1..100).map(|k| pop(k as f32 / 100.0).0).fold(0.0_f32, f32::max);
+        assert!((peak - 1.2).abs() < 0.02, "{peak}");
+        assert_eq!(pop(1.0), (1.0, 0.0, 1.0));
+        assert_eq!(pop(2.0), (1.0, 0.0, 1.0));
     }
 }

@@ -1783,9 +1783,9 @@ fn the_connect_window_puts_klad_in_an_agent_apps_settings_and_takes_it_out() {
         "{config}"
     );
     assert!(
-        h.query_by_label_contains("klad is connected to Claude Desktop")
-            .is_some()
-            && h.query_by_label_contains("Quit Claude Desktop").is_some(),
+        h.query_by_label_contains("Connected. Quit Claude Desktop").is_some()
+            && h.query_by_label_contains("Then ask Claude Desktop for a drawing")
+                .is_some(),
         "it says what to do next"
     );
     h.get_by_label_contains("Copy").click();

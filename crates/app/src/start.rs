@@ -97,7 +97,6 @@ pub struct Start {
     pub connect: crate::connect::Connect,
     cards_height: f32,
     checker: Option<TextureHandle>,
-    icon: Option<TextureHandle>,
 }
 
 fn repaired_words(done: &klad_core::bundle::Repaired) -> String {
@@ -143,7 +142,6 @@ impl Start {
             thumbs: BTreeMap::new(),
             cards_height: 0.0,
             checker: None,
-            icon: None,
         }
     }
 
@@ -329,7 +327,7 @@ impl Start {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .show(ui.ctx(), |ui| {
-                ui.set_width(470.0);
+                ui.set_width(crate::connect::WIDTH);
                 if self.connect.panel(ui, settings) {
                     self.changed = true;
                 }
@@ -700,19 +698,6 @@ impl Start {
                 ctx.load_texture("start checks", image, egui::TextureOptions::NEAREST_REPEAT)
             })
             .id()
-    }
-
-    pub fn icon(&mut self, ctx: &egui::Context) -> Option<TextureHandle> {
-        if self.icon.is_none() {
-            let picture = crate::home::window_icon()?;
-            let image = egui::ColorImage::from_rgba_unmultiplied(
-                [picture.width as usize, picture.height as usize],
-                &picture.rgba,
-            );
-            let options = egui::TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
-            self.icon = Some(ctx.load_texture("klad icon", image, options));
-        }
-        self.icon.clone()
     }
 
     fn card(&mut self, ui: &mut egui::Ui, doc: &str) -> Card {

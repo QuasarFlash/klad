@@ -8,16 +8,14 @@ def parts():
     paint = g.paint()
     stem = next(i for i, op in enumerate(paint) if op.get("color") == g.INK)
     relief = paint[-1]
-    plate = g.ops()[:4]
     return {
-        "plate": plate,
         "ember": [g.layer("paint", "paint"), *paint[:stem], relief],
         "ink": [g.layer("paint", "paint"), *paint[stem:-1], relief],
     }
 
 
 def paths():
-    return {"ember": g.along(g.ARM + g.LEG[1:]), "ink": g.along(g.STEM)}
+    return {"ember": g.along(g.ARM + g.LEG[1:]), "ink": g.along(g.STEM), "arm": g.ARM}
 
 
 if __name__ == "__main__":
@@ -27,4 +25,4 @@ if __name__ == "__main__":
     elif part in parts():
         print("\n".join(json.dumps(op) for op in parts()[part]))
     else:
-        sys.exit("hello.py plate|ember|ink|paths")
+        sys.exit("hello.py ember|ink|paths")
