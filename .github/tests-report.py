@@ -83,6 +83,13 @@ def main(system, junit, log):
             )
     if flaky:
         say("warning", f"{system} flaky tests, passed on a retry", "\n".join(flaky))
+    slowest = sorted(cases, key=lambda c: -float(c[1].get("time", 0)))[:5]
+    took = float(ET.parse(junit).getroot().get("time", 0))
+    say(
+        "notice",
+        f"{system} tests ran in {took:.0f} s",
+        "the slowest: " + "; ".join(f"{suite} {case.get('name')} {float(case.get('time', 0)):.0f} s" for suite, case in slowest),
+    )
     summary(
         [f"### {system}: {len(cases)} tests, {len(failed)} failed, {len(flaky)} flaky", ""]
         + [f"<details><summary>{name}</summary>\n\n```\n{said[-LONGEST:]}\n```\n</details>" for name, said in failed]

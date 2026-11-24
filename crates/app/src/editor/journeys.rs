@@ -3174,7 +3174,7 @@ fn someone_keeps_their_drawings_in_order() {
         .find(|l| l.trim().ends_with(".png"))
         .map(|l| l.trim().to_string())
         .unwrap_or_default();
-    j.retype("Or paste its path", &format!("{}/{picture}", home.display()));
+    j.retype("Or paste its path", &home.join(&picture).display().to_string());
     j.click("Open");
     j.look("picture-to-open");
     let stem = std::path::Path::new(&picture)

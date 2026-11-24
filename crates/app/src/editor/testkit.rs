@@ -339,18 +339,21 @@ impl Journey {
 
     pub(super) fn agent(&mut self, args: &[&str]) -> (bool, String) {
         let klad = crate::start::test_binary();
-        let home = format!("{}/", self.folder.display());
-        let said = args.iter().map(|a| a.replace(&home, "")).collect::<Vec<_>>().join(" ");
+        let homes = [
+            format!("{}/", self.folder.display()),
+            format!("{}{}", self.folder.display(), std::path::MAIN_SEPARATOR),
+        ];
+        let local = |text: &str| homes.iter().fold(text.to_string(), |text, home| text.replace(home, ""));
+        let said = args.iter().map(|a| local(a)).collect::<Vec<_>>().join(" ");
         let out = std::process::Command::new(klad)
             .args(args)
             .output()
             .expect("the klad command runs");
-        let text = format!(
+        let text = local(&format!(
             "{}{}",
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
-        )
-        .replace(&home, "");
+        ));
         self.note(format!(
             "the agent ran: klad {said}{}",
             if out.status.success() { "" } else { " (it failed)" }
