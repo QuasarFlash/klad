@@ -8,10 +8,10 @@ on:
       systems:
         description: Which systems
         type: choice
-        options: [all, macOS, Linux, Windows]
+        options: [all, Linux, Windows]
         default: all
       tests:
-        description: Only the tests whose names hold one of these words (empty runs every test and the release build; macOS only builds)
+        description: Only the tests whose names hold one of these words (empty runs every test and the release build)
         type: string
         default: ""
 
@@ -31,7 +31,6 @@ env:
 jobs:
   tests:
     name: ${{ matrix.system }} tests
-    if: inputs.systems != 'macOS'
     strategy:
       fail-fast: false
       matrix:
@@ -75,11 +74,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        system: ${{ fromJSON((inputs.systems == '' || inputs.systems == 'all') && '["macOS","Linux","Windows"]' || format('["{0}"]', inputs.systems)) }}
-    runs-on: ${{ fromJSON('{"macOS":"macos-latest","Linux":"ubuntu-24.04","Windows":"windows-latest"}')[matrix.system] }}
+        system: ${{ fromJSON((inputs.systems == '' || inputs.systems == 'all') && '["Linux","Windows"]' || format('["{0}"]', inputs.systems)) }}
+    runs-on: ${{ fromJSON('{"Linux":"ubuntu-24.04","Windows":"windows-latest"}')[matrix.system] }}
     timeout-minutes: 60
     env:
-      CARGO_TARGET_DIR: ${{ fromJSON('{"macOS":"target","Linux":"target/linux","Windows":"target/windows"}')[matrix.system] }}
+      CARGO_TARGET_DIR: ${{ fromJSON('{"Linux":"target/linux","Windows":"target/windows"}')[matrix.system] }}
     steps:
       - uses: actions/checkout@v5
       - name: Windows Defender leaves the build alone
