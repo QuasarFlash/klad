@@ -24,6 +24,13 @@ def output(case):
     return "\n".join(s.strip() for s in said if s.strip())
 
 
+def first_try(case):
+    flaky = case.find("flakyFailure")
+    said = [flaky.get("message", ""), flaky.text or ""]
+    said += [flaky.findtext(tag) or "" for tag in ("system-out", "system-err")]
+    return "\n".join(s.strip() for s in said if s.strip())
+
+
 def excerpt(said, room):
     start = said.find("panicked at")
     return said[start : start + room] if start >= 0 else said[-room:]
@@ -68,7 +75,7 @@ def main(system, junit, log):
     ]
     failed = [(f"{suite} {case.get('name')}", output(case)) for suite, case in cases if case.find("failure") is not None]
     flaky = [
-        f"{suite} {case.get('name')}"
+        (f"{suite} {case.get('name')}", first_try(case))
         for suite, case in cases
         if case.find("failure") is None and case.find("flakyFailure") is not None
     ]
@@ -82,7 +89,12 @@ def main(system, junit, log):
                 "\n\n".join(f"#### {name}\n{excerpt(said, each)}" for name, said in group),
             )
     if flaky:
-        say("warning", f"{system} flaky tests, passed on a retry", "\n".join(flaky))
+        room = SHOWN // len(flaky) - 120
+        say(
+            "warning",
+            f"{system} flaky tests, passed on a retry",
+            "\n\n".join(f"#### {name}\n{excerpt(said, room)}" for name, said in flaky),
+        )
     slowest = sorted(cases, key=lambda c: -float(c[1].get("time", 0)))[:5]
     took = float(ET.parse(junit).getroot().get("time", 0))
     say(
@@ -93,7 +105,7 @@ def main(system, junit, log):
     summary(
         [f"### {system}: {len(cases)} tests, {len(failed)} failed, {len(flaky)} flaky", ""]
         + [f"<details><summary>{name}</summary>\n\n```\n{said[-LONGEST:]}\n```\n</details>" for name, said in failed]
-        + [f"- flaky: {name}" for name in flaky]
+        + [f"<details><summary>flaky: {name}</summary>\n\n```\n{said[-LONGEST:]}\n```\n</details>" for name, said in flaky]
     )
 
 
