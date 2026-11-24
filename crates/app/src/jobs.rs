@@ -209,7 +209,6 @@ mod tests {
     use klad_core::bundle::Bundle;
     use klad_core::doc::{Document, Layer};
     use klad_core::ops::parse_lines;
-    use std::path::Path;
 
     fn shell(name: &str, script: &str, reruns: u32) -> Spec {
         Spec {
@@ -275,21 +274,6 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    fn draw_binary() -> PathBuf {
-        let exe = std::env::current_exe().unwrap();
-        let bin = exe
-            .parent()
-            .and_then(Path::parent)
-            .unwrap()
-            .join(format!("klad{}", std::env::consts::EXE_SUFFIX));
-        assert!(
-            bin.exists(),
-            "{} is missing: cargo test --workspace builds it (the klad-cli binary test needs it)",
-            bin.display()
-        );
-        bin
-    }
-
     #[test]
     fn an_edit_made_while_an_in_between_job_runs_survives_it() {
         let dir = std::env::temp_dir().join(format!("draw-jobs-tween-{}", std::process::id()));
@@ -321,7 +305,7 @@ mod tests {
         jobs.start(Spec {
             tag: Tag::Inbetween,
             name: "in-betweens".into(),
-            exe: draw_binary(),
+            exe: crate::start::test_binary(),
             args: [
                 "inbetween",
                 &dir.to_string_lossy(),

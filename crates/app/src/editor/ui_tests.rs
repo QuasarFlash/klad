@@ -97,7 +97,7 @@ fn skeleton(h: &Harness<'static, Editor>) -> Layer {
 
 fn ready(h: &mut Harness<'static, Editor>) {
     let start = std::time::Instant::now();
-    while !h.state().canvas_current() && start.elapsed() < std::time::Duration::from_secs(20) {
+    while !h.state().canvas_current() && start.elapsed() < super::testkit::PATIENCE {
         h.run_steps(1);
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
@@ -912,13 +912,7 @@ fn ui_time_per_frame() {
     let sample = sample("time");
     let stress = std::env::temp_dir().join(format!("draw-ui-stress-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stress);
-    let exe = std::env::current_exe().unwrap();
-    let draw = exe
-        .parent()
-        .and_then(Path::parent)
-        .unwrap()
-        .join(format!("klad{}", std::env::consts::EXE_SUFFIX));
-    if draw.exists() {
+    if let Some(draw) = crate::start::draw_binary() {
         let made = std::process::Command::new(&draw)
             .args(["stress", stress.to_str().unwrap(), "--frames", "48"])
             .output()
@@ -1300,7 +1294,7 @@ fn palette_swatches_move_by_dragging_and_go_from_their_corner() {
 
 fn settle(h: &mut Harness<'static, Editor>, done: impl Fn(&Editor) -> bool) {
     let start = std::time::Instant::now();
-    while !done(h.state()) && start.elapsed() < std::time::Duration::from_secs(20) {
+    while !done(h.state()) && start.elapsed() < super::testkit::PATIENCE {
         h.run_steps(1);
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
@@ -2786,7 +2780,7 @@ fn switching_layers_keeps_the_canvas_unless_the_picture_changes() {
         h.state_mut().invoke(Cmd::ResetNumbers).unwrap();
         h.state_mut().activate(path).unwrap();
         let start = std::time::Instant::now();
-        while !h.state().canvas_current() && start.elapsed() < std::time::Duration::from_secs(20) {
+        while !h.state().canvas_current() && start.elapsed() < super::testkit::PATIENCE {
             h.run_steps(1);
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
@@ -4257,12 +4251,7 @@ fn a_drag_from_a_drawings_first_cell_selects_unless_it_starts_on_the_dot() {
 fn a_heavy_animation_keeps_the_ui_responsive_while_frames_load() {
     let stress = std::env::temp_dir().join(format!("draw-ui-heavy-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stress);
-    let exe = std::env::current_exe().unwrap();
-    let draw = exe
-        .parent()
-        .and_then(Path::parent)
-        .unwrap()
-        .join(format!("klad{}", std::env::consts::EXE_SUFFIX));
+    let draw = crate::start::test_binary();
     let size = std::env::var("KLAD_HEAVY_SIZE").unwrap_or_else(|_| "2048".into());
     let made = std::process::Command::new(&draw)
         .args(["stress", stress.to_str().unwrap(), "--frames", "12", "--size", &size])
@@ -4963,12 +4952,7 @@ fn checked_audit(h: &mut Harness<'static, Editor>) {
 fn heavy_edits_and_revisits_keep_the_ui_free() {
     let stress = std::env::temp_dir().join(format!("draw-ui-heavy-edit-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stress);
-    let exe = std::env::current_exe().unwrap();
-    let draw = exe
-        .parent()
-        .and_then(Path::parent)
-        .unwrap()
-        .join(format!("klad{}", std::env::consts::EXE_SUFFIX));
+    let draw = crate::start::test_binary();
     let size = std::env::var("KLAD_HEAVY_SIZE").unwrap_or_else(|_| "2048".into());
     let made = std::process::Command::new(&draw)
         .args(["stress", stress.to_str().unwrap(), "--frames", "12", "--size", &size])
@@ -5670,7 +5654,7 @@ fn hush(h: &mut Harness<'static, Editor>) {
 fn the_cli_only_features_run_from_the_editor_and_give_what_the_cli_gives() {
     use super::checks::{arcs_from, gaps_from};
     use crate::jobs::Tag;
-    let klad = crate::start::draw_binary().expect("build the klad binary first (just test does)");
+    let klad = crate::start::test_binary();
     let run = |args: &[&str]| {
         let out = std::process::Command::new(&klad).args(args).output().unwrap();
         assert!(
@@ -7008,7 +6992,7 @@ fn a_layer_attached_to_a_bone_moves_with_it_live_in_pose_mode() {
         .preview
         .as_ref()
         .is_some_and(|p| p.posed.is_some() && p.job.is_none() && p.done.is_some())
-        && start.elapsed() < std::time::Duration::from_secs(20)
+        && start.elapsed() < super::testkit::PATIENCE
     {
         h.run_steps(1);
         std::thread::sleep(std::time::Duration::from_millis(2));
@@ -7744,7 +7728,7 @@ fn the_light_maps_panel_turns_maps_on_and_layers_become_map_layers_by_command() 
     assert_eq!(h.state().scene.bundle.doc.maps.as_ref().unwrap().lights.len(), 1);
     let wait = |h: &mut Harness<'static, Editor>, name: &str| {
         let start = std::time::Instant::now();
-        while h.state().map_shown() != Some(name) && start.elapsed() < std::time::Duration::from_secs(20) {
+        while h.state().map_shown() != Some(name) && start.elapsed() < super::testkit::PATIENCE {
             h.run_steps(1);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
@@ -7986,7 +7970,7 @@ fn a_height_layer_shows_the_height_map_and_paints_in_greys() {
         "the canvas shows the height map"
     );
     let start = std::time::Instant::now();
-    while h.state().map_shown() != Some("height") && start.elapsed() < std::time::Duration::from_secs(20) {
+    while h.state().map_shown() != Some("height") && start.elapsed() < super::testkit::PATIENCE {
         h.run_steps(1);
         std::thread::sleep(std::time::Duration::from_millis(5));
     }

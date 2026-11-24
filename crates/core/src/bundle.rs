@@ -96,7 +96,29 @@ impl Folder {
             use std::os::unix::fs::MetadataExt;
             (meta.dev(), meta.ino())
         };
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        let (device, node) = {
+            use std::os::windows::fs::OpenOptionsExt;
+            use std::os::windows::io::AsRawHandle;
+            use windows_sys::Win32::Storage::FileSystem::{
+                BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, GetFileInformationByHandle,
+            };
+            let _ = meta;
+            let folder = fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+                .open(path)
+                .ok()?;
+            let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+            if unsafe { GetFileInformationByHandle(folder.as_raw_handle(), &mut info) } == 0 {
+                return None;
+            }
+            (
+                u64::from(info.dwVolumeSerialNumber),
+                (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+            )
+        };
+        #[cfg(not(any(unix, windows)))]
         let (device, node) = {
             let _ = meta;
             (0, 0)
@@ -105,7 +127,7 @@ impl Folder {
     }
 
     fn beside(self, root: &Path) -> Option<PathBuf> {
-        if !cfg!(unix) {
+        if !cfg!(any(unix, windows)) {
             return None;
         }
         let beside = root.parent().filter(|p| !p.as_os_str().is_empty());
@@ -1228,18 +1250,16 @@ mod tests {
         assert!(write_atomic(&old.join(".cache").join("picture"), b"x").is_err());
         assert!(make_folder(&old.join("fonts")).is_err());
         assert!(!old.exists(), "nothing makes the old folder again");
-        if cfg!(unix) {
-            assert_eq!(bundle.whereabouts(), Whereabouts::Renamed(new.clone()));
-            Bundle::blank(&old, &Blank::default(), "cli").unwrap();
-            assert_eq!(
-                bundle.whereabouts(),
-                Whereabouts::Renamed(new.clone()),
-                "another drawing under the old name is not this one"
-            );
-            assert!(bundle.apply(&stroke(l1).unwrap()).is_err());
-            assert!(Bundle::open(&old).unwrap().doc.all_layers().len() == 1);
-            fs::remove_dir_all(&old).unwrap();
-        }
+        assert_eq!(bundle.whereabouts(), Whereabouts::Renamed(new.clone()));
+        Bundle::blank(&old, &Blank::default(), "cli").unwrap();
+        assert_eq!(
+            bundle.whereabouts(),
+            Whereabouts::Renamed(new.clone()),
+            "another drawing under the old name is not this one"
+        );
+        assert!(bundle.apply(&stroke(l1).unwrap()).is_err());
+        assert!(Bundle::open(&old).unwrap().doc.all_layers().len() == 1);
+        fs::remove_dir_all(&old).unwrap();
         bundle.follow(new.clone());
         assert_eq!(bundle.whereabouts(), Whereabouts::Here);
         bundle.apply(&stroke(l1).unwrap()).unwrap();

@@ -3174,7 +3174,7 @@ fn someone_keeps_their_drawings_in_order() {
         .find(|l| l.trim().ends_with(".png"))
         .map(|l| l.trim().to_string())
         .unwrap_or_default();
-    j.retype("Or paste its path", &format!("{}/{picture}", home.display()));
+    j.retype("Or paste its path", &home.join(&picture).display().to_string());
     j.click("Open");
     j.look("picture-to-open");
     let stem = std::path::Path::new(&picture)
@@ -4097,6 +4097,7 @@ fn someone_fixes_and_adjusts_a_painting() {
     j.act(
         "take the colour out of everything with an adjustment layer: Layer > New adjustment layer, hue and saturation",
     );
+    let painting = j.picture();
     j.click("Layer");
     j.click("New adjustment layer");
     j.look("adjustment-added");
@@ -4118,6 +4119,10 @@ fn someone_fixes_and_adjusts_a_painting() {
         j.scroll_to(list);
     }
     let before = j.picture();
+    j.note(format!(
+        "the new adjustment layer, as it comes, {} the picture",
+        if before == painting { "leaves" } else { "changes" }
+    ));
     let chosen = j.pick_in_list(list, "hue and saturation");
     j.scroll_to("lightness");
     j.click_inside("lightness", 0.95, 0.5);
@@ -4132,7 +4137,7 @@ fn someone_fixes_and_adjusts_a_painting() {
     let hidden = j.picture();
     j.expect(
         "hiding-the-adjustment-brings-the-picture-back",
-        hidden == before,
+        hidden == painting,
         "with the adjustment layer hidden the picture is as it was",
     );
 
@@ -4511,10 +4516,7 @@ fn someone_paints_fast_with_brushes_sizes_and_opacity() {
 }
 
 fn shapes_in(drawing: &str) -> Vec<(String, String, [f32; 4])> {
-    let Some(klad) = crate::start::draw_binary() else {
-        return Vec::new();
-    };
-    let out = std::process::Command::new(klad)
+    let out = std::process::Command::new(crate::start::test_binary())
         .args(["ls", drawing])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
@@ -4533,13 +4535,9 @@ fn shapes_in(drawing: &str) -> Vec<(String, String, [f32; 4])> {
 }
 
 fn shown_as(drawing: &str, id: &str) -> String {
-    crate::start::draw_binary()
-        .and_then(|klad| {
-            std::process::Command::new(klad)
-                .args(["show", drawing, id])
-                .output()
-                .ok()
-        })
+    std::process::Command::new(crate::start::test_binary())
+        .args(["show", drawing, id])
+        .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default()
 }
@@ -4789,13 +4787,9 @@ fn someone_draws_shapes_and_text() {
 }
 
 fn pixels(drawing: &str, layer: &str, frame: u32) -> (Vec<String>, String) {
-    let text = crate::start::draw_binary()
-        .and_then(|klad| {
-            std::process::Command::new(klad)
-                .args(["pixels", drawing, layer, "--frame", &frame.to_string()])
-                .output()
-                .ok()
-        })
+    let text = std::process::Command::new(crate::start::test_binary())
+        .args(["pixels", drawing, layer, "--frame", &frame.to_string()])
+        .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default();
     let rows = text
@@ -5866,7 +5860,7 @@ fn someone_makes_a_tileset_for_a_game() {
     j.tap(40.5, 8.5);
     j.look("fill-in-a-tile");
     let (rows, _) = pixels(&drawing, &layer, 0);
-    let filled = painted(&rows) - 512;
+    let filled = painted(&rows).saturating_sub(512);
     j.note(format!("the fill painted {filled} pixels; a tile holds 256"));
     j.expect(
         "a-fill-stays-in-its-tile",

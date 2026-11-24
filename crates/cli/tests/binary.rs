@@ -3189,10 +3189,19 @@ fn merging_the_lemons_keeps_each_lemons_alpha_locked_strokes_on_that_lemon() {
     let dir = std::env::temp_dir().join(format!("draw-binary-lemons-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let sample = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../samples/lemons/lemons.klad");
+    let generator = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../samples/lemons/generate.py");
+    let ops = ["python3", "python"]
+        .iter()
+        .find_map(|python| {
+            Command::new(python)
+                .arg(&generator)
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+        })
+        .expect("python 3 runs samples/lemons/generate.py");
+    std::fs::write(dir.join("lemons.jsonl"), &ops.stdout).unwrap();
     let bundle = dir.join("lemons.klad");
-    let copied = Command::new("cp").arg("-R").arg(&sample).arg(&bundle).status().unwrap();
-    assert!(copied.success());
     let path = bundle.to_str().unwrap();
     let run = |args: &[&str]| {
         let out = Command::new(env!("CARGO_BIN_EXE_klad"))
@@ -3212,6 +3221,8 @@ fn merging_the_lemons_keeps_each_lemons_alpha_locked_strokes_on_that_lemon() {
             String::from_utf8_lossy(&out.stderr)
         )
     };
+    run(&["new", path, "--width", "1200", "--height", "900", "--layers", "0"]);
+    run(&["apply", path, "--file", "lemons.jsonl"]);
     run(&["render", path, "-o", "before.png"]);
     let said = run(&["merge", path, "lemon-a", "lemon-b"]);
     assert!(

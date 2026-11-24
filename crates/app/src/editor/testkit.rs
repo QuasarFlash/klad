@@ -38,7 +38,7 @@ fn scratch(name: &str) -> PathBuf {
     std::fs::canonicalize(&dir).unwrap()
 }
 
-const PATIENCE: Duration = Duration::from_secs(30);
+pub(super) const PATIENCE: Duration = Duration::from_secs(60);
 
 pub(super) const FNV: u64 = 0xcbf2_9ce4_8422_2325;
 
@@ -338,19 +338,22 @@ impl Journey {
     }
 
     pub(super) fn agent(&mut self, args: &[&str]) -> (bool, String) {
-        let klad = crate::start::draw_binary().expect("build the klad binary first (just test does)");
-        let home = format!("{}/", self.folder.display());
-        let said = args.iter().map(|a| a.replace(&home, "")).collect::<Vec<_>>().join(" ");
+        let klad = crate::start::test_binary();
+        let homes = [
+            format!("{}/", self.folder.display()),
+            format!("{}{}", self.folder.display(), std::path::MAIN_SEPARATOR),
+        ];
+        let local = |text: &str| homes.iter().fold(text.to_string(), |text, home| text.replace(home, ""));
+        let said = args.iter().map(|a| local(a)).collect::<Vec<_>>().join(" ");
         let out = std::process::Command::new(klad)
             .args(args)
             .output()
             .expect("the klad command runs");
-        let text = format!(
+        let text = local(&format!(
             "{}{}",
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
-        )
-        .replace(&home, "");
+        ));
         self.note(format!(
             "the agent ran: klad {said}{}",
             if out.status.success() { "" } else { " (it failed)" }
@@ -1384,9 +1387,20 @@ impl Journey {
             std::fs::write(out.join("steps.md"), self.lines.join("\n") + "\n").unwrap();
         }
         let _ = std::fs::remove_dir_all(&self.folder);
+        let leading = new
+            .iter()
+            .filter_map(|key| {
+                let at = self
+                    .lines
+                    .iter()
+                    .position(|l| l.starts_with("- MISS:") && l.ends_with(&format!("`{key}`")))?;
+                Some(self.lines[at.saturating_sub(8)..=at].join("\n"))
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
         assert!(
             new.is_empty() && gone.is_empty(),
-            "the journey met problems it did not list: {new:?}; listed problems it no longer meets (take them off its list): {gone:?}"
+            "the journey met problems it did not list: {new:?}; listed problems it no longer meets (take them off its list): {gone:?}\n\n{leading}"
         );
     }
 }

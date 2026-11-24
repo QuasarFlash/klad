@@ -1074,7 +1074,7 @@ mod tests {
             args(bundle, home, 3, &image).join(" "),
             format!(
                 "export /w/art.klad --frame 3 --scale 2 --background -o {}",
-                home.join("out/hero.png").display()
+                home.join("out").join("hero.png").display()
             )
         );
         let jpeg = Form {
