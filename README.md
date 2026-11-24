@@ -28,7 +28,7 @@ An image generator hands you pixels, and the only edit left is another roll of t
 - **It can also do just vectors.** Shapes with editable points, gradients, glows and real text in about fifty open fonts that come with it, for posters, covers and cards.
 - **It's a full painting and animation app.** Two dozen brushes and a brush editor, your own brushes in every drawing, perspective guides the brush follows, a grid and snapping, layers, masks, clipping, effects, a timeline with onion skins and clips, in-betweens made from your key drawings, bones with IK, several drawings open at once, and exports as PNG, JPEG, WebP, TIFF, PSD with its layers, PDF with sharp shapes, SVG, video, sprite sheets, GIFs or straight into Godot.
 - **It does pixel art on a real grid.** Whole pixels in the colours of a palette, with tiles, palette variants and Aseprite files in and out: see [Pixel art](#pixel-art).
-- **Your drawings stay yours.** A drawing is a folder of plain files on your computer, and klad needs no account. It only looks for a new version once a day, and you can turn that off. An edit changes only the files of what it edits, so drawings live well in git.
+- **Your drawings stay yours.** A drawing is a folder of ordinary files on your computer, and klad needs no account. It only looks for a new version once a day, and you can turn that off. An edit changes only the files of what it edits, so drawings live well in git.
 
 ## Working with your agent
 
