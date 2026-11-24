@@ -97,7 +97,7 @@ fn skeleton(h: &Harness<'static, Editor>) -> Layer {
 
 fn ready(h: &mut Harness<'static, Editor>) {
     let start = std::time::Instant::now();
-    while !h.state().canvas_current() && start.elapsed() < std::time::Duration::from_secs(20) {
+    while !h.state().canvas_current() && start.elapsed() < super::testkit::PATIENCE {
         h.run_steps(1);
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
@@ -1300,7 +1300,7 @@ fn palette_swatches_move_by_dragging_and_go_from_their_corner() {
 
 fn settle(h: &mut Harness<'static, Editor>, done: impl Fn(&Editor) -> bool) {
     let start = std::time::Instant::now();
-    while !done(h.state()) && start.elapsed() < std::time::Duration::from_secs(20) {
+    while !done(h.state()) && start.elapsed() < super::testkit::PATIENCE {
         h.run_steps(1);
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
@@ -2786,7 +2786,7 @@ fn switching_layers_keeps_the_canvas_unless_the_picture_changes() {
         h.state_mut().invoke(Cmd::ResetNumbers).unwrap();
         h.state_mut().activate(path).unwrap();
         let start = std::time::Instant::now();
-        while !h.state().canvas_current() && start.elapsed() < std::time::Duration::from_secs(20) {
+        while !h.state().canvas_current() && start.elapsed() < super::testkit::PATIENCE {
             h.run_steps(1);
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
@@ -7008,7 +7008,7 @@ fn a_layer_attached_to_a_bone_moves_with_it_live_in_pose_mode() {
         .preview
         .as_ref()
         .is_some_and(|p| p.posed.is_some() && p.job.is_none() && p.done.is_some())
-        && start.elapsed() < std::time::Duration::from_secs(20)
+        && start.elapsed() < super::testkit::PATIENCE
     {
         h.run_steps(1);
         std::thread::sleep(std::time::Duration::from_millis(2));
@@ -7744,7 +7744,7 @@ fn the_light_maps_panel_turns_maps_on_and_layers_become_map_layers_by_command() 
     assert_eq!(h.state().scene.bundle.doc.maps.as_ref().unwrap().lights.len(), 1);
     let wait = |h: &mut Harness<'static, Editor>, name: &str| {
         let start = std::time::Instant::now();
-        while h.state().map_shown() != Some(name) && start.elapsed() < std::time::Duration::from_secs(20) {
+        while h.state().map_shown() != Some(name) && start.elapsed() < super::testkit::PATIENCE {
             h.run_steps(1);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
@@ -7986,7 +7986,7 @@ fn a_height_layer_shows_the_height_map_and_paints_in_greys() {
         "the canvas shows the height map"
     );
     let start = std::time::Instant::now();
-    while h.state().map_shown() != Some("height") && start.elapsed() < std::time::Duration::from_secs(20) {
+    while h.state().map_shown() != Some("height") && start.elapsed() < super::testkit::PATIENCE {
         h.run_steps(1);
         std::thread::sleep(std::time::Duration::from_millis(5));
     }

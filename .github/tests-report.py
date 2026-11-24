@@ -1,0 +1,81 @@
+import os
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+MOST = 10
+LONGEST = 60000
+
+
+def escape(text):
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def say(kind, title, message):
+    title = escape(title).replace(":", "%3A").replace(",", "%2C")
+    print(f"::{kind} title={title}::{escape(message)}")
+
+
+def output(case):
+    failure = case.find("failure")
+    said = [failure.get("message", "") if failure is not None else ""]
+    said += [case.findtext(tag) or "" for tag in ("failure", "system-out", "system-err")]
+    return "\n".join(s.strip() for s in said if s.strip())
+
+
+def chunks(items, count):
+    size = -(-len(items) // count)
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def summary(lines):
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if path:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+
+def compile_errors(log):
+    if not os.path.exists(log):
+        return []
+    text = open(log, encoding="utf-8", errors="replace").read()
+    return re.findall(r"^error.*?(?:\n\n|\Z)", text, flags=re.S | re.M)[:MOST]
+
+
+def main(system, junit, log):
+    if not os.path.exists(junit):
+        errors = compile_errors(log)
+        for e in errors:
+            say("error", f"{system} build", e)
+        summary([f"### {system}: no test results", "", "```", *errors, "```"])
+        return
+    cases = [
+        (suite.get("name", ""), case)
+        for suite in ET.parse(junit).getroot().iter("testsuite")
+        for case in suite.iter("testcase")
+    ]
+    failed = [(f"{suite} {case.get('name')}", output(case)) for suite, case in cases if case.find("failure") is not None]
+    flaky = [
+        f"{suite} {case.get('name')}"
+        for suite, case in cases
+        if case.find("failure") is None and case.find("flakyFailure") is not None
+    ]
+    if failed:
+        groups = chunks(failed, MOST)
+        each = LONGEST // max(len(g) for g in groups)
+        for group in groups:
+            say(
+                "error",
+                f"{system} tests failed: " + ", ".join(name.split("::")[-1] for name, _ in group),
+                "\n\n".join(f"#### {name}\n{said[-each:]}" for name, said in group),
+            )
+    if flaky:
+        say("warning", f"{system} flaky tests, passed on a retry", "\n".join(flaky))
+    summary(
+        [f"### {system}: {len(cases)} tests, {len(failed)} failed, {len(flaky)} flaky", ""]
+        + [f"<details><summary>{name}</summary>\n\n```\n{said[-LONGEST:]}\n```\n</details>" for name, said in failed]
+        + [f"- flaky: {name}" for name in flaky]
+    )
+
+
+main(*sys.argv[1:4])

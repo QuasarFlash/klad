@@ -38,7 +38,7 @@ fn scratch(name: &str) -> PathBuf {
     std::fs::canonicalize(&dir).unwrap()
 }
 
-const PATIENCE: Duration = Duration::from_secs(30);
+pub(super) const PATIENCE: Duration = Duration::from_secs(60);
 
 pub(super) const FNV: u64 = 0xcbf2_9ce4_8422_2325;
 

@@ -4,38 +4,86 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      systems:
+        description: Which systems
+        type: choice
+        options: [all, macOS, Linux, Windows]
+        default: all
+      tests:
+        description: Only the tests whose names hold one of these words (empty runs every test and the release build)
+        type: string
+        default: ""
 
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 defaults:
   run:
     shell: bash
 
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_RELEASE_DEBUG: "0"
+
 jobs:
-  build:
-    name: ${{ matrix.name }}
+  tests:
+    name: ${{ matrix.system }} tests
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: macOS
-            os: macos-latest
-            target: target
-          - name: Linux
-            os: ubuntu-24.04
-            target: target/linux
-          - name: Windows
-            os: windows-latest
-            target: target/windows
-    runs-on: ${{ matrix.os }}
+        system: ${{ fromJSON((inputs.systems == '' || inputs.systems == 'all') && '["macOS","Linux","Windows"]' || format('["{0}"]', inputs.systems)) }}
+    runs-on: ${{ fromJSON('{"macOS":"macos-latest","Linux":"ubuntu-24.04","Windows":"windows-latest"}')[matrix.system] }}
     timeout-minutes: 60
     env:
-      CARGO_TERM_COLOR: never
-      CARGO_TARGET_DIR: ${{ matrix.target }}
+      CARGO_TARGET_DIR: ${{ fromJSON('{"macOS":"target","Linux":"target/linux","Windows":"target/windows"}')[matrix.system] }}
+      TESTS: ${{ inputs.tests }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - name: Windows Defender leaves the build alone
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+      - name: The Linux packages the README lists
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libfreetype-dev libfontconfig1-dev libxkbcommon-dev libwayland-dev
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.152
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: tests
+          workspaces: ". -> ${{ env.CARGO_TARGET_DIR }}"
+      - name: The tests
+        run: |
+          set -o pipefail
+          cargo nextest run --workspace --profile ci $TESTS 2>&1 | tee tests.log
+      - name: Say what happened
+        if: always()
+        run: |
+          py=python3
+          [ "$RUNNER_OS" != Windows ] || py=python
+          "$py" .github/tests-report.py "${{ matrix.system }}" "$CARGO_TARGET_DIR/nextest/ci/junit.xml" tests.log
+
+  release:
+    name: ${{ matrix.system }} release build
+    if: inputs.tests == ''
+    strategy:
+      fail-fast: false
+      matrix:
+        system: ${{ fromJSON((inputs.systems == '' || inputs.systems == 'all') && '["macOS","Linux","Windows"]' || format('["{0}"]', inputs.systems)) }}
+    runs-on: ${{ fromJSON('{"macOS":"macos-latest","Linux":"ubuntu-24.04","Windows":"windows-latest"}')[matrix.system] }}
+    timeout-minutes: 60
+    env:
+      CARGO_TARGET_DIR: ${{ fromJSON('{"macOS":"target","Linux":"target/linux","Windows":"target/windows"}')[matrix.system] }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Windows Defender leaves the build alone
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - name: The Linux packages the README lists
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y pkg-config libfreetype-dev libfontconfig1-dev libxkbcommon-dev libwayland-dev
@@ -44,7 +92,8 @@ jobs:
           tool: just
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ". -> ${{ matrix.target }}"
+          key: release
+          workspaces: ". -> ${{ env.CARGO_TARGET_DIR }}"
       - name: just compile, as the README says
         run: |
           set -o pipefail
@@ -52,7 +101,7 @@ jobs:
       - name: Paint and render a stroke with the build
         run: |
           set -o pipefail
-          klad="${{ matrix.target }}/release/klad"
+          klad="$CARGO_TARGET_DIR/release/klad"
           {
             "$klad" new smoke.klad --width 400 --height 300
             "$klad" stroke smoke.klad l1 --brush oil --size 20 --color '#d4612c' --path 'M40 150 C 140 40 260 260 360 150'
@@ -60,55 +109,18 @@ jobs:
             "$klad" skill drawing > skill.txt
             head -n 2 skill.txt
           } 2>&1 | tee smoke.log
-      - name: The tests
-        id: tests
-        continue-on-error: true
+      - name: The main stack klad was linked with
+        if: runner.os == 'Windows'
         run: |
-          set -o pipefail
-          cargo test --workspace --no-fail-fast 2>&1 | tee tests.log
+          exe="$CARGO_TARGET_DIR/release/klad.exe"
+          reserve="$(python -c "import struct, sys; b = open(sys.argv[1], 'rb').read(4096); o = struct.unpack_from('<I', b, 0x3c)[0]; print(struct.unpack_from('<Q', b, o + 96)[0])" "$exe")"
+          echo "::notice title=Windows main stack::$exe is linked with $reserve bytes"
       - name: Say what happened
-        if: always()
+        if: failure()
         run: |
-          said() {
-            [ -f "$1.log" ] || return 0
-            echo "#### $1"
-            echo '```'
-            grep -n -E "^error|^warning: unused|panicked at|FAILED|test result|cannot find|not found|No such file|could not" "$1.log" | tail -n 40 || true
-            echo "... the last lines:"
-            tail -n 30 "$1.log"
-            echo '```'
-          }
-          {
-            echo "### ${{ matrix.name }}: tests ${{ steps.tests.outcome }}"
-            echo "$(rustc --version 2>&1), $(just --version 2>&1)"
-            said compile
-            said smoke
-            said tests
-          } >> "$GITHUB_STEP_SUMMARY"
           for log in compile smoke; do
             [ -f "$log.log" ] || continue
             { grep -m 6 -E "^error|panicked at" "$log.log" || true; } | while read -r line; do
-              echo "::warning title=${{ matrix.name }} $log::$line"
+              echo "::error title=${{ matrix.system }} $log::$line"
             done
           done
-          if [ -f tests.log ]; then
-            failed="$({ grep -E "^test .* FAILED$" tests.log || true; } | sed -E 's/^test (.*) \.\.\. FAILED$/\1/' | sort -u | tr '\n' ' ')"
-            [ -z "$failed" ] || echo "::warning title=${{ matrix.name }} tests that failed::$failed"
-            { grep -A 3 "panicked at" tests.log || true; } | { grep -v "^--$" || true; } | paste -d ' ' - - - - | cut -c1-600 | head -n 8 | while read -r line; do
-              echo "::warning title=${{ matrix.name }} test failure::$line"
-            done
-            { grep -E "^test result|^error" tests.log || true; } | { grep -v " 0 failed" || true; } | head -n 4 | while read -r line; do
-              echo "::warning title=${{ matrix.name }} tests::$line"
-            done
-          fi
-      - name: The main stack klad was linked with
-        if: always() && runner.os == 'Windows'
-        run: |
-          for exe in "${{ matrix.target }}/release/klad.exe" "${{ matrix.target }}/debug/klad.exe"; do
-            [ -f "$exe" ] || continue
-            reserve="$(python -c "import struct, sys; b = open(sys.argv[1], 'rb').read(4096); o = struct.unpack_from('<I', b, 0x3c)[0]; print(struct.unpack_from('<Q', b, o + 96)[0])" "$exe")"
-            echo "::notice title=Windows main stack::$exe is linked with $reserve bytes"
-          done
-      - name: The tests must pass
-        if: steps.tests.outcome == 'failure'
-        run: exit 1
