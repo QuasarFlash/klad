@@ -4511,10 +4511,7 @@ fn someone_paints_fast_with_brushes_sizes_and_opacity() {
 }
 
 fn shapes_in(drawing: &str) -> Vec<(String, String, [f32; 4])> {
-    let Some(klad) = crate::start::draw_binary() else {
-        return Vec::new();
-    };
-    let out = std::process::Command::new(klad)
+    let out = std::process::Command::new(crate::start::test_binary())
         .args(["ls", drawing])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
@@ -4533,13 +4530,9 @@ fn shapes_in(drawing: &str) -> Vec<(String, String, [f32; 4])> {
 }
 
 fn shown_as(drawing: &str, id: &str) -> String {
-    crate::start::draw_binary()
-        .and_then(|klad| {
-            std::process::Command::new(klad)
-                .args(["show", drawing, id])
-                .output()
-                .ok()
-        })
+    std::process::Command::new(crate::start::test_binary())
+        .args(["show", drawing, id])
+        .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default()
 }
@@ -4789,13 +4782,9 @@ fn someone_draws_shapes_and_text() {
 }
 
 fn pixels(drawing: &str, layer: &str, frame: u32) -> (Vec<String>, String) {
-    let text = crate::start::draw_binary()
-        .and_then(|klad| {
-            std::process::Command::new(klad)
-                .args(["pixels", drawing, layer, "--frame", &frame.to_string()])
-                .output()
-                .ok()
-        })
+    let text = std::process::Command::new(crate::start::test_binary())
+        .args(["pixels", drawing, layer, "--frame", &frame.to_string()])
+        .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default();
     let rows = text
@@ -5866,7 +5855,7 @@ fn someone_makes_a_tileset_for_a_game() {
     j.tap(40.5, 8.5);
     j.look("fill-in-a-tile");
     let (rows, _) = pixels(&drawing, &layer, 0);
-    let filled = painted(&rows) - 512;
+    let filled = painted(&rows).saturating_sub(512);
     j.note(format!("the fill painted {filled} pixels; a tile holds 256"));
     j.expect(
         "a-fill-stays-in-its-tile",

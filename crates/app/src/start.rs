@@ -935,6 +935,29 @@ pub(crate) fn draw_binary() -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+#[cfg(test)]
+pub(crate) fn test_binary() -> PathBuf {
+    draw_binary().unwrap_or_else(|| {
+        let exe = std::env::current_exe();
+        let above = exe.as_ref().ok().and_then(|e| e.parent()).and_then(Path::parent);
+        let held = above.and_then(|d| std::fs::read_dir(d).ok()).map_or_else(
+            || "nothing readable".to_string(),
+            |entries| {
+                let mut names: Vec<String> = entries
+                    .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+                    .filter(|n| n.starts_with("klad"))
+                    .collect();
+                names.sort();
+                names.join(", ")
+            },
+        );
+        panic!(
+            "build the klad binary first (just test does); this test runs as {exe:?}, which exists: {}; {above:?} holds [{held}]",
+            exe.as_ref().is_ok_and(|e| e.exists())
+        )
+    })
+}
+
 fn modified(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
@@ -1023,7 +1046,7 @@ mod tests {
 
     #[test]
     fn a_thumbnail_is_rendered_once_and_again_when_the_drawing_changes() {
-        assert!(draw_binary().is_some(), "build the klad binary first (just test does)");
+        test_binary();
         let dir = std::env::temp_dir().join(format!("draw-thumb-{}.klad", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let blank = Blank {

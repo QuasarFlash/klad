@@ -65,7 +65,7 @@ jobs:
         run: |
           py=python3
           [ "$RUNNER_OS" != Windows ] || py=python
-          "$py" .github/tests-report.py "${{ matrix.system }}" "$CARGO_TARGET_DIR/nextest/ci/junit.xml" tests.log
+          "$py" .github/tests-report.py "${{ matrix.system }}" target/nextest/ci/junit.xml tests.log
 
   release:
     name: ${{ matrix.system }} release build

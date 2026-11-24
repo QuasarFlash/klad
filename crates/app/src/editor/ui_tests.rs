@@ -5670,7 +5670,7 @@ fn hush(h: &mut Harness<'static, Editor>) {
 fn the_cli_only_features_run_from_the_editor_and_give_what_the_cli_gives() {
     use super::checks::{arcs_from, gaps_from};
     use crate::jobs::Tag;
-    let klad = crate::start::draw_binary().expect("build the klad binary first (just test does)");
+    let klad = crate::start::test_binary();
     let run = |args: &[&str]| {
         let out = std::process::Command::new(&klad).args(args).output().unwrap();
         assert!(

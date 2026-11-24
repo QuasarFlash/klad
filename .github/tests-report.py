@@ -35,19 +35,25 @@ def summary(lines):
             f.write("\n".join(lines) + "\n")
 
 
-def compile_errors(log):
-    if not os.path.exists(log):
-        return []
-    text = open(log, encoding="utf-8", errors="replace").read()
-    return re.findall(r"^error.*?(?:\n\n|\Z)", text, flags=re.S | re.M)[:MOST]
+def read(log):
+    return open(log, encoding="utf-8", errors="replace").read() if os.path.exists(log) else ""
+
+
+def without_results(system, log):
+    text = read(log)
+    errors = re.findall(r"^error\[.*?(?:\n\n|\Z)", text, flags=re.S | re.M)[: MOST - 2]
+    failed = re.findall(r"^\s+(?:FAIL|TIMEOUT|SIGSEGV|SIGABRT|SIGKILL) \[.*$", text, flags=re.M)
+    for e in errors:
+        say("error", f"{system} build", e)
+    if failed:
+        say("error", f"{system} tests that failed", "\n".join(f.strip() for f in failed))
+    say("error", f"{system} the end of the test log", text[-LONGEST:])
+    summary([f"### {system}: no JUnit file", "", "```", *errors, *failed, "```"])
 
 
 def main(system, junit, log):
     if not os.path.exists(junit):
-        errors = compile_errors(log)
-        for e in errors:
-            say("error", f"{system} build", e)
-        summary([f"### {system}: no test results", "", "```", *errors, "```"])
+        without_results(system, log)
         return
     cases = [
         (suite.get("name", ""), case)

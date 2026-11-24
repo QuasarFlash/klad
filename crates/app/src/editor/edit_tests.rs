@@ -551,7 +551,8 @@ fn shapes_take_another_look_combine_into_one_path_and_text_becomes_paths() {
     );
 
     let root = h.state().scene.bundle.root.clone();
-    klad_render::fonts::bring(&root, "Inter").unwrap();
+    klad_render::fonts::bring(&root, "Inter")
+        .unwrap_or_else(|e| panic!("{e}; klad's fonts folder: {:?}", klad_render::fonts::shipped_dir()));
     let layer = layer_named(&h, "shapes").id.clone();
     let text = parse_lines(&format!(
         r##"{{"op":"add","node":{{"id":"words","type":"text","text":"Ab","font":"Inter.ttf","x":40,"y":200,"size":60,"fill":"#202020"}},"in":"{layer}","frame":0}}"##

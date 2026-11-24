@@ -338,7 +338,7 @@ impl Journey {
     }
 
     pub(super) fn agent(&mut self, args: &[&str]) -> (bool, String) {
-        let klad = crate::start::draw_binary().expect("build the klad binary first (just test does)");
+        let klad = crate::start::test_binary();
         let home = format!("{}/", self.folder.display());
         let said = args.iter().map(|a| a.replace(&home, "")).collect::<Vec<_>>().join(" ");
         let out = std::process::Command::new(klad)
