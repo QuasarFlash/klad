@@ -50,15 +50,39 @@ jobs:
         run: |
           set -o pipefail
           bash packaging/archive.sh x86_64-pc-windows-msvc dist | tee built.txt
-          echo "BUILT=$(grep -E '\.zip$' built.txt | tail -1)" >> "$GITHUB_ENV"
+          echo "STAGE=$(grep -E '\.zip$' built.txt | tail -1 | sed 's/\.zip$//')" >> "$GITHUB_ENV"
       # TODO: sign klad.exe and klad-editor.exe once Windows signing is set up (KLA-529)
+      - name: Inno Setup
+        run: |
+          [ -f "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ] || choco install innosetup --version 6.4.3 -y --no-progress
+      - name: The installer
+        run: |
+          set -o pipefail
+          bash packaging/windows/setup.sh "$STAGE" dist | tee setup.txt
+          echo "SETUP=$(tail -1 setup.txt)" >> "$GITHUB_ENV"
+      # TODO: sign the installer too (KLA-529)
+      - name: The installer installs, puts klad on the PATH and uninstalls
+        run: |
+          MSYS_NO_PATHCONV=1 "$SETUP" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          app="$(cygpath -u "$LOCALAPPDATA")/Programs/klad"
+          "$app/klad.exe" --version
+          test -f "$app/klad-editor.exe"
+          test -f "$app/fonts/fonts.json"
+          test -d "$app/samples"
+          path="$(MSYS_NO_PATHCONV=1 reg query 'HKCU\Environment' /v Path || true)"
+          grep -qi 'Programs\\klad' <<<"$path"
+          MSYS_NO_PATHCONV=1 "$app/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES
+          for _ in $(seq 60); do [ -e "$app/klad.exe" ] || break; sleep 1; done
+          [ ! -e "$app/klad.exe" ]
+          path="$(MSYS_NO_PATHCONV=1 reg query 'HKCU\Environment' /v Path || true)"
+          ! grep -qi 'Programs\\klad' <<<"$path"
       - name: Into the bucket
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: bash packaging/publish.sh "$VERSION" windows "$BUILT"
+        run: bash packaging/publish.sh "$VERSION" windows "$SETUP"
 
   release:
     needs: windows
