@@ -16,7 +16,7 @@ compile:
     {{klad}} --version
 
 test:
-    cargo test --workspace
+    cargo test --workspace --no-fail-fast
     python3 docs/skill/drawkit.py --check
 
 lint:

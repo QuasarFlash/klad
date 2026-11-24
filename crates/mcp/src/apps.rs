@@ -84,6 +84,7 @@ pub enum Status {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Places {
     pub home: PathBuf,
+    pub root: PathBuf,
     pub os: Os,
 }
 
@@ -92,7 +93,11 @@ impl Places {
         let home = std::env::var_os("HOME")
             .or_else(|| std::env::var_os("USERPROFILE"))
             .map(PathBuf::from)?;
-        Some(Self { home, os: Os::here() })
+        Some(Self {
+            home,
+            root: PathBuf::from("/"),
+            os: Os::here(),
+        })
     }
 
     fn support(&self) -> PathBuf {
@@ -220,7 +225,7 @@ impl App {
                 .iter()
                 .flat_map(|b| {
                     [
-                        Path::new("/Applications").join(b),
+                        places.root.join("Applications").join(b),
                         places.home.join("Applications").join(b),
                     ]
                 })
@@ -486,7 +491,11 @@ mod tests {
         let home = std::env::temp_dir().join(format!("klad-mcp-home-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
-        Places { home, os: Os::Mac }
+        Places {
+            root: home.join("computer"),
+            home,
+            os: Os::Mac,
+        }
     }
 
     fn klad(places: &Places) -> Entry {
@@ -523,6 +532,15 @@ mod tests {
         App::ClaudeDesktop.connect(&places, &entry).unwrap();
         assert!(matches!(App::ClaudeDesktop.status(&places), Status::Connected(_)));
         assert!(!roaming.exists(), "the copy it would not read is left alone");
+        let _ = std::fs::remove_dir_all(&places.home);
+    }
+
+    #[test]
+    fn an_app_in_the_macs_applications_folder_is_on_this_computer() {
+        let places = home("bundle");
+        assert_eq!(App::Cursor.status(&places), Status::Missing);
+        std::fs::create_dir_all(places.root.join("Applications/Cursor.app")).unwrap();
+        assert_eq!(App::Cursor.status(&places), Status::Found);
         let _ = std::fs::remove_dir_all(&places.home);
     }
 

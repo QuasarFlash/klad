@@ -8769,9 +8769,24 @@ fn a_menu_longer_than_the_window_scrolls_to_its_last_item() {
     h.get_by_label("Layer").click();
     h.run_steps(4);
     let window = h.ctx.content_rect();
-    let items: Vec<(String, Rect)> = labels(&h)
+    let moved: Vec<(String, Rect)> = labels(&h)
         .into_iter()
         .filter(|(l, r)| !before.iter().any(|(b, br)| b == l && (br.min - r.min).length() < 0.5))
+        .collect();
+    let menu = h
+        .ctx
+        .memory(|m| {
+            m.areas()
+                .visible_layer_ids()
+                .into_iter()
+                .filter(|l| l.order == egui::Order::Foreground)
+                .filter_map(|l| m.area_rect(l.id))
+                .max_by_key(|a| moved.iter().filter(|(_, r)| a.contains(r.center())).count())
+        })
+        .expect("the Layer menu opens");
+    let items: Vec<(String, Rect)> = moved
+        .into_iter()
+        .filter(|(_, r)| (menu.left()..=menu.right()).contains(&r.center().x))
         .collect();
     let out: Vec<String> = items
         .iter()
@@ -8782,11 +8797,15 @@ fn a_menu_longer_than_the_window_scrolls_to_its_last_item() {
         !out.is_empty(),
         "the Layer menu fits a 420 point window: the test needs a shorter one"
     );
-    let middle = items
-        .iter()
-        .map(|(_, r)| r.intersect(window))
-        .fold(Rect::NOTHING, Rect::union)
-        .center();
+    let middle = menu.intersect(window).center();
+    let top = |h: &Harness<'static, Editor>| {
+        labels(h)
+            .into_iter()
+            .find(|(l, _)| *l == items[0].0)
+            .map(|(_, r)| r.top())
+    };
+    let first = top(&h);
+    let under = h.ctx.layer_id_at(middle);
     let mut reached: Vec<bool> = vec![false; out.len()];
     (0..40).for_each(|_| {
         h.event(egui::Event::PointerMoved(middle));
@@ -8805,9 +8824,19 @@ fn a_menu_longer_than_the_window_scrolls_to_its_last_item() {
         });
     });
     let still: Vec<&String> = out.iter().zip(&reached).filter(|(_, s)| !**s).map(|(l, _)| l).collect();
+    let areas: Vec<String> = h.ctx.memory(|m| {
+        m.areas()
+            .visible_layer_ids()
+            .into_iter()
+            .map(|l| format!("{:?} {:?}", l.order, m.area_rect(l.id)))
+            .collect()
+    });
     assert!(
         still.is_empty(),
-        "scrolling the menu does not bring these in: {still:?}"
+        "scrolling the menu does not bring these in: {still:?}\nthe pointer at {middle:?} was over {under:?} and is over {:?}; {} went from {first:?} to {:?}; the areas: {areas:?}",
+        h.ctx.layer_id_at(middle),
+        items[0].0,
+        top(&h)
     );
     let _ = std::fs::remove_dir_all(&path);
 }
