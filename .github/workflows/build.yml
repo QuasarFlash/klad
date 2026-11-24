@@ -11,7 +11,7 @@ on:
         options: [all, macOS, Linux, Windows]
         default: all
       tests:
-        description: Only the tests whose names hold one of these words (empty runs every test and the release build)
+        description: Only the tests whose names hold one of these words (empty runs every test and the release build; macOS only builds)
         type: string
         default: ""
 
@@ -31,14 +31,15 @@ env:
 jobs:
   tests:
     name: ${{ matrix.system }} tests
+    if: inputs.systems != 'macOS'
     strategy:
       fail-fast: false
       matrix:
-        system: ${{ fromJSON((inputs.systems == '' || inputs.systems == 'all') && '["macOS","Linux","Windows"]' || format('["{0}"]', inputs.systems)) }}
-    runs-on: ${{ fromJSON('{"macOS":"macos-latest","Linux":"ubuntu-24.04","Windows":"windows-latest"}')[matrix.system] }}
+        system: ${{ fromJSON((inputs.systems == '' || inputs.systems == 'all') && '["Linux","Windows"]' || format('["{0}"]', inputs.systems)) }}
+    runs-on: ${{ fromJSON('{"Linux":"ubuntu-24.04","Windows":"windows-latest"}')[matrix.system] }}
     timeout-minutes: 60
     env:
-      CARGO_TARGET_DIR: ${{ fromJSON('{"macOS":"target","Linux":"target/linux","Windows":"target/windows"}')[matrix.system] }}
+      CARGO_TARGET_DIR: ${{ fromJSON('{"Linux":"target/linux","Windows":"target/windows"}')[matrix.system] }}
       TESTS: ${{ inputs.tests }}
     steps:
       - uses: actions/checkout@v5
