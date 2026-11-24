@@ -46,10 +46,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: x86_64-pc-windows-msvc
+          cache-on-failure: true
       - name: Build
         run: |
           set -o pipefail
-          bash packaging/archive.sh x86_64-pc-windows-msvc dist | tee built.txt
+          bash packaging/archive.sh x86_64-pc-windows-msvc dist 2>&1 | tee built.txt || { bash .github/failed.sh "Build" built.txt; exit 1; }
           echo "STAGE=$(grep -E '\.zip$' built.txt | tail -1 | sed 's/\.zip$//')" >> "$GITHUB_ENV"
       # TODO: sign klad.exe and klad-editor.exe once Windows signing is set up (KLA-529)
       - name: Inno Setup
@@ -58,31 +59,22 @@ jobs:
       - name: The installer
         run: |
           set -o pipefail
-          bash packaging/windows/setup.sh "$STAGE" dist | tee setup.txt
+          bash packaging/windows/setup.sh "$STAGE" dist 2>&1 | tee setup.txt || { bash .github/failed.sh "The installer" setup.txt; exit 1; }
           echo "SETUP=$(tail -1 setup.txt)" >> "$GITHUB_ENV"
       # TODO: sign the installer too (KLA-529)
       - name: The installer installs, puts klad on the PATH and uninstalls
         run: |
-          MSYS_NO_PATHCONV=1 "$SETUP" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-          app="$(cygpath -u "$LOCALAPPDATA")/Programs/klad"
-          "$app/klad.exe" --version
-          test -f "$app/klad-editor.exe"
-          test -f "$app/fonts/fonts.json"
-          test -d "$app/samples"
-          path="$(MSYS_NO_PATHCONV=1 reg query 'HKCU\Environment' /v Path || true)"
-          grep -qi 'Programs\\klad' <<<"$path"
-          MSYS_NO_PATHCONV=1 "$app/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES
-          for _ in $(seq 60); do [ -e "$app/klad.exe" ] || break; sleep 1; done
-          [ ! -e "$app/klad.exe" ]
-          path="$(MSYS_NO_PATHCONV=1 reg query 'HKCU\Environment' /v Path || true)"
-          ! grep -qi 'Programs\\klad' <<<"$path"
+          set -o pipefail
+          bash packaging/windows/check-install.sh "$SETUP" 2>&1 | tee check.txt || { bash .github/failed.sh "The installer check" check.txt; exit 1; }
       - name: Into the bucket
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: bash packaging/publish.sh "$VERSION" windows "$SETUP"
+        run: |
+          set -o pipefail
+          bash packaging/publish.sh "$VERSION" windows "$SETUP" 2>&1 | tee publish.txt || { bash .github/failed.sh "Into the bucket" publish.txt; exit 1; }
 
   release:
     needs: windows
