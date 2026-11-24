@@ -4097,6 +4097,7 @@ fn someone_fixes_and_adjusts_a_painting() {
     j.act(
         "take the colour out of everything with an adjustment layer: Layer > New adjustment layer, hue and saturation",
     );
+    let painting = j.picture();
     j.click("Layer");
     j.click("New adjustment layer");
     j.look("adjustment-added");
@@ -4118,6 +4119,10 @@ fn someone_fixes_and_adjusts_a_painting() {
         j.scroll_to(list);
     }
     let before = j.picture();
+    j.note(format!(
+        "the new adjustment layer, as it comes, {} the picture",
+        if before == painting { "leaves" } else { "changes" }
+    ));
     let chosen = j.pick_in_list(list, "hue and saturation");
     j.scroll_to("lightness");
     j.click_inside("lightness", 0.95, 0.5);
@@ -4132,7 +4137,7 @@ fn someone_fixes_and_adjusts_a_painting() {
     let hidden = j.picture();
     j.expect(
         "hiding-the-adjustment-brings-the-picture-back",
-        hidden == before,
+        hidden == painting,
         "with the adjustment layer hidden the picture is as it was",
     );
 

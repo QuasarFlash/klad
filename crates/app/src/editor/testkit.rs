@@ -1384,9 +1384,20 @@ impl Journey {
             std::fs::write(out.join("steps.md"), self.lines.join("\n") + "\n").unwrap();
         }
         let _ = std::fs::remove_dir_all(&self.folder);
+        let leading = new
+            .iter()
+            .filter_map(|key| {
+                let at = self
+                    .lines
+                    .iter()
+                    .position(|l| l.starts_with("- MISS:") && l.ends_with(&format!("`{key}`")))?;
+                Some(self.lines[at.saturating_sub(8)..=at].join("\n"))
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
         assert!(
             new.is_empty() && gone.is_empty(),
-            "the journey met problems it did not list: {new:?}; listed problems it no longer meets (take them off its list): {gone:?}"
+            "the journey met problems it did not list: {new:?}; listed problems it no longer meets (take them off its list): {gone:?}\n\n{leading}"
         );
     }
 }
