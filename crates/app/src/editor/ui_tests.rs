@@ -4150,6 +4150,26 @@ fn a_checkout_under_the_open_editor_shows_the_drawing_it_brings() {
 }
 
 #[test]
+fn opening_a_drawing_keeps_its_copy_for_revert_without_reading_the_drawing_again() {
+    let path = sample("opened-once");
+    let rev = Bundle::open(&path).unwrap().doc.rev;
+    let mut h = harness(editor(&path), vec2(1024.0, 700.0));
+    let start = std::time::Instant::now();
+    while start.elapsed() < std::time::Duration::from_millis(1500) {
+        h.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(klad_core::drawings::has_opened(&path), "the copy for Revert is there");
+    assert!(!h.state().scene.bundle.changed_on_disk());
+    assert_eq!(
+        h.state().scene.bundle.doc.rev,
+        rev,
+        "making that copy is no change to the drawing, so the editor does not read it again"
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn an_agent_edit_while_the_editor_is_open_shows_in_the_history_and_keeps_its_author() {
     let path = sample("agent-row");
     let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
