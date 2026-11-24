@@ -32,7 +32,7 @@ pub fn dir() -> Option<PathBuf> {
         dir.join("../share/klad/samples"),
     ]
     .into_iter()
-    .chain(dir.ancestors().skip(1).take(5).map(|a| a.join("samples")))
+    .chain(dir.ancestors().skip(1).take(8).map(|a| a.join("samples")))
     .find(|d| d.join(MANIFEST).is_file())
 }
 

@@ -1779,8 +1779,10 @@ fn the_connect_window_puts_klad_in_an_agent_apps_settings_and_takes_it_out() {
     h.get_by_label("Connect").click();
     h.run_steps(3);
     let config = std::fs::read_to_string(claude.join("claude_desktop_config.json")).unwrap();
-    assert!(
-        config.contains("\"klad\"") && config.contains(&program.display().to_string()),
+    let written: serde_json::Value = serde_json::from_str(&config).unwrap();
+    assert_eq!(
+        written["mcpServers"]["klad"]["command"].as_str(),
+        Some(program.display().to_string().as_str()),
         "{config}"
     );
     assert!(

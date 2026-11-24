@@ -128,7 +128,7 @@ fn found_from(exe: &Path) -> Option<PathBuf> {
                 dir.join("../Resources/fonts"),
                 dir.join("../share/klad/fonts"),
             ];
-            let above: Vec<PathBuf> = dir.ancestors().skip(1).take(5).map(|a| a.join("fonts")).collect();
+            let above: Vec<PathBuf> = dir.ancestors().skip(1).take(8).map(|a| a.join("fonts")).collect();
             near.into_iter().chain(above)
         })
         .find(|d| d.join(MANIFEST).is_file())

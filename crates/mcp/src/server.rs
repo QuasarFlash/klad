@@ -599,7 +599,9 @@ mod tests {
             "a name lands in the first folder: {inside:?}"
         );
         assert!(server.place(&root.join("dog.klad").display().to_string()).is_ok());
-        let outside = server.place("/etc/passwd").unwrap_err();
+        let outside = server
+            .place(&std::env::temp_dir().join("outside.klad").display().to_string())
+            .unwrap_err();
         assert!(outside.contains("outside the folders"), "{outside}");
         let sneaky = server.place("art/../../escape.klad").unwrap_err();
         assert!(sneaky.contains("outside the folders"), "{sneaky}");

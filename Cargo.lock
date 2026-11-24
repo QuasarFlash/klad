@@ -2138,10 +2138,10 @@ name = "klad-core"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "half",
  "libm",
  "serde",
  "serde_json",
+ "windows-sys 0.61.2",
  "zstd",
 ]
 

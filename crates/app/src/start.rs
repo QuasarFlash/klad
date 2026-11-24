@@ -930,8 +930,11 @@ pub(crate) fn draw_binary() -> Option<PathBuf> {
         return Some(exe);
     }
     let name = format!("klad{}", std::env::consts::EXE_SUFFIX);
-    [exe.parent()?.join(&name), exe.parent()?.parent()?.join(&name)]
-        .into_iter()
+    let reach = if cfg!(test) { 5 } else { 2 };
+    exe.ancestors()
+        .skip(1)
+        .take(reach)
+        .map(|dir| dir.join(&name))
         .find(|p| p.is_file())
 }
 

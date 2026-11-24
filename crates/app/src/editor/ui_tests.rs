@@ -912,13 +912,7 @@ fn ui_time_per_frame() {
     let sample = sample("time");
     let stress = std::env::temp_dir().join(format!("draw-ui-stress-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stress);
-    let exe = std::env::current_exe().unwrap();
-    let draw = exe
-        .parent()
-        .and_then(Path::parent)
-        .unwrap()
-        .join(format!("klad{}", std::env::consts::EXE_SUFFIX));
-    if draw.exists() {
+    if let Some(draw) = crate::start::draw_binary() {
         let made = std::process::Command::new(&draw)
             .args(["stress", stress.to_str().unwrap(), "--frames", "48"])
             .output()
@@ -4257,12 +4251,7 @@ fn a_drag_from_a_drawings_first_cell_selects_unless_it_starts_on_the_dot() {
 fn a_heavy_animation_keeps_the_ui_responsive_while_frames_load() {
     let stress = std::env::temp_dir().join(format!("draw-ui-heavy-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stress);
-    let exe = std::env::current_exe().unwrap();
-    let draw = exe
-        .parent()
-        .and_then(Path::parent)
-        .unwrap()
-        .join(format!("klad{}", std::env::consts::EXE_SUFFIX));
+    let draw = crate::start::test_binary();
     let size = std::env::var("KLAD_HEAVY_SIZE").unwrap_or_else(|_| "2048".into());
     let made = std::process::Command::new(&draw)
         .args(["stress", stress.to_str().unwrap(), "--frames", "12", "--size", &size])
@@ -4963,12 +4952,7 @@ fn checked_audit(h: &mut Harness<'static, Editor>) {
 fn heavy_edits_and_revisits_keep_the_ui_free() {
     let stress = std::env::temp_dir().join(format!("draw-ui-heavy-edit-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stress);
-    let exe = std::env::current_exe().unwrap();
-    let draw = exe
-        .parent()
-        .and_then(Path::parent)
-        .unwrap()
-        .join(format!("klad{}", std::env::consts::EXE_SUFFIX));
+    let draw = crate::start::test_binary();
     let size = std::env::var("KLAD_HEAVY_SIZE").unwrap_or_else(|_| "2048".into());
     let made = std::process::Command::new(&draw)
         .args(["stress", stress.to_str().unwrap(), "--frames", "12", "--size", &size])

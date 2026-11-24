@@ -1321,8 +1321,11 @@ mod tests {
         let written = std::fs::read_to_string(&config).unwrap();
         assert!(written.contains("\"klad\""), "{written}");
         assert!(
-            h.query_by_label_contains("Connected. Quit Claude Desktop (cmd Q) and open it again")
-                .is_some(),
+            h.query_by_label_contains(&format!(
+                "Connected. {}",
+                crate::connect::capital(klad_mcp::App::ClaudeDesktop.next_step())
+            ))
+            .is_some(),
             "the row says it is connected and what finishes it"
         );
         let places = klad_mcp::Places {

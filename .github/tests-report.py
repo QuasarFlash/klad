@@ -4,6 +4,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 MOST = 10
+SHOWN = 4000
 LONGEST = 60000
 
 
@@ -21,6 +22,11 @@ def output(case):
     said = [failure.get("message", "") if failure is not None else ""]
     said += [case.findtext(tag) or "" for tag in ("failure", "system-out", "system-err")]
     return "\n".join(s.strip() for s in said if s.strip())
+
+
+def excerpt(said, room):
+    start = said.find("panicked at")
+    return said[start : start + room] if start >= 0 else said[-room:]
 
 
 def chunks(items, count):
@@ -47,7 +53,7 @@ def without_results(system, log):
         say("error", f"{system} build", e)
     if failed:
         say("error", f"{system} tests that failed", "\n".join(f.strip() for f in failed))
-    say("error", f"{system} the end of the test log", text[-LONGEST:])
+    say("error", f"{system} the end of the test log", text[-SHOWN:])
     summary([f"### {system}: no JUnit file", "", "```", *errors, *failed, "```"])
 
 
@@ -68,12 +74,12 @@ def main(system, junit, log):
     ]
     if failed:
         groups = chunks(failed, MOST)
-        each = LONGEST // max(len(g) for g in groups)
+        each = SHOWN // max(len(g) for g in groups) - 120
         for group in groups:
             say(
                 "error",
                 f"{system} tests failed: " + ", ".join(name.split("::")[-1] for name, _ in group),
-                "\n\n".join(f"#### {name}\n{said[-each:]}" for name, said in group),
+                "\n\n".join(f"#### {name}\n{excerpt(said, each)}" for name, said in group),
             )
     if flaky:
         say("warning", f"{system} flaky tests, passed on a retry", "\n".join(flaky))
