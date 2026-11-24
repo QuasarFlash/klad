@@ -31,14 +31,11 @@ app:
 dist target=`rustc -vV | sed -n 's/^host: //p'`:
     bash packaging/archive.sh {{target}}
 
-itch-mac:
-    test -n "${ITCH_TARGET:-}" || { echo "set ITCH_TARGET to the itch.io page, for example indicode/klad" >&2; exit 1; }
-    KLAD_MAC_TARGETS="aarch64-apple-darwin x86_64-apple-darwin" bash packaging/macos/app.sh
-    rm -rf dist/itch-mac && mkdir -p dist/itch-mac && cp -R dist/klad.app dist/itch-mac/
-    butler push dist/itch-mac "$ITCH_TARGET:mac" --userversion "$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-
 icon: compile
     KLAD={{klad}} bash packaging/icon/build.sh
+
+hello: compile
+    KLAD={{klad}} bash packaging/icon/hello.sh "$(mktemp -d)"
 
 formats version: compile
     bash packaging/formats.sh {{klad}} {{version}}
@@ -88,6 +85,12 @@ drag-time bundle="":
 journeys out="":
     cargo build -p klad-cli
     KLAD_JOURNEY_OUT={{out}} cargo test -p klad-app -- journeys
+
+notes version:
+    @bash packaging/notes.sh {{version}}
+
+memory sizes="4096 8192 16384": compile
+    @bash packaging/memory.sh {{klad}} "{{sizes}}"
 
 monkey out="":
     cargo build -p klad-cli

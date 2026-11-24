@@ -1,5 +1,5 @@
 klad: the parts under the MIT License
-Copyright (c) 2026 Indicode BV
+Copyright (c) 2026 Indicode
 
 These parts of klad describe and drive it, so that any program or agent can
 read, write and make klad drawings without the app's licence. Unlike the rest
@@ -14,7 +14,7 @@ of klad (see LICENSE), they are licensed under the MIT License below:
 
 MIT License
 
-Copyright (c) 2026 Indicode BV
+Copyright (c) 2026 Indicode
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

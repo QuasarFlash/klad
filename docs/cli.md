@@ -12,6 +12,8 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad pixelize`](#klad-pixelize): Make pixels of a picture or of a painted or vector layer
 - [`klad new`](#klad-new): Create an empty bundle with paint layers
 - [`klad canvas`](#klad-canvas): The canvas: its size and background, whether it wraps at its edges, and the size of its tiles
+- [`klad grid`](#klad-grid): The grid: its spacing, offset, look, and whether it shows and snaps
+- [`klad guides`](#klad-guides): Guides: level and upright lines to snap to, and drawing guides (perspective, rulers, ellipses) the brush follows
 - [`klad frames`](#klad-frames): Exposure sheet: a row per frame, a column per layer (top first)
 - [`klad frame`](#klad-frame): Insert or remove frames in every layer or the listed ones
 - [`klad arcs`](#klad-arcs): Track marks, parts or points across frames: positions, spacing, ground contacts, feet crossing
@@ -35,6 +37,11 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad set`](#klad-set): Change properties: klad set art.klad n4 fill=#ff0000 transform.rotate=15 (null removes)
 - [`klad recolour`](#klad-recolour): Recolour strokes and fills together: the group moves to the colour and each keeps its own lighter or darker shade
 - [`klad detach`](#klad-detach): Detach eraser, smudge and blender strokes from the marks they are attached to
+- [`klad merge`](#klad-merge): Merge layers into the lowest of them, or every visible layer into one picture
+- [`klad ungroup`](#klad-ungroup): Take a group apart: its layers go where it was
+- [`klad style`](#klad-style): Give shapes the look of another: its fill, outline and opacity
+- [`klad combine`](#klad-combine): Unite, subtract, intersect or exclude shapes into one path
+- [`klad order`](#klad-order): Put shapes, strokes or fills in front of or behind the others on their layer
 - [`klad align`](#klad-align): Align shapes to each other, the canvas or one shape, or spread them evenly
 - [`klad rm`](#klad-rm): Remove layers, cels or nodes
 - [`klad transform`](#klad-transform): Move, rotate or scale strokes and fills (<cel>:s<id>), or a whole layer or group (--layer)
@@ -72,9 +79,11 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad check`](#klad-check): Look over pixel art: stray pixels, doubled corners, jagged lines, banding, colours off the palette
 - [`klad palettes`](#klad-palettes): The palettes that come with klad, to load with klad palette <bundle> --load <name>
 - [`klad export`](#klad-export): Export PNGs, sprite sheets, numbered frames or a Godot SpriteFrames and scene
-- [`klad brushes`](#klad-brushes): List brushes: the library, and with a bundle the ones it embeds
+- [`klad brushes`](#klad-brushes): List brushes: the library, and with a bundle the ones it embeds; keep your own brushes for every drawing
 - [`klad effect`](#klad-effect): List, add or remove a layer's effects: klad effect art.klad l3 glow radius=24 color=#ffd080
 - [`klad reshape`](#klad-reshape): Bend a brush stroke along a new path; it keeps its pressure, tilt and timing (klad strokes --json gives each stroke's fitted path)
+- [`klad save-as`](#klad-save-as): Save a copy of a drawing under a new name (everything but its undo history); the copy gets its own ids
+- [`klad rename`](#klad-rename): Rename a drawing (its folder); an editor that has it open goes on in it
 - [`klad undo`](#klad-undo): Undo the last change (from the CLI or the editor)
 - [`klad redo`](#klad-redo): Redo the last undone change
 - [`klad log`](#klad-log): Recent changes, newest first
@@ -84,6 +93,7 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad info`](#klad-info): Paint cels with stroke counts and file sizes
 - [`klad repair`](#klad-repair): Give every layer, drawing or shape whose id is used twice (after a merge) a new id, moving its files along
 - [`klad strokes`](#klad-strokes): List the strokes and fills of a paint layer's cel at a frame
+- [`klad preview`](#klad-preview): Write the pictures Finder shows for a drawing: space shows QuickLook/Preview.png, icons QuickLook/Thumbnail.png
 - [`klad hash`](#klad-hash): Print pixel hashes, for comparing macOS and Linux renders
 - [`klad demo`](#klad-demo): Write a sample bundle (vector sky and hills, painted glow, clouds, hatching, grass)
 - [`klad stress`](#klad-stress): Create a large bundle of synthetic paint layers for editor performance tests
@@ -97,6 +107,7 @@ This reference is licensed under the MIT License (`LICENSE-MIT`), unlike klad it
 - [`klad updates`](#klad-updates): Check now whether a newer klad is out (the editor also checks once a day by itself)
 - [`klad bench`](#klad-bench): Measure stroke storage, brush speed, replay, cache and compositing
 - [`klad open`](#klad-open): Open the editor, on a bundle or on the start window (new, open, recent)
+- [`klad mcp`](#klad-mcp): Serve klad to agent apps such as Claude Desktop and Codex (MCP), or connect klad to one
 
 ## klad import
 
@@ -108,8 +119,12 @@ Make a klad drawing from an Aseprite file (.aseprite or .ase), or a pixel drawin
   klad import sprite.png                      (a picture of 512 px or less a side, at its own size)
   klad import sprite@8x.png --size 32         (shrunk to 32 px on its longest side)
   klad import photo.jpg --size 64 --colors 16
+  klad import photo.jpg                       (larger than 512 px: a painting drawing of its size with the picture on a layer)
+  klad import --clipboard                     (the picture copied in another app: pasted.klad here)
+  klad import logo.svg                        (an SVG: a drawing of its size, a vector layer for each of its groups)
+  klad import logo.svg --into art.klad        (its layers added to a drawing you have)
 
-A picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.
+A picture larger than 512 px a side, without --size or --colors, or any picture with --painting, makes a painting drawing of its size: the picture on a layer at the bottom and a paint layer over it. Otherwise a picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.
 
 From an Aseprite file, what comes over: image layers as pixel layers with their name, visibility, opacity and blend mode, groups as groups, every cel as a drawing on its frame (linked cels stay linked), the palette with its names, and tags as clips. Frame times become whole frames: a file of 100 ms frames is 10 frames a second, and a frame shown for 300 ms holds for three. Indexed, grey and RGBA files all open; every pixel is bound to its palette colour, and colours a file uses outside its palette are added to it.
 
@@ -117,13 +132,40 @@ What does not: tilemap layers, tilesets and slices are left out, a tag that play
 
 klad export art.klad --aseprite writes a drawing's pixel layers back to an Aseprite file.
 
-Usage: klad import [OPTIONS] <FILE>
+Usage: klad import [OPTIONS] [FILES]...
 
 Arguments:
-  <FILE>
-
+  [FILES]...
+          The file: a PSD, an SVG, an Aseprite file or a picture; several pictures or a folder of them come in as frames
 
 Options:
+      --clipboard
+          The picture on the clipboard, copied in another app (the drawing is pasted.klad here unless -o names it)
+
+      --painting
+          A picture: a painting drawing with the picture on a layer, whatever its size (pictures larger than 512 px come in that way already)
+
+      --into <BUNDLE>
+          Add to this drawing instead of making one: an SVG's shapes (a vector layer for each group), or frames (a new layer with a cel per frame and a clip)
+
+          [alias: --to]
+
+      --cell <WxH>
+          A sprite sheet: cut it into cells of this size, each a frame (empty cells are skipped)
+
+      --grid <COLSxROWS>
+          A sprite sheet: cut it into this many columns and rows, each a frame
+
+      --padding <PADDING>
+          A sprite sheet: px between the cells
+
+          [default: 0]
+
+      --margin <MARGIN>
+          A sprite sheet: px around the cells, at the sheet's edges
+
+          [default: 0]
+
       --size <SIZE>
           A picture: its longest side in pixels once it is pixel art, 1 to 512 (needed when the picture is larger)
 
@@ -270,7 +312,17 @@ A drawing can also be cut into tiles of one size, a tileset: --tile 16 (or 16x24
   klad pixels tiles.klad l1 --tile 2,0 --plain
   klad export tiles.klad --tileset ../game/art
 
-As an op: {"op":"canvas","wrap":true}, {"op":"canvas","tile":16}, {"op":"canvas","tile":[16,24]}, {"op":"canvas","tile":null}.
+The whole drawing, with everything tied to its canvas (strokes, shapes, pixels, bones and their weights, light maps and lights, the Godot origin), one history step each:
+
+  klad canvas art.klad --size 2400,1600 --anchor top-left   (a bigger or smaller canvas; nothing scaled)
+  klad canvas art.klad --crop 100,80,1200,900
+  klad canvas art.klad --trim                                 (to what is drawn)
+  klad canvas art.klad --resize 0.5                           (a pixel drawing by whole numbers)
+  klad canvas art.klad --turn 90                              (-90, 180)
+  klad canvas art.klad --flip h                               (v)
+  klad canvas art.klad --paper '#f4efe6'                      (none: see-through)
+
+As an op: {"op":"canvas","wrap":true}, {"op":"canvas","tile":16}, {"op":"canvas","tile":[16,24]}, {"op":"canvas","tile":null}; {"op":"canvas","size":[w,h]} and {"op":"canvas","background":"#f4efe6"} set the size alone (without moving anything) and the paper.
 
 Usage: klad canvas [OPTIONS] <BUNDLE>
 
@@ -286,6 +338,190 @@ Options:
 
       --tile <SIZE>
           Cut the drawing into tiles of this size, 16 or 16x24 (off: no tiles); the canvas has to be a whole number of tiles each way
+
+      --size <W,H>
+          A bigger or smaller canvas around the drawing, kept in place by --anchor; nothing is scaled
+
+      --anchor <ANCHOR>
+          With --size: where the drawing stays: top-left, top, top-right, left, center, right, bottom-left, bottom, bottom-right
+
+          [default: center]
+
+      --crop <X,Y,W,H>
+          Keep only this area: it becomes the canvas; an area past the edges (x or y below 0, or wider than the canvas) grows it
+
+      --trim
+          Crop to what is drawn on the visible layers
+
+      --resize <FACTOR>
+          Scale the whole drawing, 2 or 0.5 (a pixel drawing by whole numbers): strokes and shapes stay sharp
+
+      --turn <TURN>
+          Turn the whole drawing: 90 (right), -90 (left) or 180
+
+          [possible values: 90, -90, 180]
+
+      --flip <FLIP>
+          Mirror the whole drawing: h (left to right) or v (upside down)
+
+          [possible values: h, v]
+
+      --paper <COLOUR>
+          The paper colour, #f4efe6, or none for a see-through paper
+
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad grid
+
+```text
+The grid over the drawing: its spacing across and down, a stronger line every few lines, where it starts, square or isometric (2:1 for pixel art), its colour and opacity, and two switches: whether it shows in the editor and whether things snap (to the grid, the guides, and other shapes' edges and centres). A drawing cut into tiles starts with the tile size. Without flags it prints the grid. One history step.
+
+  klad grid art.klad --every 16 --sub 4 --show on --snap on
+  klad grid art.klad --every 32,16 --iso
+  klad grid art.klad --off
+
+As an op: {"op":"grid","every":16,"sub":4,"show":true,"snap":true}.
+
+Usage: klad grid [OPTIONS] <BUNDLE>
+
+Arguments:
+  <BUNDLE>
+
+
+Options:
+      --every <PX[,PX]>
+          The spacing, across and down (one number for both)
+
+      --sub <SUB>
+          A stronger line every this many lines (0: none)
+
+      --offset <X,Y>
+          Where the grid starts
+
+      --iso <ISO>
+          Isometric (2:1) instead of square
+
+          [possible values: on, off]
+
+      --colour <COLOUR>
+          The grid's colour, #4f8fe8
+
+      --opacity <OPACITY>
+          The grid's opacity, 0 to 1
+
+      --show <SHOW>
+          Show the grid in the editor
+
+          [possible values: on, off]
+
+      --snap <SNAP>
+          Snap to the grid, the guides and other shapes
+
+          [possible values: on, off]
+
+      --off
+          No grid
+
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad guides
+
+```text
+Guides: upright lines at x and level lines at y, in canvas px, kept in the drawing. Things snap to them when snapping is on (klad grid --snap on). Without flags it lists them. One history step.
+
+  klad guides art.klad --x 120 --x 480 --y 64
+  klad guides art.klad --rm-x 120
+  klad guides art.klad --clear
+  klad guides art.klad --locked on --hidden off
+
+Drawing guides are what the brush follows while painting in the editor (and klad stroke --follow): one, two or three vanishing points, a ruler line, an ellipse. A stroke runs to the vanishing point it heads for (or stays level or upright), along a ruler (on it when it starts near it, parallel when not), round the ellipse or one of its shape through where it starts.
+
+  klad guides art.klad --perspective -400,300,2400,300 --follow on
+  klad guides art.klad --ruler 100,500,900,420
+  klad guides art.klad --ellipse 512,512,300,120,15
+  klad guides art.klad --rm-guide 0
+
+As an op: {"op":"guides","x":[120,480],"y":[64]}, with "rmX", "rmY", "clear", "hidden", "locked" and "snap"; drawing guides: {"op":"assists","add":[{"kind":"perspective","points":[[-400,300],[2400,300]]}],"on":true}, with "remove" (numbers) and "clear".
+
+Usage: klad guides [OPTIONS] <BUNDLE>
+
+Arguments:
+  <BUNDLE>
+
+
+Options:
+      --x <X>
+          An upright guide at this x (repeat for more)
+
+      --y <Y>
+          A level guide at this y (repeat for more)
+
+      --rm-x <RM_X>
+          Take the upright guide at this x away
+
+      --rm-y <RM_Y>
+          Take the level guide at this y away
+
+      --clear
+          Take every guide away
+
+      --hidden <HIDDEN>
+          Hide the guides in the editor (they do not snap while hidden)
+
+          [possible values: on, off]
+
+      --locked <LOCKED>
+          Lock the guides so they cannot be dragged
+
+          [possible values: on, off]
+
+      --perspective <X,Y[,X,Y[,X,Y]]>
+          A drawing guide: perspective with one, two or three vanishing points
+
+      --ruler <X0,Y0,X1,Y1>
+          A drawing guide: a ruler line strokes run along
+
+      --ellipse <CX,CY,RX,RY[,TURN]>
+          A drawing guide: an ellipse strokes go round (turn in degrees)
+
+      --rm-guide <N>
+          Take drawing guide N away (0 is the first; klad guides lists them)
+
+      --clear-drawing-guides
+          Take every drawing guide away
+
+      --follow <FOLLOW>
+          Whether the brush follows the drawing guides in the editor
+
+          [possible values: on, off]
 
       --render
           Render a preview after the edit and print its path
@@ -1186,7 +1422,7 @@ Arguments:
           layer, cel, mask, rect, ellipse, path, group, rays, image, scatter, repeat, mirror or text
 
   [REST]...
-          For layers the kind first (paint, pixel, vector, group, bones, image with src=photo.jpg, or adjust and its type: hsl, levels, curves, balance, gradient-map, fill), then key=value pairs
+          For layers the kind first (paint, pixel, vector, group, bones, image with src=photo.jpg or src=clipboard, or adjust and its type: hsl, levels, curves, balance, gradient-map, fill), then key=value pairs
 
 Options:
       --in <INTO>
@@ -1338,6 +1574,210 @@ Arguments:
 
 
 Options:
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad merge
+
+```text
+Merge layers of one kind into the lowest of them, frame by frame: paint into paint keeps the strokes and fills as they are, pixel into pixel the pixels, vector into vector the shapes (in a group that keeps the layer's opacity). A see-through upper layer's opacity goes onto each of its strokes, so where they overlap they look a little stronger. Strokes and fills painted with lock alpha stay on the paint of their own layer: where one would now reach the paint of a layer under it, it gets a cut along its layer's edge. Layers of different kinds, with masks, clipping, blend modes, effects or animated keys, or in different groups, are refused with the reason. One history step.
+
+  klad merge art.klad lines ink            (ink merges into lines, the lower of the two)
+  klad merge art.klad --down ink           (ink merges into the layer under it)
+  klad merge art.klad --visible            (every visible layer: merged as above when they can be, else one picture on a vector layer named merged)
+
+Usage: klad merge [OPTIONS] <BUNDLE> [LAYERS]...
+
+Arguments:
+  <BUNDLE>
+
+
+  [LAYERS]...
+
+
+Options:
+      --down <LAYER>
+          Merge this layer into the one under it
+
+      --visible
+          Every visible layer that is not a reference
+
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad ungroup
+
+```text
+Take a group apart: its layers take its place, in the same order, and the group is gone. A see-through group passes its opacity on to each layer, a hidden one hides them; its blend mode, mask and effects go, and the command says so. One history step.
+
+  klad ungroup art.klad trees
+
+Usage: klad ungroup [OPTIONS] <BUNDLE> <GROUP>
+
+Arguments:
+  <BUNDLE>
+
+
+  <GROUP>
+
+
+Options:
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad style
+
+```text
+Give shapes the look of another shape: its fill (colour or gradient), its outline (colour, width, ends, joins and dashes) and its opacity. One history step.
+
+  klad style art.klad n4 n7 n9        (n7 and n9 take the look of n4)
+
+Also a style op: {"op":"style","from":"n4","ids":["n7","n9"]}.
+
+Usage: klad style [OPTIONS] <BUNDLE> <FROM> <IDS>...
+
+Arguments:
+  <BUNDLE>
+
+
+  <FROM>
+
+
+  <IDS>...
+
+
+Options:
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad combine
+
+```text
+Combine two shapes or more of one vector layer into one path, as their outlines overlap: --unite takes all of them, --subtract takes the shapes in front away from the one at the back, --intersect keeps where they all overlap, --exclude where an odd number of them do. The path takes the place, fill, outline and opacity of the shape at the back, and the shapes are gone. Rectangles, ellipses, paths and text combine; groups do not. One history step.
+
+  klad combine art.klad n3 n4 --unite
+  klad combine art.klad n3 n4 n5 --subtract
+
+Usage: klad combine [OPTIONS] <BUNDLE> <IDS>...
+
+Arguments:
+  <BUNDLE>
+
+
+  <IDS>...
+
+
+Options:
+      --unite
+
+
+      --subtract
+
+
+      --intersect
+
+
+      --exclude
+
+
+      --render
+          Render a preview after the edit and print its path
+
+      --scale <SCALE>
+          Preview scale (default: longest side 1024 px)
+
+      --json
+          Print the result as JSON
+
+      --overlay <OVERLAY>
+          Draw on the preview: ids, bbox, grid or all (comma separated)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad order
+
+```text
+Put shapes, strokes or fills in front of or behind the others on their layer. Shapes are the nodes of a vector layer (they change places among the shapes of their drawing or group); strokes and fills are <cel>:s<id> and change places among the marks of their drawing, with the erasers and smudges attached to them. --front and --back go all the way; --up and --down go one place, past the next shape, or for marks past the next mark they overlap. Several things keep their order among themselves. One history step.
+
+  klad order art.klad n4 --front
+  klad order art.klad c9:s12 c9:s13 --down
+
+Usage: klad order [OPTIONS] <BUNDLE> [IDS]...
+
+Arguments:
+  <BUNDLE>
+
+
+  [IDS]...
+
+
+Options:
+      --front
+          In front of everything on the layer
+
+      --back
+          Behind everything on the layer
+
+      --up
+          One place nearer the front
+
+      --down
+          One place further back
+
       --render
           Render a preview after the edit and print its path
 
@@ -1525,6 +1965,10 @@ Select the strokes and fills of a paint layer inside a polygon and move, turn, s
   klad lasso art.klad l3 --polygon '...' --cut --rotate 15 --scale 1.2
   klad lasso art.klad l3 --polygon '...' --flip h
   klad lasso art.klad l3 --polygon '...' --cut --rm
+  klad lasso art.klad l3 --ellipse 100,100,300,200 --move 40,0
+  klad lasso art.klad l3 --at 220,180 --tolerance 0.2 --rm
+
+--box and --ellipse take a box (x,y,w,h) in place of the polygon. --at is a magic wand: it takes the area of one colour around that point of the layer, up to where the colour changes by more than --tolerance (0 to 1), and cuts what crosses its edge, so the parts inside are taken.
 
 Also a lasso op in klad apply: {"op":"lasso","layer":"l3","polygon":[[100,100],[400,120],[380,400]],"cut":true,"x":60,"y":-20} (or "rm":true).
 
@@ -1540,6 +1984,17 @@ Arguments:
 Options:
       --polygon <POLYGON>
           x,y pairs separated by spaces
+
+      --ellipse <X,Y,W,H>
+          The ellipse that fits this box, in place of a polygon
+
+      --at <X,Y>
+          A magic wand: the area of one colour around this point on the layer, up to its edge (takes the parts inside, as --cut)
+
+      --tolerance <TOLERANCE>
+          With --at: how far a colour may be from the one at the point, 0 to 1
+
+          [default: 0.1]
 
       --box <X,Y,W,H>
           A box in place of a polygon: its top left pixel and its size in pixels
@@ -1643,7 +2098,7 @@ Options:
 
 
       --convert
-          Turn a rect or ellipse into a path without other changes
+          Turn a rect or ellipse into a path without other changes, or a text into the paths of its letters
 
       --render
           Render a preview after the edit and print its path
@@ -1865,8 +2320,11 @@ Paint with a brush along an SVG path (M, L, H, V, C, S, Q, T, Z; several subpath
   klad stroke art.klad l3 --brush ink --size 14 --color #1b1b1b --path 'M100 400 C 300 200 500 600 700 400' --pressure 0.1,1,0.05
   klad stroke art.klad l3 --brush ink --size 6 --taper 12,30 --path 'M100 100 Q 200 40 300 120'
   klad stroke art.klad l3 --points '10,10,0.5 40,30,1 80,35,0.2'
+  klad stroke art.klad l3 --brush pencil --size 4 --line 100,100,400,100
+  klad stroke art.klad l3 --rect 40,40,200,120
+  klad stroke art.klad l3 --ellipse 40,40,200,120
 
-Pressure is spread evenly along the stroke. --taper thins the first and last px of the line whatever the pressure. Brushes are a bundle brush id or a library brush (klad brushes). Strokes are marked as agent strokes.
+--line paints a straight stroke between two points; --rect and --ellipse paint around a rectangle, or the ellipse that fits that box, with the brush: paint, not shapes. Pressure is spread evenly along the stroke. --taper thins the first and last px of the line whatever the pressure. Brushes are a bundle brush id or a library brush (klad brushes). Strokes are marked as agent strokes.
 
 Usage: klad stroke [OPTIONS] <BUNDLE> <LAYER>
 
@@ -1883,6 +2341,18 @@ Options:
 
       --points <POINTS>
           x,y,pressure triples separated by spaces
+
+      --line <X0,Y0,X1,Y1>
+          A straight stroke between two points
+
+      --rect <X,Y,W,H>
+          A stroke around a rectangle, painted with the brush
+
+      --ellipse <X,Y,W,H>
+          A stroke around the ellipse that fits this box, painted with the brush
+
+      --follow
+          Bend --points or --line onto the drawing's guides (klad guides --perspective, --ruler, --ellipse), as the brush follows them in the editor
 
       --brush <BRUSH>
           [default: ink]
@@ -3085,6 +3555,24 @@ Options:
       --smooth
 
 
+      --mode <MODE>
+          What --set dabs do: paint toward the weight (the default), add it, remove it, or smooth under the brush
+
+          [possible values: paint, add, remove, smooth]
+
+      --strength <STRENGTH>
+          How far one dab moves toward its weight, 0 to 1 (0.1 builds up over dabs)
+
+          [default: 1]
+
+      --hardness <HARDNESS>
+          How hard the dab's edge is, 0 (soft) to 1
+
+          [default: 0]
+
+      --at <X,Y>
+          With --bone: print that bone's weight at this point (painted and used)
+
       --frame <FRAME>
           [default: 0]
 
@@ -3795,6 +4283,45 @@ Options:
       --references
           Keep reference layers (photos to trace over), which exports leave out
 
+      --clipboard
+          Put the picture on the clipboard, for pasting in another app, instead of writing a file
+
+      --svg
+          An SVG: the vector layers as shapes, each layer a group; paint and pixel layers as pictures in it unless --vectors-only. With --frames, an SVG per frame
+
+      --vectors-only
+          With --svg: leave paint and pixel layers out
+
+      --outline-text
+          With --svg: text as the paths of its letters, for apps without the font
+
+      --only <ONLY>
+          Only these, cut to them: shapes by id, or strokes as <cel>:s<id> (a selection), comma separated; with --svg shapes only
+
+      --format <FORMAT>
+          png, jpeg, webp, tiff, pdf or mp4 (default: from the -o file's extension, else png)
+
+      --quality <1-100>
+          JPEG, WebP and MP4 quality (default 90; 80 for MP4)
+
+      --lossless
+          With --format webp: keep every pixel exactly
+
+      --matte <COLOUR>
+          What shows where the picture is transparent in a JPEG or an MP4 (default white; --background gives the canvas colour)
+
+      --animated [<FRAMES>]
+          With --format webp: an animated WebP of these frames: all (one per clip), a clip or a range; an MP4 always plays them (default all)
+
+      --dpi <DPI>
+          With --format pdf: the drawing's pixels per inch on the page (default 72: a pixel is a point)
+
+      --paper <PAPER>
+          With --format pdf: fit the picture on a paper: a3, a4, a5, letter, legal or tabloid, with ,landscape
+
+      --pages <FRAMES>
+          With --format pdf: a page for each of these frames (all, a clip, a range), or clips for a page per clip
+
       --sheet <SHEET>
           Sprite sheet and Aseprite JSON: all, a clip or a range like 0-11
 
@@ -3874,6 +4401,16 @@ List brushes: the built-in library, and with a bundle the brushes it embeds (a d
   klad brushes art.klad
   klad brushes art.klad --show ink
 
+Your brushes are kept in your support folder (KLAD_LIBRARY overrides it) and shown in every drawing's brush tiles. A drawing that uses one keeps its own copy, so it renders the same where your brushes are missing. klad stroke --brush takes them too.
+
+  klad brushes art.klad --save wet-ink [--as wet]
+  klad brushes --library
+  klad brushes new.klad --take wet-ink
+  klad brushes --rename wet-ink 'wet ink' --group wet-ink inks --move wet-ink -1
+  klad brushes --forget wet-ink
+  klad brushes --export-library inks.json
+  klad brushes --import-library inks.json
+
 Usage: klad brushes [OPTIONS] [BUNDLE]
 
 Arguments:
@@ -3892,6 +4429,36 @@ Options:
 
       --picture <NAME> <PNG>
           Add a picture (tip or texture) to the bundle's brushes/images
+
+      --library
+          List your brushes, the ones every drawing shows
+
+      --save <ID>
+          Save the bundle's brush in your brushes
+
+      --as <ID>
+          Save it under this id
+
+      --take <ID>
+          Give the bundle its own copy of one of your brushes
+
+      --forget <ID>
+          Take a brush out of your brushes (drawings keep their copy)
+
+      --rename <ID> <NAME>
+          Rename one of your brushes
+
+      --group <ID> <GROUP>
+          Put one of your brushes in a group ('' for none)
+
+      --move <ID> <BY>
+          Move one of your brushes up (negative) or down the list
+
+      --export-library <FILE>
+          Write your brushes, with their pictures, to one file to share
+
+      --import-library <FILE>
+          Add the brushes of a shared file to your brushes
 
   -h, --help
           Print help (see a summary with '-h')
@@ -3969,6 +4536,49 @@ Options:
 
   -h, --help
           Print help
+```
+
+## klad save-as
+
+```text
+Save a copy of a drawing under a new name, next to it unless the name has a folder. Everything outside .cache is copied; the copy starts with no undo history and gets ids of its own when it is first opened, so the two can be edited side by side and merged in git.
+
+  klad save-as art.klad art-v2
+  klad save-as art.klad ../shared/art.klad
+
+Usage: klad save-as <BUNDLE> <TO>
+
+Arguments:
+  <BUNDLE>
+
+
+  <TO>
+          The copy's name or path (.klad is added)
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## klad rename
+
+```text
+Rename a drawing's folder, next to it unless the name has a folder. The undo history and pinned notes go with it. An editor that has it open follows it.
+
+  klad rename art.klad hero
+
+Usage: klad rename <BUNDLE> <TO>
+
+Arguments:
+  <BUNDLE>
+
+
+  <TO>
+          The new name or path (.klad is added)
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 ## klad undo
@@ -4187,6 +4797,32 @@ Options:
 
   -h, --help
           Print help
+```
+
+## klad preview
+
+```text
+Write the pictures Finder shows for a drawing: space shows QuickLook/Preview.png (up to 1024 px a side) and icons QuickLook/Thumbnail.png (up to 512). Both show frame 0, or the first frame of the first clip; a pixel drawing is enlarged by whole pixels so it stays sharp. The editor writes them in the background when a drawing closes or klad quits; this command is for drawings made without the editor. QuickLook/ stays out of git.
+
+  klad preview art.klad
+  klad preview a.klad b.klad --changed
+  klad preview --all ~/Drawings --changed
+
+Usage: klad preview [OPTIONS] [BUNDLES]...
+
+Arguments:
+  [BUNDLES]...
+
+
+Options:
+      --all <FOLDER>
+          Every drawing in a folder
+
+      --changed
+          Skip drawings that have not changed since their last preview
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 ## klad hash
@@ -4478,4 +5114,42 @@ Arguments:
 Options:
   -h, --help
           Print help
+```
+
+## klad mcp
+
+```text
+Serve klad to agent apps over the Model Context Protocol, or connect it to one. An agent app (Claude Desktop, the Codex app, Claude Code, Cursor, VS Code) starts `klad mcp` itself and paints and edits drawings through its tools: look, read, edit, run, new, note_done and open. The klad guide comes with it, as a prompt and a resource named klad. The agent works only on drawings in the drawings folder, the folders of recent drawings, the folders added in the editor (File > Connect an agent app) and the ones given with --root.
+
+  klad mcp --status                    (which agent apps are here, and which have klad)
+  klad mcp --install claude-desktop     (then quit Claude Desktop and open it again)
+  klad mcp --install codex
+  klad mcp --print cursor               (what --install writes, to add it by hand)
+  klad mcp --uninstall claude-desktop
+
+The editor does the same in File > Connect an agent app, without a terminal.
+
+Usage: klad mcp [OPTIONS]
+
+Options:
+      --root <FOLDER>
+          A folder the agent may work in, besides the drawings folder and the folders of recent drawings (repeat for more)
+
+      --install <APP>
+          Put klad in an agent app's settings: claude-desktop, codex, claude-code, cursor or vscode
+
+      --uninstall <APP>
+          Take klad out of an agent app's settings
+
+      --print <APP>
+          Print what --install writes, to add it by hand
+
+      --status
+          Which agent apps are on this computer, and which have klad
+
+      --client <APP>
+          The agent app starting this server (--install and the editor write it), so klad knows that app has started klad
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```

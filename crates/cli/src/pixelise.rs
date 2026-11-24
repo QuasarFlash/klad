@@ -210,7 +210,7 @@ fn fresh(target: &Path) -> Result<()> {
     }
 }
 
-fn finished(mut bundle: Bundle, ops: &[Op], target: &Path, what: &str) -> Result<Bundle> {
+pub(crate) fn finished(mut bundle: Bundle, ops: &[Op], target: &Path, what: &str) -> Result<Bundle> {
     let applied = bundle.apply(ops).and_then(|_| bundle.stamp("cli"));
     match applied {
         Ok(_) => Ok(bundle),
@@ -221,11 +221,93 @@ fn finished(mut bundle: Bundle, ops: &[Op], target: &Path, what: &str) -> Result
     }
 }
 
-pub fn import(file: &Path, ask: &Ask, out: Option<PathBuf>) -> Result<PathBuf> {
-    checked(ask)?;
+pub(crate) fn keys_for(palette: &[Swatch], pictures: &[&Picture], notes: &mut Vec<String>) -> Vec<(String, [u8; 3])> {
+    chosen(
+        palette,
+        pictures,
+        &Ask {
+            size: None,
+            colors: None,
+        },
+        UNASKED,
+        notes,
+    )
+}
+
+pub(crate) fn marks_of(
+    layer: &str,
+    frame: u32,
+    picture: &Picture,
+    keys: &[(String, [u8; 3])],
+    canvas: (u32, u32),
+) -> Vec<Op> {
+    marks(layer, frame, [0, 0], picture, keys, canvas)
+}
+
+pub fn import(file: &Path, ask: &Ask, out: Option<PathBuf>, painting: bool) -> Result<PathBuf> {
+    let picture = read(file)?;
     let target = out.unwrap_or_else(|| file.with_extension("klad"));
+    let name = file
+        .file_stem()
+        .map_or("picture".to_string(), |s| s.to_string_lossy().to_string());
+    import_picture(&picture, &name, ask, target, painting)
+}
+
+pub fn from_clipboard(ask: &Ask, out: Option<PathBuf>, painting: bool) -> Result<PathBuf> {
+    let picture = klad_render::clipboard::read()?;
+    let target = match out {
+        Some(out) => out,
+        None => (1..)
+            .map(|n| match n {
+                1 => PathBuf::from("pasted.klad"),
+                n => PathBuf::from(format!("pasted {n}.klad")),
+            })
+            .find(|p| !p.exists())
+            .unwrap_or_else(|| PathBuf::from("pasted.klad")),
+    };
+    import_picture(&picture, "pasted", ask, target, painting)
+}
+
+fn painted(picture: &Picture, name: &str, target: &Path) -> Result<PathBuf> {
+    let bundle = Bundle::blank(
+        target,
+        &Blank {
+            width: picture.width,
+            height: picture.height,
+            ..Blank::default()
+        },
+        "cli",
+    )?;
+    let png = klad_render::clipboard::png(picture);
+    let (src, w, h) = klad_render::assets::import_image(target, &png)?;
+    let layer = json!({
+        "kind": "vector",
+        "name": name,
+        "cels": [{"frame": 0, "nodes": [{"type": "image", "src": src, "x": 0, "y": 0, "w": w, "h": h}]}],
+    });
+    let ops = [Op::AddLayer {
+        layer,
+        place: klad_core::ops::Place {
+            index: Some(0),
+            ..Default::default()
+        },
+    }];
+    let bundle = finished(bundle, &ops, target, &format!("bringing in {name}"))?;
+    eprintln!(
+        "{}x{}, the picture on a layer of its own under a paint layer",
+        bundle.doc.canvas.width, bundle.doc.canvas.height
+    );
+    Ok(target.to_path_buf())
+}
+
+pub fn import_picture(picture: &Picture, name: &str, ask: &Ask, target: PathBuf, painting: bool) -> Result<PathBuf> {
+    checked(ask)?;
     fresh(&target)?;
-    let picture = sized(&read(file)?, ask)?;
+    let large = picture.width.max(picture.height) > MOST_SIDE;
+    if painting || (large && ask.size.is_none() && ask.colors.is_none()) {
+        return painted(picture, name, &target);
+    }
+    let picture = sized(picture, ask)?;
     let mut notes = Vec::new();
     let keys = chosen(&[], &[&picture], ask, UNASKED, &mut notes);
     let bundle = Bundle::blank(
@@ -240,7 +322,7 @@ pub fn import(file: &Path, ask: &Ask, out: Option<PathBuf>) -> Result<PathBuf> {
     )?;
     let layer = bundle.doc.layers[0].id.clone();
     let ops = marks(&layer, 0, [0, 0], &picture, &keys, (picture.width, picture.height));
-    let bundle = finished(bundle, &ops, &target, &format!("bringing in {}", file.display()))?;
+    let bundle = finished(bundle, &ops, &target, &format!("bringing in {name}"))?;
     eprintln!(
         "{}x{}, {} palette colours",
         bundle.doc.canvas.width,

@@ -887,6 +887,13 @@ fn a_few_seeds_keep_the_rules() {
 }
 
 #[test]
+fn selecting_all_frames_after_the_last_layer_is_gone_keeps_the_rules() {
+    let acts = [Act::Run(Cmd::DeleteLayer), Act::Run(Cmd::SelectAllFrames)];
+    let found = run(Paper::Sprite, &acts, "monkey-no-layer-frames", How::default());
+    assert!(found.is_ok(), "sprite seed 149 of the monkey: {found:?}");
+}
+
+#[test]
 fn what_the_agent_does_on_disk_reaches_the_editor() {
     let path = sample("monkey-agent");
     let mut h = harness(editor(&path), WINDOW);

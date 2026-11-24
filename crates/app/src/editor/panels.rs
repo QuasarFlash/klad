@@ -76,13 +76,14 @@ fn ago(at: Instant, now: Instant) -> String {
     }
 }
 
-const STRIP_TOOLS: [Cmd; 11] = [
+const STRIP_TOOLS: [Cmd; 12] = [
     Cmd::Brush,
     Cmd::Eraser,
     Cmd::Fill,
     Cmd::Strokes,
     Cmd::Shapes,
     Cmd::Points,
+    Cmd::CropTool,
     Cmd::Pen,
     Cmd::ShapeTool,
     Cmd::TextTool,
@@ -98,6 +99,11 @@ impl Editor {
     }
 
     pub(crate) fn frame(&mut self, ui: &mut egui::Ui) {
+        let focused = ui.input(|i| i.focused);
+        if focused && !self.window_focused {
+            self.yours.reload();
+        }
+        self.window_focused = focused;
         let start = Instant::now();
         let ctx = ui.ctx().clone();
         if !self.themed {
@@ -343,10 +349,9 @@ impl Editor {
                     .vertical_centered(|ui| {
                         ui.add_space(6.0);
                         STRIP_TOOLS.iter().for_each(|cmd| {
-                            let r = self.command_sized(ui, *cmd, None, icons.0, tool);
-                            self.key_letter(ui, r.rect, *cmd);
+                            self.command_sized(ui, *cmd, None, icons.0, tool);
                         });
-                        ui.add_space(4.0);
+                        ui.separator();
                         self.colour_pair(ui);
                         ui.separator();
                         [Cmd::Undo, Cmd::Redo].iter().for_each(|cmd| {
@@ -511,6 +516,7 @@ impl Editor {
             Cmd::AddFont,
             Cmd::CopyPath,
             Cmd::InstallCommand,
+            Cmd::ConnectAgent,
             Cmd::ReportProblem,
             Cmd::About,
         ]
@@ -563,7 +569,7 @@ impl Editor {
         let lines = LINES.get_or_init(|| klad_core::notices::NOTICES.lines().collect());
         ui.label(RichText::new(format!("klad {}", crate::VERSION)).strong());
         self.update_rows(ui);
-        ui.label("Source-available licence, copyright Indicode BV. Built on the open source work listed below; klad licences prints the same.");
+        ui.label("Source-available licence, copyright Indicode. The drawings you make are yours: you may sell them and use them in your own and your clients' commercial work. Built on the open source work listed below; klad licences prints the same.");
         ui.horizontal(|ui| {
             ui.hyperlink_to("klad.studio", klad_core::contact::SITE)
                 .hint("klad's website: the guides, what's new and your download");
@@ -674,30 +680,23 @@ impl Editor {
                 .layout(Flow::left_to_right(Align::Center)),
         );
         let caret = if collapsed { icon::FOLDED } else { icon::OPEN };
-        let toggle = child
-            .add(
-                egui::Button::new(RichText::new(caret).size(theme::ICON))
-                    .frame(false)
-                    .min_size(vec2(theme::TARGET, theme::TARGET)),
-            )
-            .hint(match collapsed {
+        let toggle = crate::widgets::icon_button(
+            &mut child,
+            caret,
+            match collapsed {
                 true => format!("open {}", pane.title()),
                 false => format!("fold {} to its title", pane.title()),
-            });
-        child.label(RichText::new(pane.title()).strong());
+            },
+        );
+        child.label(RichText::new(pane.title()).font(theme::medium(theme::BODY)));
         let mut close = false;
         child.with_layout(Flow::right_to_left(Align::Center), |ui| {
-            close = ui
-                .add(
-                    egui::Button::new(RichText::new(icon::CLOSE).size(theme::ICON))
-                        .frame(false)
-                        .min_size(vec2(theme::TARGET, theme::TARGET)),
-                )
-                .hint(format!("close {}; cmd K brings it back", pane.title()))
-                .clicked();
-            if pane == Pane::Layers && !collapsed {
-                self.check(|e| e.layer_header(ui));
-            }
+            close = crate::widgets::quiet_icon_button(
+                ui,
+                icon::CLOSE,
+                format!("close {}; cmd K brings it back", pane.title()),
+            )
+            .clicked();
         });
         if toggle.clicked() {
             match collapsed {
@@ -824,7 +823,7 @@ impl Editor {
         ui.horizontal_centered(|ui| {
             if self.settings.layout.hidden {
                 if ui
-                    .button(format!("{} show the panels (Tab)", icon::SIDEBAR))
+                    .add(egui::Button::new(format!("{} show the panels (Tab)", icon::SIDEBAR)).small())
                     .hint("the panels are hidden: this or Tab brings them back")
                     .clicked()
                 {
@@ -833,20 +832,24 @@ impl Editor {
                 ui.separator();
             }
             let frames = self.scene.bundle.doc.timeline.frames;
-            ui.label(RichText::new(format!("frame {} of {frames}", self.shown_frame())).strong());
+            ui.label(RichText::new(format!("frame {} of {frames}", self.shown_frame())).color(theme::WEAK));
             if self.timeline.player.is_some() {
                 ui.label(
                     RichText::new(format!("{} playing {}", icon::PLAY, self.timeline.playing)).color(theme::ACCENT),
                 );
             }
             ui.separator();
-            ui.label(self.draws_into());
+            ui.label(RichText::new(self.draws_into()).color(theme::WEAK));
+            if let Some(keys) = self.drag_keys() {
+                ui.separator();
+                ui.label(RichText::new(keys).color(theme::ACCENT));
+            }
             self.jobs.running(now).into_iter().for_each(|(id, name, took)| {
                 ui.separator();
-                ui.add(egui::Spinner::new().size(14.0));
+                ui.add(egui::Spinner::new().size(theme::ICON_SMALL));
                 ui.label(format!("{name} {:.1} s", took.as_secs_f32()));
                 if ui
-                    .add(egui::Button::new(icon::CLOSE).min_size(vec2(theme::TARGET, theme::TARGET)))
+                    .add(egui::Button::new(icon::CLOSE).min_size(vec2(theme::CONTROL, theme::CONTROL)))
                     .hint(format!("cancel {name}"))
                     .clicked()
                 {
@@ -855,13 +858,13 @@ impl Editor {
             });
             self.internal_work(now).into_iter().for_each(|what| {
                 ui.separator();
-                ui.add(egui::Spinner::new().size(14.0));
+                ui.add(egui::Spinner::new().size(theme::ICON_SMALL));
                 ui.label(what);
             });
             ui.with_layout(Flow::right_to_left(Align::Center), |ui| {
                 if let Some(view) = self.view {
                     let degrees = view.angle.to_degrees().rem_euclid(360.0);
-                    let flat = |text: String| egui::Button::new(RichText::new(text).color(theme::WEAK)).frame(false);
+                    let flat = |text: String| crate::widgets::ghost_button(RichText::new(text).color(theme::WEAK));
                     let zoom = ui
                         .add(flat(format!("{:.0}%", view.zoom * ui.ctx().pixels_per_point() * 100.0)))
                         .hint("zoom; click for 100%, double-click to fit the canvas");
@@ -989,7 +992,7 @@ impl Editor {
                         .add(
                             egui::Button::new(RichText::new(icon::CLOSE).size(theme::ICON))
                                 .frame(false)
-                                .min_size(vec2(theme::TARGET, theme::TARGET)),
+                                .min_size(vec2(theme::CONTROL, theme::CONTROL)),
                         )
                         .hint(format!("close {title}"))
                         .clicked()
@@ -1056,6 +1059,22 @@ impl Editor {
                 |ui| self.report_panel(ui),
             );
             self.windows.report &= open;
+        }
+        if self.windows.connect {
+            let mut open = true;
+            Self::window(
+                ctx,
+                "connect",
+                (format!("{} Connect an agent app", icon::LINK), Spot::Middle),
+                &mut open,
+                |ui| {
+                    ui.set_width(crate::connect::WIDTH);
+                    if self.connect.panel(ui, &mut self.settings) {
+                        self.settings_dirty = true;
+                    }
+                },
+            );
+            self.windows.connect &= open;
         }
         if self.windows.about {
             let mut open = true;
@@ -1181,6 +1200,51 @@ impl Editor {
                 |ui| self.check(|e| e.tiles_window(ui)),
             );
             self.windows.tiles &= open;
+        }
+        if self.windows.grid {
+            let mut open = true;
+            Self::window(
+                ctx,
+                "grid",
+                (format!("{} Grid", icon::PIXELS), Spot::Middle),
+                &mut open,
+                |ui| self.check(|e| e.grid_window(ui)),
+            );
+            self.windows.grid &= open;
+        }
+        if self.windows.assists {
+            let mut open = true;
+            Self::window(
+                ctx,
+                "drawing guides",
+                (format!("{} Drawing guides", icon::PERSPECTIVE), Spot::Middle),
+                &mut open,
+                |ui| self.check(|e| e.assists_window(ui)),
+            );
+            self.windows.assists &= open;
+        }
+        self.naming_window(ctx);
+        if self.windows.frames {
+            let mut open = true;
+            Self::window(
+                ctx,
+                "import frames",
+                (format!("{} Import frames", icon::IMAGE), Spot::Middle),
+                &mut open,
+                |ui| self.check(|e| e.frames_window(ui)),
+            );
+            self.windows.frames &= open;
+        }
+        if self.windows.canvas {
+            let mut open = true;
+            Self::window(
+                ctx,
+                "canvas",
+                (format!("{} Canvas", icon::SIZE), Spot::Middle),
+                &mut open,
+                |ui| self.check(|e| e.canvas_window(ui)),
+            );
+            self.windows.canvas &= open;
         }
         if self.windows.paintover {
             let mut open = true;
@@ -1371,7 +1435,7 @@ impl Editor {
                                         .color(colour_of(m.tone))
                                         .size(theme::ICON),
                                 );
-                                let words = WIDTH - theme::ICON - if sticky { theme::TARGET + 12.0 } else { 6.0 };
+                                let words = WIDTH - theme::ICON - if sticky { theme::CONTROL + 12.0 } else { 6.0 };
                                 ui.scope(|ui| {
                                     ui.set_max_width(words);
                                     ui.add(egui::Label::new(&m.text).wrap().selectable(false));
@@ -1379,7 +1443,8 @@ impl Editor {
                                 if sticky
                                     && ui
                                         .add(
-                                            egui::Button::new(icon::CLOSE).min_size(vec2(theme::TARGET, theme::TARGET)),
+                                            egui::Button::new(icon::CLOSE)
+                                                .min_size(vec2(theme::CONTROL, theme::CONTROL)),
                                         )
                                         .hint("dismiss; the message log keeps it")
                                         .clicked()
@@ -1463,7 +1528,7 @@ impl Editor {
                                 egui::Button::new(RichText::new(format!("{}  {}", spec.icon, spec.name)).color(colour))
                                     .right_text(RichText::new(self.bindings.label(*cmd)).color(theme::WEAK))
                                     .selected(i == state.selected)
-                                    .min_size(vec2(ui.available_width(), theme::TARGET)),
+                                    .min_size(vec2(ui.available_width(), theme::CONTROL)),
                             )
                             .hint(self.command_hint(*cmd));
                         if i == state.selected && (down || up) {

@@ -8,34 +8,80 @@ use std::path::Path;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct FirstSteps {
     pub open: bool,
-    pub drew: bool,
+    pub painted: usize,
+    pub erased: bool,
     pub filled: bool,
+    pub reshaped: bool,
     pub handed: bool,
 }
 
 pub(super) fn prompt(path: &Path) -> String {
     format!(
-        "I am drawing in klad; my drawing is {path}. Run `klad skill` and read it first. \
-         Then look at the drawing with `klad render \"{path}\"` and add a soft shadow under the shape I drew, on a new layer below it. \
-         I have the drawing open in the klad editor, so I see your edits as they land.",
+        "In my klad drawing {path}, change the stroke I have selected: make it deep blue and twice as thick. \
+         I have it open in klad, so I see the change as it lands.",
         path = path.display()
     )
 }
 
-fn step(ui: &mut egui::Ui, done: bool, number: &str, text: &str) {
+const STEPS: [(&str, &str); 6] = [
+    (
+        "Paint a closed shape with the brush (B)",
+        "A stone, a leaf, a cloud. A pen paints with its pressure; a mouse works too.",
+    ),
+    (
+        "Erase part of its line with the eraser (E)",
+        "Drag across the line, the way you painted it.",
+    ),
+    (
+        "Paint a second closed shape",
+        "Back to the brush with B, and paint it next to the first.",
+    ),
+    (
+        "Fill the second shape (G)",
+        "Pick the fill tool and click inside the shape.",
+    ),
+    (
+        "Reshape the first shape with edit points (A)",
+        "Click its line and drag one of its points. It is still a brush stroke, and the part you erased bends with it.",
+    ),
+    (
+        "Let your agent change it",
+        "With that stroke still picked, copy the request and paste it into a new chat with your agent app. The change shows up here as it lands.",
+    ),
+];
+
+impl FirstSteps {
+    fn ticks(&self) -> [bool; 6] {
+        [
+            self.painted >= 1,
+            self.erased,
+            self.painted >= 2,
+            self.filled,
+            self.reshaped,
+            self.handed,
+        ]
+    }
+}
+
+fn step(ui: &mut egui::Ui, done: bool, current: bool, number: usize, (title, detail): (&str, &str)) {
     ui.horizontal_top(|ui| {
-        let (mark, colour) = match done {
-            true => (icon::CHECK, theme::DONE),
-            false => (number, theme::TEXT),
+        let number = number.to_string();
+        let (mark, colour) = match (done, current) {
+            (true, _) => (icon::CHECK, theme::DONE),
+            (false, true) => (number.as_str(), theme::ACCENT),
+            (false, false) => (number.as_str(), theme::WEAK),
         };
         ui.label(RichText::new(mark).strong().color(colour));
-        ui.add(
-            egui::Label::new(RichText::new(text).color(match done {
+        ui.vertical(|ui| {
+            let words = RichText::new(title).color(match done {
                 true => theme::WEAK,
                 false => theme::TEXT,
-            }))
-            .wrap(),
-        );
+            });
+            ui.add(egui::Label::new(if current { words.strong() } else { words }).wrap());
+            if current {
+                ui.add(egui::Label::new(RichText::new(detail).color(theme::WEAK)).wrap());
+            }
+        });
     });
 }
 
@@ -52,34 +98,23 @@ impl Editor {
             return;
         }
         let mut open = true;
-        let corner = self.canvas_rect.right_top() + egui::vec2(-384.0, 12.0);
+        let layout = &self.settings.layout;
+        let dock = if layout.shows_dock() { layout.dock_width } else { 0.0 };
+        let corner = egui::pos2(ctx.content_rect().right() - dock - 376.0, self.canvas_rect.top() + 12.0);
         Self::window(
             ctx,
             "first steps",
             (format!("{} First steps", icon::INFO), super::panels::Spot::At(corner)),
             &mut open,
             |ui| {
-                ui.set_width(340.0);
-                step(
-                    ui,
-                    self.first.drew,
-                    "1",
-                    "Draw a closed shape with the brush (B): a stone, a leaf, a cloud. A pen draws with its pressure; a mouse works too.",
-                );
-                step(
-                    ui,
-                    self.first.filled,
-                    "2",
-                    "Fill it: pick the fill tool (G) and click inside the shape.",
-                );
-                step(
-                    ui,
-                    self.first.handed,
-                    "3",
-                    "Hand it to an agent that works in a terminal (Claude Code, Codex and others): install the klad command, then copy a first request and paste it into your agent. Its edits show up here as they land.",
-                );
+                ui.set_width(320.0);
+                let ticks = self.first.ticks();
+                let current = ticks.iter().position(|done| !done);
+                STEPS.iter().zip(ticks).enumerate().for_each(|(k, (words, done))| {
+                    step(ui, done, current == Some(k), k + 1, *words);
+                });
                 ui.horizontal(|ui| {
-                    self.command_button(ui, Cmd::InstallCommand, Some("install the klad command"));
+                    self.command_button(ui, Cmd::ConnectAgent, Some("connect an agent app"));
                     if ui
                         .button(format!("{} copy a request", icon::COPY))
                         .hint("a first request for your agent, with this drawing's path in it")
@@ -87,10 +122,22 @@ impl Editor {
                     {
                         ui.ctx().copy_text(prompt(&self.scene.bundle.root));
                         self.first.handed = true;
-                        self.say(Tone::Done, "copied a request: paste it into your agent");
+                        self.say(Tone::Done, "copied a request: paste it into a new chat with your agent");
                     }
                 });
-                if self.first.drew && self.first.filled && self.first.handed {
+                if current == Some(STEPS.len() - 1) {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(
+                                "Your agent works in a terminal? Install the klad command from the File menu, and ask it to run klad skill first.",
+                            )
+                            .color(theme::WEAK)
+                            .small(),
+                        )
+                        .wrap(),
+                    );
+                }
+                if current.is_none() {
                     ui.add_space(4.0);
                     ui.add(
                         egui::Label::new(

@@ -96,9 +96,12 @@ pub fn effect(path: &Path, layer: &str, change: Change, out: &Output) -> Result<
 fn imported(bundle: &Path, props: &mut Map<String, Value>) -> Result<Value> {
     let file = match props.remove("src") {
         Some(Value::String(s)) => s,
-        _ => bail!("say which picture: src=photo.jpg (a PNG or JPEG file)"),
+        _ => bail!("say which picture: src=photo.jpg (a PNG or JPEG file), or src=clipboard"),
     };
-    let bytes = std::fs::read(&file).map_err(|e| anyhow!("reading {file}: {e}"))?;
+    let bytes = match file.as_str() {
+        "clipboard" => klad_render::clipboard::png(&klad_render::clipboard::read()?),
+        _ => std::fs::read(&file).map_err(|e| anyhow!("reading {file}: {e}"))?,
+    };
     let doc = Bundle::open(bundle)?.doc;
     let (src, w, h) = klad_render::assets::import_image(bundle, &bytes)?;
     let (cw, ch) = (doc.canvas.width as f32, doc.canvas.height as f32);
@@ -119,6 +122,11 @@ pub fn image_layer(bundle: &Path, props: &[String]) -> Result<Value> {
     let mut layer = agent::nest(props);
     layer["kind"] = json!("vector");
     if layer.get("name").is_none() {
+        let file = if file == "clipboard" {
+            "pasted".to_string()
+        } else {
+            file
+        };
         let stem = Path::new(&file)
             .file_stem()
             .and_then(|s| s.to_str())

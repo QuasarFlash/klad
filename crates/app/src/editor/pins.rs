@@ -46,7 +46,7 @@ impl Editor {
                 (false, false) => Color32::from_rgba_unmultiplied(255, 196, 60, 90),
             };
             if open {
-                painter.circle_stroke(p, PIN + 4.0, egui::Stroke::new(2.5, theme::ACCENT));
+                painter.circle_stroke(p, PIN + 4.0, egui::Stroke::new(2.5, theme::MARK));
             }
             painter.circle_filled(p, PIN, fill);
             painter.circle_stroke(
@@ -66,7 +66,7 @@ impl Editor {
                 p,
                 egui::Align2::CENTER_CENTER,
                 label,
-                egui::FontId::proportional(12.0),
+                theme::regular(theme::LABEL),
                 Color32::from_black_alpha(if here { 255 } else { 140 }),
             );
             if !here {
@@ -74,7 +74,7 @@ impl Editor {
                     p + vec2(PIN + 3.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     format!("frame {}", n.frame),
-                    egui::FontId::proportional(11.0),
+                    theme::regular(theme::SMALL),
                     Color32::from_black_alpha(150),
                 );
             }

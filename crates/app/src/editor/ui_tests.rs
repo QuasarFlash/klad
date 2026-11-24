@@ -168,13 +168,13 @@ fn audit(h: &Harness<'static, Editor>, what: &str) -> usize {
     let found = controls(h);
     let small: Vec<String> = found
         .iter()
-        .filter(|(_, _, r)| r.height() < theme::TARGET - 0.5)
+        .filter(|(_, _, r)| r.height() < theme::CONTROL - 0.5)
         .map(|(role, label, r)| format!("{role:?} {label:?} {:.1} high", r.height()))
         .collect();
     assert!(
         small.is_empty(),
         "{what}: controls under {} pt: {small:#?}",
-        theme::TARGET
+        theme::CONTROL
     );
     let bare: Vec<String> = found
         .iter()
@@ -220,7 +220,7 @@ fn the_strip_shrinks_then_folds_its_foot_when_the_window_is_short() {
         in_strip(&smaller, theme::icon::REDO).unwrap(),
     );
     let file = in_strip(&smaller, theme::icon::FILE).expect("first the buttons get smaller");
-    assert!(brush.height() < 36.0 && brush.height() >= theme::TARGET, "{brush:?}");
+    assert!(brush.height() < 36.0 && brush.height() >= theme::CONTROL, "{brush:?}");
     assert!(file.top() >= redo.bottom(), "nothing overlaps: {redo:?} {file:?}");
     drop(smaller);
     let medium = harness(editor(&path), vec2(1280.0, 1000.0));
@@ -325,7 +325,7 @@ fn a_lasso_picks_strokes_on_every_layer_when_all_layers_is_on() {
     activate(&mut h, "lines");
     h.key_press(Key::S);
     h.run_steps(2);
-    h.state_mut().select_box = false;
+    h.state_mut().marquee = super::marquee::Marquee::Loop;
     let lasso = |h: &mut Harness<'static, Editor>| {
         let corners = [(5.0, 5.0), (505.0, 5.0), (505.0, 379.0), (5.0, 379.0), (5.0, 10.0)];
         let at: Vec<egui::Pos2> = corners.iter().map(|(x, y)| canvas_at(h, *x, *y)).collect();
@@ -511,7 +511,7 @@ fn every_control_is_pen_sized_and_has_a_hover_hint() {
         checked += audit(&h, &format!("{tool:?}"));
     });
     h.state_mut().tool = Tool::Strokes;
-    h.state_mut().select_all_strokes();
+    h.state_mut().select_all_strokes().unwrap();
     h.run_steps(2);
     assert!(h.state().picked.is_some());
     checked += audit(&h, "strokes selected");
@@ -708,7 +708,8 @@ fn a_still_opens_with_the_timeline_folded_and_a_dock_that_shares_the_window() {
             .unwrap();
         assert!(
             rows + 0.5 >= ed.dock_fit.layers_least,
-            "Layers keeps three rows: {rows}"
+            "Layers keeps three rows: {rows} of the {} they need at {scale}",
+            ed.dock_fit.layers_least
         );
         ed.settings.layout.panes.iter().filter(|p| p.open).for_each(|p| {
             let title = h.get_by_label(p.pane.title()).rect();
@@ -997,7 +998,7 @@ fn panel_pictures() {
     h.state_mut().settings.layout.numbers = false;
     h.state_mut().windows.settings = false;
     h.state_mut().tool = Tool::Strokes;
-    h.state_mut().select_all_strokes();
+    h.state_mut().select_all_strokes().unwrap();
     shot(&mut h, "6-selection-bar");
     h.state_mut().picked = None;
     h.state_mut().tabs.push(false);
@@ -2812,7 +2813,7 @@ fn top_down(h: &Harness<'static, Editor>) -> Vec<String> {
         .collect()
 }
 
-fn layer_named<'a>(h: &'a Harness<'static, Editor>, name: &str) -> &'a Layer {
+pub(super) fn layer_named<'a>(h: &'a Harness<'static, Editor>, name: &str) -> &'a Layer {
     h.state().scene.bundle.doc.find_layer(name).unwrap()
 }
 
@@ -2987,11 +2988,11 @@ fn timeline_cells_select_by_dragging_copy_paste_move_and_open_the_clip() {
     let _ = std::fs::remove_dir_all(&path);
 }
 
-fn said(h: &Harness<'static, Editor>) -> String {
+pub(super) fn said(h: &Harness<'static, Editor>) -> String {
     h.state().messages.latest().map(|m| m.text.clone()).unwrap_or_default()
 }
 
-fn marks_on(h: &Harness<'static, Editor>, layer: &Layer) -> usize {
+pub(super) fn marks_on(h: &Harness<'static, Editor>, layer: &Layer) -> usize {
     layer
         .cels()
         .iter()
@@ -3104,7 +3105,9 @@ fn frame_keys_wait_for_the_timeline_and_cmd_d_repeats_the_selected_frames() {
     h.run_steps(3);
     assert_eq!(shown(&h, "lines"), [(0, None)], "Delete takes the selected drawings");
     assert!(
-        said(&h).contains("drawings in the selected frames (cmd Z brings them back)"),
+        said(&h).contains(&crate::commands::local_keys(
+            "drawings in the selected frames (cmd Z brings them back)"
+        )),
         "and says so: {}",
         said(&h)
     );
@@ -3183,7 +3186,7 @@ fn a_right_click_on_the_canvas_moves_what_is_selected_to_a_new_layer() {
     activate(&mut h, "lines");
     let layers = |h: &Harness<'static, Editor>| h.state().scene.bundle.doc.all_layers().len();
     let before = layers(&h);
-    let spot = canvas_at(&h, 450.0, 350.0);
+    let spot = canvas_at(&h, 470.0, 30.0);
     right_click(&mut h, spot);
     let item = h
         .query_all_by_label("Move to new layer")
@@ -5076,7 +5079,7 @@ fn strokes_select_move_and_copy_across_cmd_clicked_layers() {
     assert_eq!(h.state().also, vec!["l5".to_string()]);
     h.key_press(Key::S);
     h.run_steps(2);
-    h.state_mut().select_box = false;
+    h.state_mut().marquee = super::marquee::Marquee::Loop;
     let view = h.state().view.unwrap();
     let rect = h.state().canvas_rect;
     let at = |x: f32, y: f32| rect.min + view.to_screen(egui::Vec2::new(x, y), rect.size());
@@ -5141,7 +5144,7 @@ fn strokes_select_move_and_copy_across_cmd_clicked_layers() {
             .collect()
     };
     let had = counts(&h);
-    h.state_mut().select_all_strokes();
+    h.state_mut().select_all_strokes().unwrap();
     h.state_mut().invoke(Cmd::DuplicateInPlace).unwrap();
     h.run_steps(3);
     assert_eq!(
@@ -5505,6 +5508,68 @@ fn a_selected_shape_turns_into_a_repeat_and_back() {
     assert!(
         matches!(doc.item(&rect), Some(klad_core::doc::Item::Node(_, _, n)) if matches!(n.shape, Shape::Rect { .. }))
     );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn a_windows_pen_lifted_in_the_frame_of_its_last_move_ends_the_stroke() {
+    let path = sample("windows-pen");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "colour");
+    let marks = |h: &Harness<'static, Editor>| h.state().scene.active_marks().len();
+    let had = marks(&h);
+    let at = |h: &Harness<'static, Editor>, x: f32| canvas_at(h, x, 150.0);
+    let touch = |phase, pos, force| egui::Event::Touch {
+        device_id: egui::TouchDeviceId(5),
+        id: egui::TouchId(1),
+        phase,
+        pos,
+        force,
+    };
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    let (a, b, c) = (at(&h, 60.0), at(&h, 120.0), at(&h, 180.0));
+    [
+        touch(egui::TouchPhase::Start, a, Some(0.4)),
+        egui::Event::PointerMoved(a),
+        button(a, true),
+    ]
+    .into_iter()
+    .for_each(|e| h.event(e));
+    h.run_steps(1);
+    [
+        touch(egui::TouchPhase::Move, b, Some(0.6)),
+        egui::Event::PointerMoved(b),
+    ]
+    .into_iter()
+    .for_each(|e| h.event(e));
+    h.run_steps(1);
+    assert!(h.state().live.is_some(), "the pen is painting");
+    [
+        touch(egui::TouchPhase::Move, c, Some(0.5)),
+        egui::Event::PointerMoved(c),
+        touch(egui::TouchPhase::End, c, None),
+        button(c, false),
+        egui::Event::PointerGone,
+    ]
+    .into_iter()
+    .for_each(|e| h.event(e));
+    h.run_steps(1);
+    settle(&mut h, |ed| ed.live.is_none());
+    assert_eq!(marks(&h), had + 1, "one stroke, lifted");
+    [
+        touch(egui::TouchPhase::Move, at(&h, 240.0), None),
+        egui::Event::PointerMoved(at(&h, 240.0)),
+    ]
+    .into_iter()
+    .for_each(|e| h.event(e));
+    h.run_steps(2);
+    assert!(h.state().live.is_none(), "hovering after the lift paints nothing");
+    assert_eq!(marks(&h), had + 1);
     let _ = std::fs::remove_dir_all(&path);
 }
 
@@ -6292,14 +6357,14 @@ fn a_text_open_for_editing_is_never_saved_hidden() {
 }
 
 #[test]
-fn first_steps_tick_as_a_shape_is_drawn_filled_and_handed_to_an_agent() {
+fn first_steps_tick_as_strokes_are_painted_erased_filled_reshaped_and_handed_to_an_agent() {
     let path = sample("first-steps");
     let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
     activate(&mut h, "colour");
     h.state_mut().start_first_steps();
     h.run_steps(2);
     assert!(
-        h.query_by_label_contains("Draw a closed shape with the brush")
+        h.query_by_label_contains("Paint a closed shape with the brush")
             .is_some()
     );
     let first = || super::first::FirstSteps {
@@ -6307,53 +6372,127 @@ fn first_steps_tick_as_a_shape_is_drawn_filled_and_handed_to_an_agent() {
         ..Default::default()
     };
     assert_eq!(h.state().first, first());
+    let paint = |h: &mut Harness<'static, Editor>, corners: &[(f32, f32)]| {
+        let line: Vec<(f32, f32)> = corners
+            .windows(2)
+            .flat_map(|w| {
+                (0..8)
+                    .map(move |k| k as f32 / 8.0)
+                    .map(move |t| (w[0].0 + (w[1].0 - w[0].0) * t, w[0].1 + (w[1].1 - w[0].1) * t))
+            })
+            .chain(corners.last().copied())
+            .collect();
+        h.hover_at(canvas_at(h, line[0].0, line[0].1));
+        h.run_steps(1);
+        h.drag_at(canvas_at(h, line[0].0, line[0].1));
+        h.run_steps(1);
+        line.iter().skip(1).for_each(|(x, y)| {
+            h.hover_at(canvas_at(h, *x, *y));
+            h.run_steps(1);
+        });
+        let (x, y) = line[line.len() - 1];
+        h.drop_at(canvas_at(h, x, y));
+        h.run_steps(3);
+        settle(h, |ed| !ed.writing());
+    };
+    let click = |h: &mut Harness<'static, Editor>, at: egui::Pos2| {
+        h.hover_at(at);
+        h.run_steps(1);
+        [true, false].into_iter().for_each(|pressed| {
+            h.event(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+            h.run_steps(1);
+        });
+        settle(h, |ed| !ed.writing());
+    };
     h.key_press(Key::B);
     h.run_steps(1);
-    let ring = [
-        (150.0, 120.0),
-        (260.0, 110.0),
-        (290.0, 220.0),
-        (170.0, 250.0),
-        (150.0, 120.0),
-    ];
-    h.hover_at(canvas_at(&h, ring[0].0, ring[0].1));
-    h.run_steps(1);
-    h.drag_at(canvas_at(&h, ring[0].0, ring[0].1));
-    h.run_steps(1);
-    ring.iter().skip(1).for_each(|(x, y)| {
-        h.hover_at(canvas_at(&h, *x, *y));
-        h.run_steps(1);
-    });
-    h.drop_at(canvas_at(&h, ring[4].0, ring[4].1));
-    h.run_steps(3);
-    settle(&mut h, |ed| !ed.writing());
+    paint(
+        &mut h,
+        &[
+            (150.0, 120.0),
+            (260.0, 110.0),
+            (290.0, 220.0),
+            (170.0, 250.0),
+            (150.0, 120.0),
+        ],
+    );
     assert_eq!(h.state().scene.active_marks().len(), 1);
-    assert!(h.state().first.drew, "a stroke ticks the first step");
+    assert_eq!(h.state().first.painted, 1, "a stroke ticks the first step");
+    h.key_press(Key::E);
+    h.run_steps(1);
+    paint(&mut h, &[(250.0, 160.0), (275.0, 165.0), (300.0, 170.0)]);
+    assert!(h.state().first.erased, "an eraser stroke ticks the second step");
+    assert_eq!(h.state().first.painted, 1, "erasing is not painting");
+    h.key_press(Key::B);
+    h.run_steps(1);
+    paint(
+        &mut h,
+        &[
+            (330.0, 265.0),
+            (460.0, 262.0),
+            (470.0, 360.0),
+            (340.0, 368.0),
+            (330.0, 265.0),
+        ],
+    );
+    assert_eq!(h.state().first.painted, 2, "a second stroke ticks the third step");
     assert!(!h.state().first.filled);
     h.key_press(Key::G);
     h.run_steps(1);
-    let inside = canvas_at(&h, 215.0, 175.0);
-    h.hover_at(inside);
-    h.run_steps(1);
-    [true, false].into_iter().for_each(|pressed| {
-        h.event(egui::Event::PointerButton {
-            pos: inside,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: Modifiers::NONE,
-        });
-        h.run_steps(1);
-    });
-    settle(&mut h, |ed| !ed.writing());
-    assert!(h.state().first.filled, "a fill ticks the second step");
+    let inside = canvas_at(&h, 400.0, 315.0);
+    click(&mut h, inside);
+    assert!(h.state().first.filled, "a fill ticks the fourth step");
+    assert!(!h.state().first.reshaped);
+    h.key_press(Key::A);
+    h.run_steps(2);
+    let line = canvas_at(&h, 150.0, 120.0);
+    click(&mut h, line);
+    let ring = h.state().direct.as_ref().map(|d| d.node.clone());
+    assert_eq!(ring.as_deref().map(|n| n.ends_with(":s1")), Some(true), "{ring:?}");
+    let point = h.state().shaped.as_ref().unwrap().subs[0].anchors[0].at;
+    let view = h.state().view.unwrap();
+    let rect = h.state().canvas_rect;
+    let at = rect.min + view.to_screen(egui::Vec2::new(point[0], point[1]), rect.size());
+    drag(&mut h, at, at + vec2(-40.0, 0.0));
+    settle(&mut h, |ed| ed.point_drag.is_none() && ed.path_commit.is_none());
+    h.run_steps(2);
+    assert!(
+        h.state().first.reshaped,
+        "reshaping the first stroke ticks the fifth step"
+    );
+    let shared = klad_core::notes::read_selection(&h.state().scene.bundle).map(|s| s.nodes);
+    assert_eq!(
+        shared,
+        ring.map(|n| vec![n]),
+        "the reshaped stroke is the selection the agent reads"
+    );
+    assert!(
+        h.query_by_label_contains("Done. File > Close shows the samples")
+            .is_none()
+    );
     h.get_by_label_contains("copy a request").click();
     h.run_steps(2);
-    assert!(h.state().first.handed, "copying the request ticks the third");
+    assert!(h.state().first.handed, "copying the request ticks the sixth");
     assert!(
         h.query_by_label_contains("Done. File > Close shows the samples")
             .is_some()
     );
-    assert!(super::first::prompt(&path).contains(&format!("klad render \"{}\"", path.display())));
+    let request = super::first::prompt(&path);
+    assert!(
+        request.contains(&path.display().to_string())
+            && request.contains("the stroke I have selected")
+            && !request.contains("klad render"),
+        "a plain request about the picked stroke with the drawing's path, for an agent app's chat: {request}"
+    );
+    assert!(
+        h.query_by_label_contains("connect an agent app").is_some(),
+        "the last step connects an agent app"
+    );
     h.state_mut().invoke(Cmd::FirstSteps).unwrap();
     h.run_steps(2);
     assert!(!h.state().first.open, "Help > First steps closes them again");
@@ -6372,10 +6511,11 @@ fn the_menu_bar_reaches_commands_shows_their_state_and_greys_what_cannot_run() {
     };
     h.get_by_label("File").click();
     h.run_steps(2);
-    assert!(h.query_by_label("Close cmd W").is_some(), "items carry their keys");
+    let close = format!("Close {} W", crate::commands::CMD);
+    assert!(h.query_by_label(&close).is_some(), "items carry their keys");
     h.hover_at(item(&h, "Export").center());
     h.run_steps(3);
-    h.get_by_label("Image… cmd E").click();
+    h.get_by_label(&format!("Image… {} E", crate::commands::CMD)).click();
     h.run_steps(3);
     assert!(
         h.state().exporting(super::export::What::Image),
@@ -6406,7 +6546,7 @@ fn the_menu_bar_reaches_commands_shows_their_state_and_greys_what_cannot_run() {
     h.run_steps(2);
     h.get_by_label("File").click();
     h.run_steps(2);
-    h.get_by_label("Close cmd W").click();
+    h.get_by_label(&close).click();
     h.run_steps(2);
     assert_eq!(h.state().wants, Some(super::Want::Close));
     let _ = std::fs::remove_dir_all(&path);
@@ -6797,12 +6937,16 @@ fn a_bones_layer_takes_any_layers_in_the_drawing() {
     assert_eq!(skeleton(&h).bones.len(), 1, "the bone goes on the bones layer");
     h.state_mut().pick_bone(Some("bone 1".into()));
     h.run_steps(2);
-    ["colour", "lines"].into_iter().enumerate().for_each(|(n, layer)| {
-        h.get_by_role_and_label(Role::Button, &format!("layers: {n}")).click();
-        h.run_steps(2);
+    h.get_by_role_and_label(Role::Button, "layers: 0").click();
+    h.run_steps(2);
+    ["colour", "lines"].into_iter().for_each(|layer| {
         h.get_by_role_and_label(Role::CheckBox, layer).click();
         h.run_steps(3);
     });
+    assert!(
+        h.query_by_role_and_label(Role::Button, "layers: 2").is_some(),
+        "the layers menu stays open for the second layer"
+    );
     let doc = &h.state().scene.bundle.doc;
     ["colour", "lines"].into_iter().for_each(|name| {
         let layer = doc.find_layer(name).unwrap();
@@ -7285,7 +7429,7 @@ fn guide_pictures() {
         }),
         ("selection", "lantern/lantern.klad", "lines", |ed| {
             ed.tool = Tool::Strokes;
-            ed.select_all_strokes();
+            ed.select_all_strokes().unwrap();
             Ok(())
         }),
     ];
@@ -7587,10 +7731,14 @@ fn the_light_maps_panel_turns_maps_on_and_layers_become_map_layers_by_command() 
     let shade = h.state().scene.bundle.doc.find_layer("shade").unwrap().clone();
     assert_eq!(shade.map, Some(klad_core::maps::Role::Height), "shade now draws height");
     activate(&mut h, "colour");
+    h.get_by_label("a surface of its own").scroll_to_me();
+    h.run_steps(3);
     h.get_by_label("a surface of its own").click();
     h.run_steps(3);
     let colour = h.state().scene.bundle.doc.find_layer("colour").unwrap().clone();
     assert!(colour.surface.is_some(), "colour rounds in from its own outline");
+    h.get_by_label("add a point light").scroll_to_me();
+    h.run_steps(3);
     h.get_by_label("add a point light").click();
     h.run_steps(3);
     assert_eq!(h.state().scene.bundle.doc.maps.as_ref().unwrap().lights.len(), 1);
@@ -7932,6 +8080,8 @@ fn a_height_layer_shows_the_height_map_and_paints_in_greys() {
     activate(&mut h, "colour");
     h.run_steps(3);
     assert_eq!(h.state().maps.show, None);
+    h.get_by_label("add a point light").scroll_to_me();
+    h.run_steps(3);
     h.get_by_label("add a point light").click();
     h.run_steps(3);
     let before = h.state().scene.bundle.doc.maps.clone().unwrap();
@@ -8019,7 +8169,7 @@ fn a_map_layer_is_added_from_the_layers_panel_and_its_settings_switch_what_it_dr
     h.state_mut().pick_new_colour([0.8, 0.2, 0.2, 1.0]);
     h.run_steps(2);
     assert!(h.state().scene.bundle.doc.maps.is_none());
-    h.get_by_label(&format!("{} map", theme::icon::MOUNTAINS)).click();
+    h.get_by_label("new map layer").click();
     h.run_steps(3);
     let added = h.state().scene.active_layer().unwrap().clone();
     assert_eq!(added.map, Some(klad_core::maps::Role::Height));
@@ -9067,7 +9217,11 @@ fn s_drags_a_box_around_strokes_and_draws_a_loop_when_loop_is_picked() {
     activate(&mut h, "lines");
     h.key_press(Key::S);
     h.run_steps(2);
-    assert!(h.state().select_box, "S starts as a box, as its icon shows");
+    assert_eq!(
+        h.state().marquee,
+        super::marquee::Marquee::Box,
+        "S starts as a box, as its icon shows"
+    );
     let (from, to) = (canvas_at(&h, 20.0, 20.0), canvas_at(&h, 320.0, 220.0));
     drag(&mut h, from, to);
     h.run_steps(2);
@@ -9077,7 +9231,7 @@ fn s_drags_a_box_around_strokes_and_draws_a_loop_when_loop_is_picked() {
     h.run_steps(2);
     h.get_by_label("loop").click();
     h.run_steps(2);
-    assert!(!h.state().select_box);
+    assert_eq!(h.state().marquee, super::marquee::Marquee::Loop);
     let (from, to) = (canvas_at(&h, 20.0, 20.0), canvas_at(&h, 320.0, 220.0));
     drag(&mut h, from, to);
     h.run_steps(2);

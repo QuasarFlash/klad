@@ -1,24 +1,37 @@
 pub mod align;
 pub mod aseprite;
 pub mod assets;
+pub mod clipboard;
+pub mod combine;
 pub mod effects;
 pub mod export;
 pub mod fonts;
 pub mod form;
+pub mod formats;
 pub mod gif;
+pub mod keep;
+pub mod library;
 pub mod maps;
 pub mod occluders;
 pub mod onion;
 pub mod overlay;
+pub mod pdf;
 pub mod pixelise;
 pub mod pngwrite;
+pub mod psd;
+pub mod reshape;
 pub mod shaders;
 pub mod shapes;
 pub mod sheet;
+pub mod sheetcut;
 pub mod shift;
 pub mod sprites;
+pub mod svg;
+pub mod svgin;
 pub mod text;
 pub mod vector;
+pub mod video;
+pub mod wand;
 
 pub const RENDER_VERSION: u32 = 2;
 
@@ -86,6 +99,13 @@ impl Frame {
         let at = ((y * self.width + x) * 4) as usize;
         [self.rgba[at], self.rgba[at + 1], self.rgba[at + 2], self.rgba[at + 3]]
     }
+}
+
+pub(crate) fn no_room(w: u64, h: u64) -> anyhow::Error {
+    anyhow!(
+        "cannot make a {w}x{h} picture: not enough memory (it needs {}); make it smaller, or close other apps",
+        klad_core::memory::gb(w * h * 8)
+    )
 }
 
 pub(crate) fn f16_info(width: u32, height: u32) -> ImageInfo {
@@ -545,7 +565,7 @@ fn img_image(img: &Img) -> Result<Image> {
 fn offscreen(window: IRect, canvas: &Canvas, ctx: Ctx, draw: &dyn Fn(&Canvas, Ctx) -> Result<()>) -> Result<Img> {
     let (w, h) = (window.width().max(1) as u32, window.height().max(1) as u32);
     let mut surface =
-        surfaces::raster(&f16_info(w, h), None, None).ok_or_else(|| anyhow!("cannot allocate {w}x{h} pixels"))?;
+        surfaces::raster(&f16_info(w, h), None, None).ok_or_else(|| crate::no_room(w as u64, h as u64))?;
     let inner = surface.canvas();
     inner.translate((-window.left as f32, -window.top as f32));
     inner.concat(&canvas.local_to_device_as_3x3());
@@ -1078,7 +1098,7 @@ pub(crate) fn resample(image: &Image, scale: f32) -> Result<Image> {
         image.clone()
     };
     let mut surface =
-        surfaces::raster(&f16_info(w, h), None, None).ok_or_else(|| anyhow!("cannot allocate {w}x{h}"))?;
+        surfaces::raster(&f16_info(w, h), None, None).ok_or_else(|| crate::no_room(w as u64, h as u64))?;
     let sampling = if scale < 1.0 {
         SamplingOptions::new(FilterMode::Linear, MipmapMode::Linear)
     } else {

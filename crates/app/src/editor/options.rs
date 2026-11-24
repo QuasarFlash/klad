@@ -4,7 +4,7 @@ use crate::commands::Cmd;
 use crate::messages::Tone;
 use crate::theme::{self, Hint, icon};
 use anyhow::{Result, anyhow};
-use egui::{Color32, ColorImage, RichText, Sense, TextureHandle, TextureOptions, vec2};
+use egui::{Color32, ColorImage, RichText, Sense, TextureHandle, TextureOptions, Vec2, vec2};
 use klad_brush::{BrushSet, Raster, TILE, replay};
 use klad_core::brushes::BrushDef;
 use klad_core::ops::{Op, PaletteEdit, parse_lines};
@@ -40,8 +40,13 @@ pub(super) fn whole(ui: &mut egui::Ui, key: &str, add: impl FnOnce(&mut egui::Ui
     if width > ui.available_size_before_wrap().x + 0.5 && !at_row_start(ui) {
         ui.end_row();
     }
+    let before = ui.cursor().min;
     let response = add(ui);
-    let drawn = response.rect.width();
+    let after = ui.cursor().min;
+    let drawn = match (after.y - before.y).abs() < 0.5 {
+        true => after.x - before.x - ui.spacing().item_spacing.x,
+        false => response.rect.width(),
+    };
     if (drawn - width).abs() > 0.5 {
         ui.data_mut(|d| d.insert_temp(id, drawn));
         ui.ctx().request_repaint();
@@ -166,7 +171,13 @@ pub(super) struct Samples {
 }
 
 impl Samples {
-    fn texture(&mut self, ctx: &egui::Context, brushes: &BrushSet, id: &str, def: &BrushDef) -> Option<TextureHandle> {
+    pub(super) fn texture(
+        &mut self,
+        ctx: &egui::Context,
+        brushes: &BrushSet,
+        id: &str,
+        def: &BrushDef,
+    ) -> Option<TextureHandle> {
         let key = def_key(id, def);
         if let Some((k, texture)) = self.textures.get(id).filter(|(k, _)| *k == key) {
             let _ = k;
@@ -181,7 +192,7 @@ impl Samples {
     }
 }
 
-fn label_of(id: &str, def: &BrushDef) -> String {
+pub(super) fn label_of(id: &str, def: &BrushDef) -> String {
     match id.rsplit_once('-') {
         Some((base, tail)) if tail.len() == 6 && tail.chars().all(|c| c.is_ascii_hexdigit()) => {
             format!("{base} variant {tail}")
@@ -205,9 +216,10 @@ impl Editor {
     }
 
     pub(super) fn colour_pair(&mut self, ui: &mut egui::Ui) {
-        let (rect, _) = ui.allocate_exact_size(vec2(36.0, 36.0), Sense::hover());
-        let back = egui::Rect::from_min_size(rect.min + vec2(12.0, 12.0), vec2(24.0, 24.0));
-        let front = egui::Rect::from_min_size(rect.min, vec2(24.0, 24.0));
+        let side = theme::CONTROL;
+        let (rect, _) = ui.allocate_exact_size(Vec2::splat(side + theme::space::MD), Sense::hover());
+        let back = egui::Rect::from_min_size(rect.min + Vec2::splat(theme::space::MD), Vec2::splat(side));
+        let front = egui::Rect::from_min_size(rect.min, Vec2::splat(side));
         let swap = ui
             .interact(back, ui.scope_id().with("second colour"), Sense::click())
             .hint(Cmd::SwapColours.spec().hint());
@@ -218,13 +230,19 @@ impl Editor {
         current.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "the current colour"));
         let painter = ui.painter();
         [(back, self.second), (front, self.color)].iter().for_each(|(r, c)| {
-            painter.rect_filled(*r, 3.0, Color32::from_gray(200));
-            painter.rect_filled(*r, 3.0, color::color32(*c));
+            painter.rect_filled(*r, theme::radius::CONTROL, theme::CHECK_DARK);
+            painter.rect_filled(*r, theme::radius::CONTROL, color::color32(*c));
             painter.rect_stroke(
                 *r,
-                3.0,
-                egui::Stroke::new(1.5, Color32::from_gray(20)),
+                theme::radius::CONTROL,
+                egui::Stroke::new(theme::HAIRLINE, theme::PANEL),
                 egui::StrokeKind::Outside,
+            );
+            painter.rect_stroke(
+                *r,
+                theme::radius::CONTROL,
+                egui::Stroke::new(theme::HAIRLINE, theme::WEAK),
+                egui::StrokeKind::Inside,
             );
         });
         if swap.clicked() || current.clicked() {
@@ -260,15 +278,15 @@ impl Editor {
             self.pick(&id);
         }
         whole(ui, "size", |ui| {
-            ui.add(
-                egui::Slider::new(&mut self.size, 0.5..=800.0)
-                    .logarithmic(true)
-                    .text("size"),
+            crate::widgets::labelled_slider(
+                ui,
+                "size",
+                egui::Slider::new(&mut self.size, 0.5..=800.0).logarithmic(true),
             )
         })
         .hint("brush size in canvas px ([ and ], or hold cmd alt and drag sideways on the canvas)");
         if let Some(mut feather) = self.eraser_feather() && whole(ui, "feather", |ui| {
-            ui.add(egui::Slider::new(&mut feather, 0.0..=1.0).text("feather"))
+            crate::widgets::labelled_slider(ui, "feather", egui::Slider::new(&mut feather, 0.0..=1.0))
         })
         .hint(
             "how far in the eraser's edge fades: 0 cuts clean, 1 fades out like an airbrush; the pen's eraser end too",
@@ -278,26 +296,55 @@ impl Editor {
             self.set_eraser_feather(feather);
         }
         whole(ui, "opacity", |ui| {
-            ui.add(egui::Slider::new(&mut self.opacity, 0.05..=1.0).text("opacity"))
+            crate::widgets::labelled_slider(
+                ui,
+                "opacity",
+                crate::widgets::percent(egui::Slider::new(&mut self.opacity, 0.05..=1.0)),
+            )
         })
         .hint("a stroke never gets darker than this on its own");
         whole(ui, "flow", |ui| {
-            ui.add(egui::Slider::new(&mut self.flow, 0.02..=1.0).text("flow"))
+            crate::widgets::labelled_slider(
+                ui,
+                "flow",
+                crate::widgets::percent(egui::Slider::new(&mut self.flow, 0.02..=1.0)),
+            )
         })
         .hint("how much each dab lays down");
     }
 
+    fn figure_choice(&mut self, ui: &mut egui::Ui) {
+        let figure = self.brush_figure;
+        egui::ComboBox::from_id_salt("brush-figure")
+            .width(64.0)
+            .selected_text(figure.label())
+            .show_ui(ui, |ui| {
+                super::straight::Figure::ALL.iter().for_each(|(f, label)| {
+                    ui.selectable_value(&mut self.brush_figure, *f, *label);
+                });
+            })
+            .response
+            .hint(super::straight::HINT);
+    }
+
     fn brush_more(&mut self, ui: &mut egui::Ui) -> Result<()> {
+        ui.horizontal(|ui| {
+            ui.label("draws");
+            super::straight::Figure::ALL.iter().for_each(|(f, label)| {
+                ui.selectable_value(&mut self.brush_figure, *f, *label)
+                    .hint(super::straight::HINT);
+            });
+        });
         let current = self.brush.clone();
         let erasing = self.is_on(Cmd::Eraser) == Some(true);
         let t = &mut self.tuning;
         if let Some(hardness) = t.hardness.as_mut().filter(|_| !erasing) {
-            ui.add(egui::Slider::new(hardness, 0.0..=1.0).text("hardness"))
+            crate::widgets::labelled_slider(ui, "hardness", egui::Slider::new(hardness, 0.0..=1.0))
                 .hint("soft to hard edge; changing it draws as a variant of the brush");
-            ui.add(egui::Slider::new(&mut t.feather, 0.0..=1.0).text("feather"))
+            crate::widgets::labelled_slider(ui, "feather", egui::Slider::new(&mut t.feather, 0.0..=1.0))
                 .hint("how far in the edge fades out like an airbrush, without dabs building it back up");
         }
-        ui.add(egui::Slider::new(&mut t.size_min, 0.0..=1.0).text("lightest size"))
+        crate::widgets::labelled_slider(ui, "lightest size", egui::Slider::new(&mut t.size_min, 0.0..=1.0))
             .hint("the size at the lightest press, as a part of the full size");
         ui.add(
             egui::Slider::new(&mut t.size_gamma, 0.3..=3.0)
@@ -305,14 +352,18 @@ impl Editor {
                 .text("pressure curve"),
         )
         .hint("below 1 light presses get wider sooner, above 1 later");
-        ui.add(egui::Slider::new(&mut t.taper[0], 0.0..=200.0).text("taper in px"))
+        crate::widgets::labelled_slider(ui, "taper in px", egui::Slider::new(&mut t.taper[0], 0.0..=200.0))
             .hint("how long the start of a stroke takes to reach full size");
-        ui.add(egui::Slider::new(&mut t.taper[1], 0.0..=200.0).text("taper out px"))
+        crate::widgets::labelled_slider(ui, "taper out px", egui::Slider::new(&mut t.taper[1], 0.0..=200.0))
             .hint("how long the end of a stroke takes to come to a point");
-        ui.add(egui::Slider::new(&mut t.stabilizer, 0.0..=200.0).text("stabiliser ms"))
+        crate::widgets::labelled_slider(ui, "stabiliser ms", egui::Slider::new(&mut t.stabilizer, 0.0..=200.0))
             .hint("the line follows the average of the pen's last this many ms; it catches up when you lift");
-        ui.add(egui::Slider::new(&mut t.smoothing, 0.0..=100.0).text("pressure smoothing ms"))
-            .hint("evens out pressure over this many ms");
+        crate::widgets::labelled_slider(
+            ui,
+            "pressure smoothing ms",
+            egui::Slider::new(&mut t.smoothing, 0.0..=100.0),
+        )
+        .hint("evens out pressure over this many ms");
         if ui
             .button("reset brush")
             .hint("the brush's own settings again")
@@ -340,7 +391,7 @@ impl Editor {
                     &mut self.pen_stroke
                 };
                 ui.checkbox(on, label).hint(hint);
-                if color::swatch(ui, rgba, false, theme::TARGET)
+                if color::swatch(ui, rgba, false, theme::CONTROL)
                     .hint(format!(
                         "the {label} colour, {}; click (or X) swaps the two colours",
                         color::hex(rgba)
@@ -355,7 +406,11 @@ impl Editor {
     pub(super) fn tool_options(&mut self, ui: &mut egui::Ui) -> Result<()> {
         let narrow = (ui.available_width() / BAR_SLIDERS).max(BAR_SLIDER_LEAST);
         ui.spacing_mut().slider_width = ui.spacing().slider_width.min(narrow);
+        if self.cropping.is_some() {
+            return ui.horizontal_wrapped(|ui| self.crop_bar(ui)).inner;
+        }
         ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::space::XS;
             let (cmd, name) = match self.tool {
                 Tool::Brush if self.is_on(Cmd::Eraser) == Some(true) => (Cmd::Eraser, "eraser"),
                 Tool::Brush => (Cmd::Brush, "brush"),
@@ -395,13 +450,19 @@ impl Editor {
                 }
                 Tool::Brush => {
                     self.brush_main(ui);
-                    ui.menu_button(format!("{} more", icon::MORE), |ui| {
+                    theme::held_menu(ui, format!("{} more", icon::MORE), |ui| {
                         self.check(|e| e.brush_more(ui));
                     })
                     .response
                     .hint("hardness, feather, pressure curve, taper, stabiliser and smoothing");
                     self.command_button(ui, Cmd::BrushWindow, Some("edit"));
+                    if self.brush_figure != super::straight::Figure::Free {
+                        self.figure_choice(ui);
+                    }
                     self.command_check(ui, Cmd::Symmetry, "mirror");
+                    if !self.scene.bundle.doc.guides.assists.is_empty() {
+                        self.command_check(ui, Cmd::FollowGuides, "follow");
+                    }
                     if let Some(axis) = self.mirror.as_mut() {
                         ui.add(egui::DragValue::new(axis).speed(1.0).prefix("axis x ").suffix(" px"))
                             .hint("where the mirror line stands, in canvas px");
@@ -577,45 +638,51 @@ impl Editor {
     }
 
     fn box_or_loop(&mut self, ui: &mut egui::Ui, what: &str) {
-        [(true, "box"), (false, "loop")].iter().for_each(|(boxed, label)| {
+        super::marquee::Marquee::ALL.iter().for_each(|kind| {
             if ui
-                .selectable_label(self.select_box == *boxed, *label)
-                .hint(match boxed {
-                    true => format!("drag a box around the {what} to select"),
-                    false => format!("draw a loop around the {what} to select"),
-                })
+                .selectable_label(self.marquee == *kind, kind.label())
+                .hint(kind.hint(what))
                 .clicked()
             {
-                self.select_box = *boxed;
+                self.marquee = *kind;
             }
         });
+        if self.marquee == super::marquee::Marquee::Wand && !self.scene.on_grid() {
+            ui.add(
+                egui::DragValue::new(&mut self.wand_tolerance)
+                    .range(0.0..=1.0)
+                    .speed(0.01)
+                    .prefix("tolerance "),
+            )
+            .hint("how far a colour may be from the one you click and still be taken");
+        }
     }
 
     fn pick_scope(&mut self, ui: &mut egui::Ui) {
         let all = self.settings.pick_all_layers;
-        [
-            (false, "this layer", "a click picks strokes on the active layer only"),
-            (
-                true,
-                "all layers",
-                "a click picks what you see, on any layer, and makes its layer active",
-            ),
-        ]
-        .into_iter()
-        .for_each(|(scope, label, hint)| {
-            if ui.selectable_label(all == scope, label).hint(hint).clicked() && all != scope {
-                self.queued.push(Cmd::PickAllLayers);
-            }
-        });
+        let picked = crate::widgets::segmented(
+            ui,
+            all,
+            &[
+                (false, "this layer", "a click picks strokes on the active layer only"),
+                (
+                    true,
+                    "all layers",
+                    "a click picks what you see, on any layer, and makes its layer active",
+                ),
+            ],
+        );
+        if picked.is_some() {
+            self.queued.push(Cmd::PickAllLayers);
+        }
         ui.separator();
     }
 
     pub(super) fn brush_tiles(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            ui.label("size");
+            crate::widgets::form_label(ui, "size");
             SIZES.iter().for_each(|s| {
-                if ui
-                    .selectable_label((self.size - s).abs() < 0.01, format!("{s:.0}"))
+                if crate::widgets::chip(ui, (self.size - s).abs() < 0.01, format!("{s:.0}"))
                     .hint(format!("brush size {s:.0} px"))
                     .clicked()
                 {
@@ -631,38 +698,19 @@ impl Editor {
             .into_iter()
             .filter(|(_, list)| !list.is_empty())
             .for_each(|(title, list)| {
+                let own = title == "in this document";
                 ui.label(RichText::new(title).color(theme::WEAK).small());
                 list.iter().for_each(|(id, def)| {
-                    let label = label_of(id, def);
-                    let selected = self.brush == *id;
-                    let texture = match id.as_str() {
-                        "eraser" => None,
-                        _ => self.samples.texture(&ctx, &self.brushes, id, def),
-                    };
-                    let text = RichText::new(match id.as_str() {
-                        "eraser" => format!("{} {label}", icon::ERASER),
-                        _ => label.clone(),
-                    });
-                    let button = match &texture {
-                        Some(t) => egui::Button::image_and_text(
-                            egui::Image::new(t).fit_to_exact_size(vec2(SAMPLE.0 as f32, SAMPLE.1 as f32)),
-                            text,
-                        ),
-                        None => egui::Button::new(text),
-                    };
-                    if ui
-                        .add(
-                            button
-                                .selected(selected)
-                                .min_size(vec2(ui.available_width(), theme::TARGET)),
-                        )
-                        .hint(format!("{id}: {}", def.name))
-                        .clicked()
-                    {
+                    let response = self.brush_tile(ui, &ctx, id, id, def, false);
+                    if response.clicked() {
                         picked = Some(id.clone());
+                    }
+                    if own {
+                        response.context_menu(|ui| self.own_brush_menu(ui, id));
                     }
                 });
             });
+        self.yours_tiles(ui);
         if let Some(id) = picked {
             self.tool = Tool::Brush;
             if id != "eraser" {
@@ -712,7 +760,7 @@ impl Editor {
                         corner.center(),
                         egui::Align2::CENTER_CENTER,
                         icon::CLOSE,
-                        egui::FontId::proportional(9.0),
+                        theme::regular(theme::ICON_TINY),
                         Color32::WHITE,
                     );
                 }
@@ -843,7 +891,7 @@ impl Editor {
                             false => format!(", by {}", shipped.by),
                         };
                         if ui
-                            .add(egui::Button::new(shipped.title).min_size(vec2(130.0, theme::TARGET)))
+                            .add(egui::Button::new(shipped.title).min_size(vec2(130.0, theme::CONTROL)))
                             .hint(format!("{} colours{by}", shipped.count()))
                             .clicked()
                         {

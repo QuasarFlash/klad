@@ -10,7 +10,9 @@ mod demo;
 mod edit;
 mod export;
 mod fills;
+mod flatten;
 mod fonts;
+mod formats;
 mod frames;
 mod history;
 mod inbetween;
@@ -20,14 +22,20 @@ mod layers;
 mod looks;
 mod maps;
 mod marks;
+mod oom;
 mod paintover;
 mod paths;
 mod pixelise;
+mod preview;
+mod psdfile;
 mod rig;
 mod scene;
 mod shapes;
 mod sheet;
+mod sheetin;
 mod sprites;
+mod svgin;
+mod svgout;
 
 use agent::{Look, Output};
 use anyhow::{Context, Result, anyhow, bail};
@@ -136,10 +144,52 @@ impl Where {
 enum Command {
     #[command(
         about = "Open an Aseprite file or a picture as a klad pixel drawing",
-        long_about = "Make a klad drawing from an Aseprite file (.aseprite or .ase), or a pixel drawing from a picture (.png, .jpg). The drawing is written next to the file (hero.aseprite makes hero.klad) unless -o names it, and its path is printed.\n\n  klad import hero.aseprite\n  klad import hero.ase -o sprites/hero.klad\n  klad import sprite.png                      (a picture of 512 px or less a side, at its own size)\n  klad import sprite@8x.png --size 32         (shrunk to 32 px on its longest side)\n  klad import photo.jpg --size 64 --colors 16\n\nA picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.\n\nFrom an Aseprite file, what comes over: image layers as pixel layers with their name, visibility, opacity and blend mode, groups as groups, every cel as a drawing on its frame (linked cels stay linked), the palette with its names, and tags as clips. Frame times become whole frames: a file of 100 ms frames is 10 frames a second, and a frame shown for 300 ms holds for three. Indexed, grey and RGBA files all open; every pixel is bound to its palette colour, and colours a file uses outside its palette are added to it.\n\nWhat does not: tilemap layers, tilesets and slices are left out, a tag that plays backwards or back and forth becomes a clip that plays forwards, and blend modes klad does not have blend as normal. Each of these is said when it happens.\n\nklad export art.klad --aseprite writes a drawing's pixel layers back to an Aseprite file."
+        long_about = "Make a klad drawing from an Aseprite file (.aseprite or .ase), or a pixel drawing from a picture (.png, .jpg). The drawing is written next to the file (hero.aseprite makes hero.klad) unless -o names it, and its path is printed.\n\n  klad import hero.aseprite\n  klad import hero.ase -o sprites/hero.klad\n  klad import sprite.png                      (a picture of 512 px or less a side, at its own size)\n  klad import sprite@8x.png --size 32         (shrunk to 32 px on its longest side)\n  klad import photo.jpg --size 64 --colors 16\n  klad import photo.jpg                       (larger than 512 px: a painting drawing of its size with the picture on a layer)\n  klad import --clipboard                     (the picture copied in another app: pasted.klad here)\n  klad import logo.svg                        (an SVG: a drawing of its size, a vector layer for each of its groups)\n  klad import logo.svg --into art.klad        (its layers added to a drawing you have)\n\nA picture larger than 512 px a side, without --size or --colors, or any picture with --painting, makes a painting drawing of its size: the picture on a layer at the bottom and a paint layer over it. Otherwise a picture becomes one pixel layer: every solid pixel takes a palette colour, and the palette is the picture's own colours when it has 256 or fewer, else 32 made from it, or --colors N. klad pixelize puts a picture on a layer of a drawing you have, in that drawing's palette.\n\nFrom an Aseprite file, what comes over: image layers as pixel layers with their name, visibility, opacity and blend mode, groups as groups, every cel as a drawing on its frame (linked cels stay linked), the palette with its names, and tags as clips. Frame times become whole frames: a file of 100 ms frames is 10 frames a second, and a frame shown for 300 ms holds for three. Indexed, grey and RGBA files all open; every pixel is bound to its palette colour, and colours a file uses outside its palette are added to it.\n\nWhat does not: tilemap layers, tilesets and slices are left out, a tag that plays backwards or back and forth becomes a clip that plays forwards, and blend modes klad does not have blend as normal. Each of these is said when it happens.\n\nklad export art.klad --aseprite writes a drawing's pixel layers back to an Aseprite file."
     )]
     Import {
-        file: PathBuf,
+        #[arg(
+            required_unless_present = "clipboard",
+            help = "The file: a PSD, an SVG, an Aseprite file or a picture; several pictures or a folder of them come in as frames"
+        )]
+        files: Vec<PathBuf>,
+        #[arg(
+            long,
+            conflicts_with = "files",
+            help = "The picture on the clipboard, copied in another app (the drawing is pasted.klad here unless -o names it)"
+        )]
+        clipboard: bool,
+        #[arg(
+            long,
+            help = "A picture: a painting drawing with the picture on a layer, whatever its size (pictures larger than 512 px come in that way already)"
+        )]
+        painting: bool,
+        #[arg(
+            long,
+            visible_alias = "to",
+            value_name = "BUNDLE",
+            help = "Add to this drawing instead of making one: an SVG's shapes (a vector layer for each group), or frames (a new layer with a cel per frame and a clip)"
+        )]
+        into: Option<PathBuf>,
+        #[arg(
+            long,
+            value_name = "WxH",
+            help = "A sprite sheet: cut it into cells of this size, each a frame (empty cells are skipped)"
+        )]
+        cell: Option<String>,
+        #[arg(
+            long,
+            value_name = "COLSxROWS",
+            help = "A sprite sheet: cut it into this many columns and rows, each a frame"
+        )]
+        grid: Option<String>,
+        #[arg(long, default_value_t = 0, help = "A sprite sheet: px between the cells")]
+        padding: u32,
+        #[arg(
+            long,
+            default_value_t = 0,
+            help = "A sprite sheet: px around the cells, at the sheet's edges"
+        )]
+        margin: u32,
         #[arg(
             long,
             help = "A picture: its longest side in pixels once it is pixel art, 1 to 512 (needed when the picture is larger)"
@@ -244,7 +294,7 @@ enum Command {
     },
     #[command(
         about = "The canvas: its size and background, whether it wraps at its edges, and the size of its tiles",
-        long_about = "The canvas: its size and background, and whether it wraps at its edges. On a canvas that wraps, a tile, pixels drawn past an edge come back in on the other side, and fills and outlines go round the edges, so the drawing repeats without a seam. klad render --repeat 3 shows it repeated.\n\n  klad canvas tile.klad\n  klad canvas tile.klad --wrap on\n\nA drawing can also be cut into tiles of one size, a tileset: --tile 16 (or 16x24) sets the size, which the canvas has to be a whole number of each way, and --tile off takes it away. klad pixels and klad pixel --grid then take --tile column,row to read and draw one tile at a time, the editor shows the tile lines, and klad export --tileset writes a Godot TileSet.\n\n  klad canvas tiles.klad --tile 16\n  klad pixels tiles.klad l1 --tile 2,0 --plain\n  klad export tiles.klad --tileset ../game/art\n\nAs an op: {\"op\":\"canvas\",\"wrap\":true}, {\"op\":\"canvas\",\"tile\":16}, {\"op\":\"canvas\",\"tile\":[16,24]}, {\"op\":\"canvas\",\"tile\":null}."
+        long_about = "The canvas: its size and background, and whether it wraps at its edges. On a canvas that wraps, a tile, pixels drawn past an edge come back in on the other side, and fills and outlines go round the edges, so the drawing repeats without a seam. klad render --repeat 3 shows it repeated.\n\n  klad canvas tile.klad\n  klad canvas tile.klad --wrap on\n\nA drawing can also be cut into tiles of one size, a tileset: --tile 16 (or 16x24) sets the size, which the canvas has to be a whole number of each way, and --tile off takes it away. klad pixels and klad pixel --grid then take --tile column,row to read and draw one tile at a time, the editor shows the tile lines, and klad export --tileset writes a Godot TileSet.\n\n  klad canvas tiles.klad --tile 16\n  klad pixels tiles.klad l1 --tile 2,0 --plain\n  klad export tiles.klad --tileset ../game/art\n\nThe whole drawing, with everything tied to its canvas (strokes, shapes, pixels, bones and their weights, light maps and lights, the Godot origin), one history step each:\n\n  klad canvas art.klad --size 2400,1600 --anchor top-left   (a bigger or smaller canvas; nothing scaled)\n  klad canvas art.klad --crop 100,80,1200,900\n  klad canvas art.klad --trim                                 (to what is drawn)\n  klad canvas art.klad --resize 0.5                           (a pixel drawing by whole numbers)\n  klad canvas art.klad --turn 90                              (-90, 180)\n  klad canvas art.klad --flip h                               (v)\n  klad canvas art.klad --paper '#f4efe6'                      (none: see-through)\n\nAs an op: {\"op\":\"canvas\",\"wrap\":true}, {\"op\":\"canvas\",\"tile\":16}, {\"op\":\"canvas\",\"tile\":[16,24]}, {\"op\":\"canvas\",\"tile\":null}; {\"op\":\"canvas\",\"size\":[w,h]} and {\"op\":\"canvas\",\"background\":\"#f4efe6\"} set the size alone (without moving anything) and the paper."
     )]
     Canvas {
         bundle: PathBuf,
@@ -256,6 +306,128 @@ enum Command {
             help = "Cut the drawing into tiles of this size, 16 or 16x24 (off: no tiles); the canvas has to be a whole number of tiles each way"
         )]
         tile: Option<String>,
+        #[arg(long, value_name = "W,H", conflicts_with_all = ["crop", "trim", "resize", "turn", "flip"], help = "A bigger or smaller canvas around the drawing, kept in place by --anchor; nothing is scaled")]
+        size: Option<String>,
+        #[arg(
+            long,
+            default_value = "center",
+            requires = "size",
+            help = "With --size: where the drawing stays: top-left, top, top-right, left, center, right, bottom-left, bottom, bottom-right"
+        )]
+        anchor: String,
+        #[arg(long, value_name = "X,Y,W,H", allow_hyphen_values = true, conflicts_with_all = ["trim", "resize", "turn", "flip"], help = "Keep only this area: it becomes the canvas; an area past the edges (x or y below 0, or wider than the canvas) grows it")]
+        crop: Option<String>,
+        #[arg(long, conflicts_with_all = ["resize", "turn", "flip"], help = "Crop to what is drawn on the visible layers")]
+        trim: bool,
+        #[arg(long, value_name = "FACTOR", conflicts_with_all = ["turn", "flip"], help = "Scale the whole drawing, 2 or 0.5 (a pixel drawing by whole numbers): strokes and shapes stay sharp")]
+        resize: Option<f32>,
+        #[arg(long, allow_hyphen_values = true, value_parser = ["90", "-90", "180"], conflicts_with = "flip", help = "Turn the whole drawing: 90 (right), -90 (left) or 180")]
+        turn: Option<String>,
+        #[arg(long, value_parser = ["h", "v"], help = "Mirror the whole drawing: h (left to right) or v (upside down)")]
+        flip: Option<String>,
+        #[arg(
+            long,
+            value_name = "COLOUR",
+            help = "The paper colour, #f4efe6, or none for a see-through paper"
+        )]
+        paper: Option<String>,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
+        about = "The grid: its spacing, offset, look, and whether it shows and snaps",
+        long_about = "The grid over the drawing: its spacing across and down, a stronger line every few lines, where it starts, square or isometric (2:1 for pixel art), its colour and opacity, and two switches: whether it shows in the editor and whether things snap (to the grid, the guides, and other shapes' edges and centres). A drawing cut into tiles starts with the tile size. Without flags it prints the grid. One history step.\n\n  klad grid art.klad --every 16 --sub 4 --show on --snap on\n  klad grid art.klad --every 32,16 --iso\n  klad grid art.klad --off\n\nAs an op: {\"op\":\"grid\",\"every\":16,\"sub\":4,\"show\":true,\"snap\":true}."
+    )]
+    Grid {
+        bundle: PathBuf,
+        #[arg(
+            long,
+            value_name = "PX[,PX]",
+            help = "The spacing, across and down (one number for both)"
+        )]
+        every: Option<String>,
+        #[arg(long, help = "A stronger line every this many lines (0: none)")]
+        sub: Option<u32>,
+        #[arg(long, value_name = "X,Y", allow_hyphen_values = true, help = "Where the grid starts")]
+        offset: Option<String>,
+        #[arg(long, value_parser = ["on", "off"], help = "Isometric (2:1) instead of square")]
+        iso: Option<String>,
+        #[arg(long, alias = "color", help = "The grid's colour, #4f8fe8")]
+        colour: Option<String>,
+        #[arg(long, help = "The grid's opacity, 0 to 1")]
+        opacity: Option<f32>,
+        #[arg(long, value_parser = ["on", "off"], help = "Show the grid in the editor")]
+        show: Option<String>,
+        #[arg(long, value_parser = ["on", "off"], help = "Snap to the grid, the guides and other shapes")]
+        snap: Option<String>,
+        #[arg(long, help = "No grid")]
+        off: bool,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
+        about = "Guides: level and upright lines to snap to, and drawing guides (perspective, rulers, ellipses) the brush follows",
+        long_about = "Guides: upright lines at x and level lines at y, in canvas px, kept in the drawing. Things snap to them when snapping is on (klad grid --snap on). Without flags it lists them. One history step.\n\n  klad guides art.klad --x 120 --x 480 --y 64\n  klad guides art.klad --rm-x 120\n  klad guides art.klad --clear\n  klad guides art.klad --locked on --hidden off\n\nDrawing guides are what the brush follows while painting in the editor (and klad stroke --follow): one, two or three vanishing points, a ruler line, an ellipse. A stroke runs to the vanishing point it heads for (or stays level or upright), along a ruler (on it when it starts near it, parallel when not), round the ellipse or one of its shape through where it starts.\n\n  klad guides art.klad --perspective -400,300,2400,300 --follow on\n  klad guides art.klad --ruler 100,500,900,420\n  klad guides art.klad --ellipse 512,512,300,120,15\n  klad guides art.klad --rm-guide 0\n\nAs an op: {\"op\":\"guides\",\"x\":[120,480],\"y\":[64]}, with \"rmX\", \"rmY\", \"clear\", \"hidden\", \"locked\" and \"snap\"; drawing guides: {\"op\":\"assists\",\"add\":[{\"kind\":\"perspective\",\"points\":[[-400,300],[2400,300]]}],\"on\":true}, with \"remove\" (numbers) and \"clear\"."
+    )]
+    Guides {
+        bundle: PathBuf,
+        #[arg(
+            long,
+            allow_hyphen_values = true,
+            help = "An upright guide at this x (repeat for more)"
+        )]
+        x: Vec<f32>,
+        #[arg(long, allow_hyphen_values = true, help = "A level guide at this y (repeat for more)")]
+        y: Vec<f32>,
+        #[arg(
+            long = "rm-x",
+            allow_hyphen_values = true,
+            help = "Take the upright guide at this x away"
+        )]
+        rm_x: Vec<f32>,
+        #[arg(
+            long = "rm-y",
+            allow_hyphen_values = true,
+            help = "Take the level guide at this y away"
+        )]
+        rm_y: Vec<f32>,
+        #[arg(long, help = "Take every guide away")]
+        clear: bool,
+        #[arg(long, value_parser = ["on", "off"], help = "Hide the guides in the editor (they do not snap while hidden)")]
+        hidden: Option<String>,
+        #[arg(long, value_parser = ["on", "off"], help = "Lock the guides so they cannot be dragged")]
+        locked: Option<String>,
+        #[arg(
+            long,
+            value_name = "X,Y[,X,Y[,X,Y]]",
+            allow_hyphen_values = true,
+            help = "A drawing guide: perspective with one, two or three vanishing points"
+        )]
+        perspective: Vec<String>,
+        #[arg(
+            long,
+            value_name = "X0,Y0,X1,Y1",
+            allow_hyphen_values = true,
+            help = "A drawing guide: a ruler line strokes run along"
+        )]
+        ruler: Vec<String>,
+        #[arg(
+            long,
+            value_name = "CX,CY,RX,RY[,TURN]",
+            allow_hyphen_values = true,
+            help = "A drawing guide: an ellipse strokes go round (turn in degrees)"
+        )]
+        ellipse: Vec<String>,
+        #[arg(
+            long = "rm-guide",
+            value_name = "N",
+            help = "Take drawing guide N away (0 is the first; klad guides lists them)"
+        )]
+        rm_guide: Vec<usize>,
+        #[arg(long = "clear-drawing-guides", help = "Take every drawing guide away")]
+        clear_drawing_guides: bool,
+        #[arg(long, value_parser = ["on", "off"], help = "Whether the brush follows the drawing guides in the editor")]
+        follow: Option<String>,
         #[command(flatten)]
         flags: EditFlags,
     },
@@ -675,7 +847,7 @@ enum Command {
         #[arg(help = "layer, cel, mask, rect, ellipse, path, group, rays, image, scatter, repeat, mirror or text")]
         what: String,
         #[arg(
-            help = "For layers the kind first (paint, pixel, vector, group, bones, image with src=photo.jpg, or adjust and its type: hsl, levels, curves, balance, gradient-map, fill), then key=value pairs"
+            help = "For layers the kind first (paint, pixel, vector, group, bones, image with src=photo.jpg or src=clipboard, or adjust and its type: hsl, levels, curves, balance, gradient-map, fill), then key=value pairs"
         )]
         rest: Vec<String>,
         #[command(flatten)]
@@ -750,6 +922,83 @@ enum Command {
         flags: EditFlags,
     },
     #[command(
+        about = "Merge layers into the lowest of them, or every visible layer into one picture",
+        long_about = "Merge layers of one kind into the lowest of them, frame by frame: paint into paint keeps the strokes and fills as they are, pixel into pixel the pixels, vector into vector the shapes (in a group that keeps the layer's opacity). A see-through upper layer's opacity goes onto each of its strokes, so where they overlap they look a little stronger. Strokes and fills painted with lock alpha stay on the paint of their own layer: where one would now reach the paint of a layer under it, it gets a cut along its layer's edge. Layers of different kinds, with masks, clipping, blend modes, effects or animated keys, or in different groups, are refused with the reason. One history step.\n\n  klad merge art.klad lines ink            (ink merges into lines, the lower of the two)\n  klad merge art.klad --down ink           (ink merges into the layer under it)\n  klad merge art.klad --visible            (every visible layer: merged as above when they can be, else one picture on a vector layer named merged)"
+    )]
+    Merge {
+        bundle: PathBuf,
+        layers: Vec<String>,
+        #[arg(long, value_name = "LAYER", conflicts_with_all = ["layers", "visible"], help = "Merge this layer into the one under it")]
+        down: Option<String>,
+        #[arg(
+            long,
+            conflicts_with = "layers",
+            help = "Every visible layer that is not a reference"
+        )]
+        visible: bool,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
+        about = "Take a group apart: its layers go where it was",
+        long_about = "Take a group apart: its layers take its place, in the same order, and the group is gone. A see-through group passes its opacity on to each layer, a hidden one hides them; its blend mode, mask and effects go, and the command says so. One history step.\n\n  klad ungroup art.klad trees"
+    )]
+    Ungroup {
+        bundle: PathBuf,
+        group: String,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
+        about = "Give shapes the look of another: its fill, outline and opacity",
+        long_about = "Give shapes the look of another shape: its fill (colour or gradient), its outline (colour, width, ends, joins and dashes) and its opacity. One history step.\n\n  klad style art.klad n4 n7 n9        (n7 and n9 take the look of n4)\n\nAlso a style op: {\"op\":\"style\",\"from\":\"n4\",\"ids\":[\"n7\",\"n9\"]}."
+    )]
+    Style {
+        bundle: PathBuf,
+        from: String,
+        #[arg(required = true)]
+        ids: Vec<String>,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
+        about = "Unite, subtract, intersect or exclude shapes into one path",
+        long_about = "Combine two shapes or more of one vector layer into one path, as their outlines overlap: --unite takes all of them, --subtract takes the shapes in front away from the one at the back, --intersect keeps where they all overlap, --exclude where an odd number of them do. The path takes the place, fill, outline and opacity of the shape at the back, and the shapes are gone. Rectangles, ellipses, paths and text combine; groups do not. One history step.\n\n  klad combine art.klad n3 n4 --unite\n  klad combine art.klad n3 n4 n5 --subtract"
+    )]
+    Combine {
+        bundle: PathBuf,
+        #[arg(required = true)]
+        ids: Vec<String>,
+        #[arg(long, group = "how")]
+        unite: bool,
+        #[arg(long, group = "how")]
+        subtract: bool,
+        #[arg(long, group = "how")]
+        intersect: bool,
+        #[arg(long, group = "how")]
+        exclude: bool,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
+        about = "Put shapes, strokes or fills in front of or behind the others on their layer",
+        long_about = "Put shapes, strokes or fills in front of or behind the others on their layer. Shapes are the nodes of a vector layer (they change places among the shapes of their drawing or group); strokes and fills are <cel>:s<id> and change places among the marks of their drawing, with the erasers and smudges attached to them. --front and --back go all the way; --up and --down go one place, past the next shape, or for marks past the next mark they overlap. Several things keep their order among themselves. One history step.\n\n  klad order art.klad n4 --front\n  klad order art.klad c9:s12 c9:s13 --down"
+    )]
+    Order {
+        bundle: PathBuf,
+        ids: Vec<String>,
+        #[arg(long, help = "In front of everything on the layer")]
+        front: bool,
+        #[arg(long, help = "Behind everything on the layer")]
+        back: bool,
+        #[arg(long, help = "One place nearer the front")]
+        up: bool,
+        #[arg(long, help = "One place further back")]
+        down: bool,
+        #[command(flatten)]
+        flags: EditFlags,
+    },
+    #[command(
         about = "Align shapes to each other, the canvas or one shape, or spread them evenly",
         long_about = "Align shapes (the nodes of a vector layer) by their bounds on the canvas, or spread them evenly. --x lines up left edges, centres or right edges; --y lines up tops, middles or bottoms; both together stack them on one point. Without --to they line up on the bounds of the shapes together, so the outermost one stays; --to canvas uses the canvas (one shape is enough), --to <id> uses that shape, which stays where it is. --spread x or y keeps the two outer shapes and makes the gaps between neighbours equal; with --gap the first stays and each next one follows that many px after it. Aligning one way and spreading the other go together. A shape inside a group moves by the distance seen on the canvas. One history step.\n\n  klad align art.klad n3 n4 n7 --y middle\n  klad align art.klad n3 n4 n7 --y middle --spread x\n  klad align art.klad n3 n4 n7 --spread x --gap 24\n  klad align art.klad title --x centre --to canvas\n  klad align art.klad n4 n7 --x left --to n3"
     )]
@@ -818,13 +1067,19 @@ enum Command {
     },
     #[command(
         about = "Lasso strokes and fills on a paint layer; --cut also takes the parts crossing the edge",
-        long_about = "Select the strokes and fills of a paint layer inside a polygon and move, turn, scale, flip or delete them in one step. Without --cut only whole marks move: strokes whose points are all inside and fills whose pixels are. With --cut every stroke or fill crossing the edge is split at the edge: the part outside stays where it is and the part inside moves with the rest, so nothing outside the lasso changes. Without a move, turn, scale, flip or --rm it only lists what is inside and what crosses.\n\n  klad lasso art.klad l3 --polygon '100,100 400,120 380,400 90,380'\n  klad lasso art.klad l3 --polygon '100,100 400,120 380,400 90,380' --cut --move 60,-20\n  klad lasso art.klad l3 --polygon '...' --cut --rotate 15 --scale 1.2\n  klad lasso art.klad l3 --polygon '...' --flip h\n  klad lasso art.klad l3 --polygon '...' --cut --rm\n\nAlso a lasso op in klad apply: {\"op\":\"lasso\",\"layer\":\"l3\",\"polygon\":[[100,100],[400,120],[380,400]],\"cut\":true,\"x\":60,\"y\":-20} (or \"rm\":true)."
+        long_about = "Select the strokes and fills of a paint layer inside a polygon and move, turn, scale, flip or delete them in one step. Without --cut only whole marks move: strokes whose points are all inside and fills whose pixels are. With --cut every stroke or fill crossing the edge is split at the edge: the part outside stays where it is and the part inside moves with the rest, so nothing outside the lasso changes. Without a move, turn, scale, flip or --rm it only lists what is inside and what crosses.\n\n  klad lasso art.klad l3 --polygon '100,100 400,120 380,400 90,380'\n  klad lasso art.klad l3 --polygon '100,100 400,120 380,400 90,380' --cut --move 60,-20\n  klad lasso art.klad l3 --polygon '...' --cut --rotate 15 --scale 1.2\n  klad lasso art.klad l3 --polygon '...' --flip h\n  klad lasso art.klad l3 --polygon '...' --cut --rm\n  klad lasso art.klad l3 --ellipse 100,100,300,200 --move 40,0\n  klad lasso art.klad l3 --at 220,180 --tolerance 0.2 --rm\n\n--box and --ellipse take a box (x,y,w,h) in place of the polygon. --at is a magic wand: it takes the area of one colour around that point of the layer, up to where the colour changes by more than --tolerance (0 to 1), and cuts what crosses its edge, so the parts inside are taken.\n\nAlso a lasso op in klad apply: {\"op\":\"lasso\",\"layer\":\"l3\",\"polygon\":[[100,100],[400,120],[380,400]],\"cut\":true,\"x\":60,\"y\":-20} (or \"rm\":true)."
     )]
     Lasso {
         bundle: PathBuf,
         layer: String,
-        #[arg(long, required_unless_present = "area", help = "x,y pairs separated by spaces")]
+        #[arg(long, required_unless_present_any = ["area", "ellipse", "at"], help = "x,y pairs separated by spaces")]
         polygon: Option<String>,
+        #[arg(long, value_name = "X,Y,W,H", conflicts_with_all = ["polygon", "area", "at"], help = "The ellipse that fits this box, in place of a polygon")]
+        ellipse: Option<String>,
+        #[arg(long, value_name = "X,Y", value_parser = parse_pair, conflicts_with_all = ["polygon", "area"], help = "A magic wand: the area of one colour around this point on the layer, up to its edge (takes the parts inside, as --cut)")]
+        at: Option<[f32; 2]>,
+        #[arg(long, default_value_t = klad_render::wand::TOLERANCE, requires = "at", help = "With --at: how far a colour may be from the one at the point, 0 to 1")]
+        tolerance: f32,
         #[arg(
             long = "box",
             value_name = "X,Y,W,H",
@@ -885,7 +1140,10 @@ enum Command {
         smooth: Option<String>,
         #[arg(long, value_name = "PX")]
         simplify: Option<f32>,
-        #[arg(long, help = "Turn a rect or ellipse into a path without other changes")]
+        #[arg(
+            long,
+            help = "Turn a rect or ellipse into a path without other changes, or a text into the paths of its letters"
+        )]
         convert: bool,
         #[command(flatten)]
         flags: EditFlags,
@@ -1021,7 +1279,7 @@ enum Command {
     },
     #[command(
         about = "Paint a stroke with a brush along an SVG path or explicit points",
-        long_about = "Paint with a brush along an SVG path (M, L, H, V, C, S, Q, T, Z; several subpaths make several strokes) or explicit points.\n\n  klad stroke art.klad l3 --brush ink --size 14 --color #1b1b1b --path 'M100 400 C 300 200 500 600 700 400' --pressure 0.1,1,0.05\n  klad stroke art.klad l3 --brush ink --size 6 --taper 12,30 --path 'M100 100 Q 200 40 300 120'\n  klad stroke art.klad l3 --points '10,10,0.5 40,30,1 80,35,0.2'\n\nPressure is spread evenly along the stroke. --taper thins the first and last px of the line whatever the pressure. Brushes are a bundle brush id or a library brush (klad brushes). Strokes are marked as agent strokes."
+        long_about = "Paint with a brush along an SVG path (M, L, H, V, C, S, Q, T, Z; several subpaths make several strokes) or explicit points.\n\n  klad stroke art.klad l3 --brush ink --size 14 --color #1b1b1b --path 'M100 400 C 300 200 500 600 700 400' --pressure 0.1,1,0.05\n  klad stroke art.klad l3 --brush ink --size 6 --taper 12,30 --path 'M100 100 Q 200 40 300 120'\n  klad stroke art.klad l3 --points '10,10,0.5 40,30,1 80,35,0.2'\n  klad stroke art.klad l3 --brush pencil --size 4 --line 100,100,400,100\n  klad stroke art.klad l3 --rect 40,40,200,120\n  klad stroke art.klad l3 --ellipse 40,40,200,120\n\n--line paints a straight stroke between two points; --rect and --ellipse paint around a rectangle, or the ellipse that fits that box, with the brush: paint, not shapes. Pressure is spread evenly along the stroke. --taper thins the first and last px of the line whatever the pressure. Brushes are a bundle brush id or a library brush (klad brushes). Strokes are marked as agent strokes."
     )]
     Stroke {
         bundle: PathBuf,
@@ -1030,6 +1288,14 @@ enum Command {
         path: Option<String>,
         #[arg(long, help = "x,y,pressure triples separated by spaces")]
         points: Option<String>,
+        #[arg(long, value_name = "X0,Y0,X1,Y1", conflicts_with_all = ["path", "points", "rect", "ellipse"], help = "A straight stroke between two points")]
+        line: Option<String>,
+        #[arg(long, value_name = "X,Y,W,H", conflicts_with_all = ["path", "points", "ellipse"], help = "A stroke around a rectangle, painted with the brush")]
+        rect: Option<String>,
+        #[arg(long, value_name = "X,Y,W,H", conflicts_with_all = ["path", "points"], help = "A stroke around the ellipse that fits this box, painted with the brush")]
+        ellipse: Option<String>,
+        #[arg(long, conflicts_with_all = ["path", "rect", "ellipse"], help = "Bend --points or --line onto the drawing's guides (klad guides --perspective, --ruler, --ellipse), as the brush follows them in the editor")]
+        follow: bool,
         #[arg(long, default_value = "ink")]
         brush: String,
         #[arg(long, default_value = "#000000")]
@@ -1789,6 +2055,18 @@ enum Command {
         value: f32,
         #[arg(long)]
         smooth: bool,
+        #[arg(long, value_parser = ["paint", "add", "remove", "smooth"], help = "What --set dabs do: paint toward the weight (the default), add it, remove it, or smooth under the brush")]
+        mode: Option<String>,
+        #[arg(
+            long,
+            default_value_t = 1.0,
+            help = "How far one dab moves toward its weight, 0 to 1 (0.1 builds up over dabs)"
+        )]
+        strength: f32,
+        #[arg(long, default_value_t = 0.0, help = "How hard the dab's edge is, 0 (soft) to 1")]
+        hardness: f32,
+        #[arg(long, value_name = "X,Y", value_parser = parse_pair, allow_hyphen_values = true, help = "With --bone: print that bone's weight at this point (painted and used)")]
+        at: Option<[f32; 2]>,
         #[arg(long, default_value_t = 0)]
         frame: u32,
         #[command(flatten)]
@@ -2183,6 +2461,70 @@ enum Command {
         references: bool,
         #[arg(
             long,
+            conflicts_with_all = ["sheet", "frames", "gif", "godot", "godot_scene", "godot_rig", "aseprite", "tileset", "out"],
+            help = "Put the picture on the clipboard, for pasting in another app, instead of writing a file"
+        )]
+        clipboard: bool,
+        #[arg(
+            long,
+            conflicts_with_all = ["sheet", "gif", "godot", "godot_scene", "godot_rig", "aseprite", "tileset", "clipboard"],
+            help = "An SVG: the vector layers as shapes, each layer a group; paint and pixel layers as pictures in it unless --vectors-only. With --frames, an SVG per frame"
+        )]
+        svg: bool,
+        #[arg(long, requires = "svg", help = "With --svg: leave paint and pixel layers out")]
+        vectors_only: bool,
+        #[arg(
+            long,
+            requires = "svg",
+            help = "With --svg: text as the paths of its letters, for apps without the font"
+        )]
+        outline_text: bool,
+        #[arg(
+            long,
+            value_delimiter = ',',
+            help = "Only these, cut to them: shapes by id, or strokes as <cel>:s<id> (a selection), comma separated; with --svg shapes only"
+        )]
+        only: Vec<String>,
+        #[arg(
+            long,
+            value_name = "FORMAT",
+            help = "png, jpeg, webp, tiff, pdf or mp4 (default: from the -o file's extension, else png)"
+        )]
+        format: Option<String>,
+        #[arg(
+            long,
+            value_name = "1-100",
+            help = "JPEG, WebP and MP4 quality (default 90; 80 for MP4)"
+        )]
+        quality: Option<f32>,
+        #[arg(long, help = "With --format webp: keep every pixel exactly")]
+        lossless: bool,
+        #[arg(
+            long,
+            value_name = "COLOUR",
+            help = "What shows where the picture is transparent in a JPEG or an MP4 (default white; --background gives the canvas colour)"
+        )]
+        matte: Option<String>,
+        #[arg(long, num_args = 0..=1, default_missing_value = "all", value_name = "FRAMES", help = "With --format webp: an animated WebP of these frames: all (one per clip), a clip or a range; an MP4 always plays them (default all)")]
+        animated: Option<String>,
+        #[arg(
+            long,
+            help = "With --format pdf: the drawing's pixels per inch on the page (default 72: a pixel is a point)"
+        )]
+        dpi: Option<f32>,
+        #[arg(
+            long,
+            help = "With --format pdf: fit the picture on a paper: a3, a4, a5, letter, legal or tabloid, with ,landscape"
+        )]
+        paper: Option<String>,
+        #[arg(
+            long,
+            value_name = "FRAMES",
+            help = "With --format pdf: a page for each of these frames (all, a clip, a range), or clips for a page per clip"
+        )]
+        pages: Option<String>,
+        #[arg(
+            long,
             conflicts_with_all = ["frames", "godot"],
             help = "Sprite sheet and Aseprite JSON: all, a clip or a range like 0-11"
         )]
@@ -2296,8 +2638,8 @@ enum Command {
         out: Option<PathBuf>,
     },
     #[command(
-        about = "List brushes: the library, and with a bundle the ones it embeds",
-        long_about = "List brushes: the built-in library, and with a bundle the brushes it embeds (a document keeps every brush it uses in brushes/<id>.json, so it renders the same when the library changes).\n\n  klad brushes\n  klad brushes art.klad\n  klad brushes art.klad --show ink"
+        about = "List brushes: the library, and with a bundle the ones it embeds; keep your own brushes for every drawing",
+        long_about = "List brushes: the built-in library, and with a bundle the brushes it embeds (a document keeps every brush it uses in brushes/<id>.json, so it renders the same when the library changes).\n\n  klad brushes\n  klad brushes art.klad\n  klad brushes art.klad --show ink\n\nYour brushes are kept in your support folder (KLAD_LIBRARY overrides it) and shown in every drawing's brush tiles. A drawing that uses one keeps its own copy, so it renders the same where your brushes are missing. klad stroke --brush takes them too.\n\n  klad brushes art.klad --save wet-ink [--as wet]\n  klad brushes --library\n  klad brushes new.klad --take wet-ink\n  klad brushes --rename wet-ink 'wet ink' --group wet-ink inks --move wet-ink -1\n  klad brushes --forget wet-ink\n  klad brushes --export-library inks.json\n  klad brushes --import-library inks.json"
     )]
     Brushes {
         bundle: Option<PathBuf>,
@@ -2309,6 +2651,42 @@ enum Command {
         set: Option<Vec<String>>,
         #[arg(long, num_args = 2, value_names = ["NAME", "PNG"], help = "Add a picture (tip or texture) to the bundle's brushes/images")]
         picture: Option<Vec<String>>,
+        #[arg(long, help = "List your brushes, the ones every drawing shows")]
+        library: bool,
+        #[arg(long, value_name = "ID", help = "Save the bundle's brush in your brushes")]
+        save: Option<String>,
+        #[arg(long = "as", value_name = "ID", requires = "save", help = "Save it under this id")]
+        save_as: Option<String>,
+        #[arg(
+            long,
+            value_name = "ID",
+            help = "Give the bundle its own copy of one of your brushes"
+        )]
+        take: Option<String>,
+        #[arg(
+            long,
+            value_name = "ID",
+            help = "Take a brush out of your brushes (drawings keep their copy)"
+        )]
+        forget: Option<String>,
+        #[arg(long, num_args = 2, value_names = ["ID", "NAME"], help = "Rename one of your brushes")]
+        rename: Option<Vec<String>>,
+        #[arg(long, num_args = 2, value_names = ["ID", "GROUP"], help = "Put one of your brushes in a group ('' for none)")]
+        group: Option<Vec<String>>,
+        #[arg(long = "move", num_args = 2, value_names = ["ID", "BY"], allow_hyphen_values = true, help = "Move one of your brushes up (negative) or down the list")]
+        shift: Option<Vec<String>>,
+        #[arg(
+            long = "export-library",
+            value_name = "FILE",
+            help = "Write your brushes, with their pictures, to one file to share"
+        )]
+        export_library: Option<PathBuf>,
+        #[arg(
+            long = "import-library",
+            value_name = "FILE",
+            help = "Add the brushes of a shared file to your brushes"
+        )]
+        import_library: Option<PathBuf>,
     },
     #[command(
         about = "List, add or remove a layer's effects: klad effect art.klad l3 glow radius=24 color=#ffd080",
@@ -2337,6 +2715,25 @@ enum Command {
         path: String,
         #[command(flatten)]
         flags: EditFlags,
+    },
+    #[command(
+        name = "save-as",
+        about = "Save a copy of a drawing under a new name (everything but its undo history); the copy gets its own ids",
+        long_about = "Save a copy of a drawing under a new name, next to it unless the name has a folder. Everything outside .cache is copied; the copy starts with no undo history and gets ids of its own when it is first opened, so the two can be edited side by side and merged in git.\n\n  klad save-as art.klad art-v2\n  klad save-as art.klad ../shared/art.klad"
+    )]
+    SaveAs {
+        bundle: PathBuf,
+        #[arg(help = "The copy's name or path (.klad is added)")]
+        to: PathBuf,
+    },
+    #[command(
+        about = "Rename a drawing (its folder); an editor that has it open goes on in it",
+        long_about = "Rename a drawing's folder, next to it unless the name has a folder. The undo history and pinned notes go with it. An editor that has it open follows it.\n\n  klad rename art.klad hero"
+    )]
+    Rename {
+        bundle: PathBuf,
+        #[arg(help = "The new name or path (.klad is added)")]
+        to: PathBuf,
     },
     #[command(about = "Undo the last change (from the CLI or the editor)")]
     Undo {
@@ -2414,6 +2811,23 @@ enum Command {
         entry: Option<String>,
         #[arg(long, help = "Print strokes as JSON with their points (x, y, pressure)")]
         json: bool,
+    },
+    #[command(
+        about = "Write the pictures Finder shows for a drawing: space shows QuickLook/Preview.png, icons QuickLook/Thumbnail.png",
+        long_about = "Write the pictures Finder shows for a drawing: space shows QuickLook/Preview.png (up to 1024 px a side) and icons QuickLook/Thumbnail.png (up to 512). Both show frame 0, or the first frame of the first clip; a pixel drawing is enlarged by whole pixels so it stays sharp. The editor writes them in the background when a drawing closes or klad quits; this command is for drawings made without the editor. QuickLook/ stays out of git.\n\n  klad preview art.klad\n  klad preview a.klad b.klad --changed\n  klad preview --all ~/Drawings --changed"
+    )]
+    Preview {
+        #[arg(required_unless_present = "all")]
+        bundles: Vec<PathBuf>,
+        #[arg(
+            long,
+            value_name = "FOLDER",
+            conflicts_with = "bundles",
+            help = "Every drawing in a folder"
+        )]
+        all: Option<PathBuf>,
+        #[arg(long, help = "Skip drawings that have not changed since their last preview")]
+        changed: bool,
     },
     #[command(about = "Print pixel hashes, for comparing macOS and Linux renders")]
     Hash {
@@ -2547,6 +2961,133 @@ enum Command {
     #[cfg(feature = "editor")]
     #[command(about = "Open the editor, on a bundle or on the start window (new, open, recent)")]
     Open { bundle: Option<PathBuf> },
+    #[command(
+        about = "Serve klad to agent apps such as Claude Desktop and Codex (MCP), or connect klad to one",
+        long_about = "Serve klad to agent apps over the Model Context Protocol, or connect it to one. An agent app (Claude Desktop, the Codex app, Claude Code, Cursor, VS Code) starts `klad mcp` itself and paints and edits drawings through its tools: look, read, edit, run, new, note_done and open. The klad guide comes with it, as a prompt and a resource named klad. The agent works only on drawings in the drawings folder, the folders of recent drawings, the folders added in the editor (File > Connect an agent app) and the ones given with --root.\n\n  klad mcp --status                    (which agent apps are here, and which have klad)\n  klad mcp --install claude-desktop     (then quit Claude Desktop and open it again)\n  klad mcp --install codex\n  klad mcp --print cursor               (what --install writes, to add it by hand)\n  klad mcp --uninstall claude-desktop\n\nThe editor does the same in File > Connect an agent app, without a terminal."
+    )]
+    Mcp {
+        #[arg(
+            long,
+            value_name = "FOLDER",
+            help = "A folder the agent may work in, besides the drawings folder and the folders of recent drawings (repeat for more)"
+        )]
+        root: Vec<PathBuf>,
+        #[arg(long, value_name = "APP", conflicts_with_all = ["uninstall", "print", "status"], help = "Put klad in an agent app's settings: claude-desktop, codex, claude-code, cursor or vscode")]
+        install: Option<String>,
+        #[arg(long, value_name = "APP", conflicts_with_all = ["print", "status"], help = "Take klad out of an agent app's settings")]
+        uninstall: Option<String>,
+        #[arg(
+            long,
+            value_name = "APP",
+            conflicts_with = "status",
+            help = "Print what --install writes, to add it by hand"
+        )]
+        print: Option<String>,
+        #[arg(long, help = "Which agent apps are on this computer, and which have klad")]
+        status: bool,
+        #[arg(
+            long,
+            value_name = "APP",
+            conflicts_with_all = ["install", "uninstall", "print", "status"],
+            help = "The agent app starting this server (--install and the editor write it), so klad knows that app has started klad"
+        )]
+        client: Option<String>,
+    },
+}
+
+fn mcp(
+    root: Vec<PathBuf>,
+    install: Option<String>,
+    uninstall: Option<String>,
+    print: Option<String>,
+    status: bool,
+    client: Option<String>,
+) -> Result<()> {
+    use klad_mcp::{App, Entry, Places, Status};
+    let program = std::env::current_exe().context("finding klad itself")?;
+    let entry = Entry::serving(&program);
+    let app = |word: &str| {
+        App::parse(word).ok_or_else(|| anyhow!("klad knows no agent app {word}: it knows {}", App::words()))
+    };
+    let places = || Places::here().ok_or_else(|| anyhow!("this computer has no home folder for agent apps' settings"));
+    if status {
+        let places = places()?;
+        App::ALL.into_iter().for_each(|a| {
+            let state = match a.status(&places) {
+                Status::Missing => "not on this computer".to_string(),
+                Status::Found => format!("found, without klad (klad mcp --install {})", a.word()),
+                Status::Connected(e) if a.waiting(&places) => format!(
+                    "connected ({}), not started yet: {}",
+                    e.command.display(),
+                    a.next_step()
+                ),
+                Status::Connected(e) => format!("connected ({})", e.command.display()),
+                Status::Moved(e) => format!(
+                    "set to a klad that is gone ({}): klad mcp --install {} again",
+                    e.command.display(),
+                    a.word()
+                ),
+            };
+            println!("{:<15} {state}", a.name());
+        });
+        return Ok(());
+    }
+    if let Some(word) = print {
+        let a = app(&word)?;
+        let places = places()?;
+        println!("{}", a.snippet(&entry).trim_end());
+        eprintln!("goes in {}", a.file(&places).display());
+        return Ok(());
+    }
+    if let Some(word) = install {
+        let a = app(&word)?;
+        let file = a.connect(&places()?, &entry).map_err(|e| anyhow!(e))?;
+        println!(
+            "klad is in {}'s settings ({}): {}",
+            a.name(),
+            file.display(),
+            a.next_step()
+        );
+        return Ok(());
+    }
+    if let Some(word) = uninstall {
+        let a = app(&word)?;
+        match a.disconnect(&places()?).map_err(|e| anyhow!(e))? {
+            true => println!("klad is out of {}'s settings: {}", a.name(), a.next_step()),
+            false => println!("{} had no klad in its settings", a.name()),
+        }
+        return Ok(());
+    }
+    #[cfg(feature = "editor")]
+    let usual = klad_app::agent_roots();
+    #[cfg(not(feature = "editor"))]
+    let usual: Vec<PathBuf> = Vec::new();
+    if let Some(drawings) = usual.first() {
+        let _ = std::fs::create_dir_all(drawings);
+    }
+    let mut roots: Vec<PathBuf> = Vec::new();
+    root.into_iter()
+        .chain(usual)
+        .filter(|p| p.is_dir())
+        .filter_map(|p| p.canonicalize().ok())
+        .for_each(|p| {
+            if !roots.contains(&p) {
+                roots.push(p);
+            }
+        });
+    let app_bundle = program
+        .ancestors()
+        .find(|p| p.extension().is_some_and(|e| e == "app"))
+        .map(Path::to_path_buf);
+    let client = client.map(|word| app(&word)).transpose()?;
+    klad_mcp::serve(klad_mcp::Config {
+        program,
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        roots,
+        app: app_bundle,
+        client,
+    })
+    .map_err(|e| anyhow!("{e}"))
 }
 
 fn output(flags: &EditFlags, frame: u32) -> Output {
@@ -2751,6 +3292,128 @@ fn parse_clip_fps(text: &str) -> Result<Option<u32>> {
     }
 }
 
+fn assist_edit(
+    perspective: &[String],
+    ruler: &[String],
+    ellipse: &[String],
+    remove: Vec<usize>,
+    clear: bool,
+    on: Option<bool>,
+) -> Result<klad_core::guides::AssistEdit> {
+    use klad_core::assist::Assist;
+    let pairs = |v: Vec<f32>| v.chunks(2).map(|c| [c[0], c[1]]).collect::<Vec<_>>();
+    let mut add = perspective
+        .iter()
+        .map(|t| {
+            let v = parse_numbers(t)?;
+            match v.len() {
+                2 | 4 | 6 => Ok(Assist::Perspective { points: pairs(v) }),
+                _ => Err(anyhow!(
+                    "--perspective takes one, two or three vanishing points: x,y[,x,y[,x,y]]"
+                )),
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    ruler.iter().try_for_each(|t| match parse_numbers(t)?[..] {
+        [x0, y0, x1, y1] if (x0, y0) != (x1, y1) => {
+            add.push(Assist::Ruler {
+                from: [x0, y0],
+                to: [x1, y1],
+            });
+            Ok(())
+        }
+        _ => Err(anyhow!("--ruler takes two different points: x0,y0,x1,y1")),
+    })?;
+    ellipse.iter().try_for_each(|t| {
+        let v = parse_numbers(t)?;
+        match v[..] {
+            [cx, cy, rx, ry] | [cx, cy, rx, ry, _] if rx > 0.0 && ry > 0.0 => {
+                add.push(Assist::Ellipse {
+                    center: [cx, cy],
+                    radii: [rx, ry],
+                    turn: v.get(4).copied().unwrap_or(0.0),
+                });
+                Ok(())
+            }
+            _ => Err(anyhow!("--ellipse takes cx,cy,rx,ry[,turn] with radii above 0")),
+        }
+    })?;
+    let on = match (on, add.is_empty()) {
+        (None, false) => Some(true),
+        (on, _) => on,
+    };
+    Ok(klad_core::guides::AssistEdit {
+        add,
+        set: None,
+        remove,
+        clear,
+        on,
+    })
+}
+
+fn library_brush(bundle: &Path, brush: &str) -> Result<()> {
+    if klad_core::brushes::library(brush).is_some() {
+        return Ok(());
+    }
+    let opened = Bundle::open(bundle)?;
+    if opened.brush(brush)?.is_some() {
+        return Ok(());
+    }
+    if let Ok(lib) = klad_render::library::Library::home()
+        && lib.get(brush).is_some()
+    {
+        lib.take(&opened, brush)?;
+    }
+    Ok(())
+}
+
+fn followed(bundle: &Path, points: Vec<[f32; 3]>) -> Result<Vec<[f32; 3]>> {
+    let assists = Bundle::open(bundle)?.doc.guides.assists;
+    if assists.is_empty() {
+        bail!("the drawing has no drawing guides to follow: klad guides --perspective, --ruler or --ellipse adds one");
+    }
+    let dense: Vec<[f32; 3]> = points
+        .windows(2)
+        .flat_map(|w| {
+            let (a, b) = (w[0], w[1]);
+            let steps = ((b[0] - a[0]).hypot(b[1] - a[1]) / 4.0).ceil().max(1.0) as usize;
+            (0..steps).map(move |k| {
+                let t = k as f32 / steps as f32;
+                [
+                    a[0] + (b[0] - a[0]) * t,
+                    a[1] + (b[1] - a[1]) * t,
+                    a[2] + (b[2] - a[2]) * t,
+                ]
+            })
+        })
+        .chain(points.last().copied())
+        .collect();
+    let xy: Vec<[f32; 2]> = dense.iter().map(|p| [p[0], p[1]]).collect();
+    Ok(klad_core::assist::follow(&assists, &xy)
+        .into_iter()
+        .zip(dense)
+        .map(|(q, p)| [q[0], q[1], p[2]])
+        .collect())
+}
+
+pub(crate) fn note_memory(doc: &klad_core::doc::Document) {
+    let (w, h) = (doc.canvas.width, doc.canvas.height);
+    let layers = doc
+        .all_layers()
+        .iter()
+        .filter(|l| l.kind() == klad_core::doc::Kind::Paint)
+        .count()
+        .max(1) as u64;
+    let need = w as u64 * h as u64 * 8 * (layers + 1);
+    if let Some(have) = klad_core::memory::total().filter(|have| need > have / 2) {
+        eprintln!(
+            "note: rendering this {w}x{h} drawing can take up to {} of memory ({layers} paint layers at once), and this machine has {}: it may be slow or run out",
+            klad_core::memory::gb(need),
+            klad_core::memory::gb(have)
+        );
+    }
+}
+
 fn parse_points(text: &str) -> Result<Vec<[f32; 3]>> {
     text.split_whitespace()
         .map(|triple| {
@@ -2766,7 +3429,68 @@ fn parse_points(text: &str) -> Result<Vec<[f32; 3]>> {
 
 const CHANGED_EXIT: i32 = 75;
 
+fn wand_polygon(path: &Path, layer: &str, frame: u32, x: f32, y: f32, tolerance: f32) -> Result<Vec<[f32; 2]>> {
+    let bundle = Bundle::open(path)?;
+    let owner = bundle.doc.find_layer(layer)?;
+    let cel = owner
+        .content_at(frame)
+        .ok_or_else(|| anyhow!("layer {layer} has no drawing at frame {frame}"))?
+        .id
+        .clone();
+    let marks = bundle.read_marks(&owner.id, &cel)?;
+    let brushes = klad_brush::BrushSet::for_bundle(&bundle)?;
+    let mut raster = klad_brush::Raster::new(bundle.doc.canvas.width, bundle.doc.canvas.height);
+    klad_brush::replay_onto(&mut raster, &marks, &brushes)?;
+    klad_render::wand::region(&raster, x, y, tolerance, owner.pixel()).ok_or_else(|| {
+        anyhow!(
+            "nothing is painted at {x},{y} on {layer}: the wand takes an area of one colour, so give a point on paint"
+        )
+    })
+}
+
+fn figure_path(kind: &str, text: &str) -> Result<String> {
+    let [a, b, c, d]: [f32; 4] = parse_numbers(text)?
+        .try_into()
+        .map_err(|_| anyhow!("--{kind} takes four numbers"))?;
+    Ok(match kind {
+        "line" => format!("M{a} {b} L{c} {d}"),
+        "rect" => format!("M{a} {b} H{} V{} H{a} Z", a + c, b + d),
+        _ => {
+            let (rx, ry, cx, cy) = (c / 2.0, d / 2.0, a + c / 2.0, b + d / 2.0);
+            let (kx, ky) = (rx * 0.552_284_8, ry * 0.552_284_8);
+            format!(
+                "M{cx} {} C{} {} {} {} {} {cy} C{} {} {} {} {cx} {} C{} {} {} {} {} {cy} C{} {} {} {} {cx} {}",
+                cy - ry,
+                cx + kx,
+                cy - ry,
+                cx + rx,
+                cy - ky,
+                cx + rx,
+                cx + rx,
+                cy + ky,
+                cx + kx,
+                cy + ry,
+                cy + ry,
+                cx - kx,
+                cy + ry,
+                cx - rx,
+                cy + ky,
+                cx - rx,
+                cx - rx,
+                cy - ky,
+                cx - kx,
+                cy - ry,
+                cy - ry
+            )
+        }
+    })
+}
+
+#[global_allocator]
+static GUARD: oom::Guard = oom::Guard;
+
 fn main() {
+    oom::arm();
     let traced = std::env::var_os("KLAD_BACKTRACE").is_some_and(|v| v != "0");
     #[cfg(unix)]
     unsafe {
@@ -2826,11 +3550,82 @@ fn pixel_size(text: &str) -> Result<(u32, u32)> {
 fn run() -> Result<()> {
     match Cli::parse().command {
         Command::Import {
-            file,
+            files,
+            clipboard,
+            painting,
+            into,
+            cell,
+            grid,
+            padding,
+            margin,
             size,
             colors,
             out,
         } => {
+            let ask = pixelise::Ask { size, colors };
+            let cut = sheetin::parse_cut(cell.as_deref(), grid.as_deref(), padding, margin)?;
+            let frames = cut.is_some()
+                || files.len() > 1
+                || files
+                    .iter()
+                    .any(|f| f.is_dir() && !f.join("doc.json").is_file() && f.extension().is_none_or(|e| e != "klad"));
+            if frames || (into.is_some() && files.first().is_some_and(|f| pixelise::is_picture(f))) {
+                if size.is_some() || colors.is_some() || painting {
+                    return Err(anyhow!(
+                        "--size, --colors and --painting are for one picture; frames come in at their own size"
+                    ));
+                }
+                let notes = match into {
+                    Some(bundle) => {
+                        let notes = sheetin::into(&files, cut.as_ref(), &bundle)?;
+                        println!("{}", bundle.display());
+                        notes
+                    }
+                    None => {
+                        let (made, notes) = sheetin::new_drawing(&files, cut.as_ref(), out)?;
+                        println!("{}", made.display());
+                        notes
+                    }
+                };
+                notes.iter().for_each(|n| eprintln!("note: {n}"));
+                return Ok(());
+            }
+            let file = match (files.into_iter().next(), clipboard) {
+                (_, true) => {
+                    println!("{}", pixelise::from_clipboard(&ask, out, painting)?.display());
+                    return Ok(());
+                }
+                (Some(file), false) => file,
+                (None, false) => return Err(anyhow!("give a file to import, or --clipboard")),
+            };
+            if svgin::is_svg(&file) {
+                let quiet = Output {
+                    json: false,
+                    render: false,
+                    scale: None,
+                    frame: 0,
+                    overlay: None,
+                };
+                match into {
+                    Some(bundle) => svgin::into(&file, &bundle, &quiet)?,
+                    None => println!("{}", svgin::import(&file, out)?.display()),
+                }
+                return Ok(());
+            }
+            if psdfile::is_file(&file) {
+                if into.is_some() || size.is_some() || colors.is_some() {
+                    return Err(anyhow!(
+                        "a PSD comes in as a drawing of its own, with its layers: leave out --into, --size and --colors"
+                    ));
+                }
+                println!("{}", psdfile::import(&file, out)?.display());
+                return Ok(());
+            }
+            if into.is_some() {
+                return Err(anyhow!(
+                    "--into takes an SVG or frames; a picture goes on a layer with klad add <bundle> layer image src=<file>"
+                ));
+            }
             let made = match (aseprite::is_file(&file), pixelise::is_picture(&file)) {
                 (true, _) if size.is_some() || colors.is_some() => {
                     return Err(anyhow!(
@@ -2838,10 +3633,10 @@ fn run() -> Result<()> {
                     ));
                 }
                 (true, _) => aseprite::import(&file, out)?,
-                (_, true) => pixelise::import(&file, &pixelise::Ask { size, colors }, out)?,
+                (_, true) => pixelise::import(&file, &ask, out, painting)?,
                 _ => {
                     return Err(anyhow!(
-                        "klad import opens Aseprite files (.aseprite, .ase) and pictures (.png, .jpg) as pixel drawings: {} is something else. A picture to trace or paint over goes on a layer with klad add <bundle> layer image src=<file>",
+                        "klad import opens PSDs, SVGs, Aseprite files (.aseprite, .ase) and pictures (.png, .jpg): {} is something else. A picture to trace or paint over goes on a layer with klad add <bundle> layer image src=<file>",
                         file.display()
                     ));
                 }
@@ -2921,6 +3716,8 @@ fn run() -> Result<()> {
                 let applied = made.apply(&[Op::Canvas {
                     wrap: wrap.then_some(true),
                     tile: cut,
+                    size: None,
+                    background: None,
                 }]);
                 if let Err(error) = applied {
                     let _ = std::fs::remove_dir_all(&bundle);
@@ -2928,13 +3725,241 @@ fn run() -> Result<()> {
                 }
                 made.stamp("cli")?;
             }
+            if let Ok(made) = Bundle::open(&bundle) {
+                let (w, h) = (made.doc.canvas.width, made.doc.canvas.height);
+                if let Some(words) = klad_core::memory::fit(w, h).words(w, h) {
+                    eprintln!("note: {words}");
+                }
+            }
             println!("{}", bundle.display());
         }
         Command::Canvas {
             bundle,
             wrap,
             tile,
+            size,
+            anchor,
+            crop,
+            trim,
+            resize,
+            turn,
+            flip,
+            paper,
             flags,
+        } if size.is_some()
+            || crop.is_some()
+            || trim
+            || resize.is_some()
+            || turn.is_some()
+            || flip.is_some()
+            || paper.is_some() =>
+        {
+            let opened = Bundle::open(&bundle)?;
+            use klad_render::reshape::Reshape;
+            let numbers = |text: &str, n: usize, what: &str| -> Result<Vec<f32>> {
+                let v = parse_numbers(text)?;
+                match v.len() == n {
+                    true => Ok(v),
+                    false => Err(anyhow!("{what} takes {n} numbers")),
+                }
+            };
+            let shape = match (size, crop, trim, resize, turn, flip) {
+                (Some(s), ..) => {
+                    let v = numbers(&s, 2, "--size")?;
+                    Some(Reshape::Size {
+                        width: v[0] as u32,
+                        height: v[1] as u32,
+                        anchor: klad_render::reshape::anchor(&anchor)?,
+                    })
+                }
+                (_, Some(c), ..) => {
+                    let v = numbers(&c, 4, "--crop")?;
+                    Some(Reshape::Crop {
+                        x: v[0],
+                        y: v[1],
+                        width: v[2] as u32,
+                        height: v[3] as u32,
+                    })
+                }
+                (_, _, true, ..) => {
+                    let Some([x0, y0, x1, y1]) = klad_render::reshape::drawn(&opened)? else {
+                        return Err(anyhow!("nothing is drawn yet: there is nothing to trim to"));
+                    };
+                    let pixel = opened.doc.pixel_art();
+                    let (lo_x, lo_y) = if pixel {
+                        (x0.round(), y0.round())
+                    } else {
+                        (x0.floor(), y0.floor())
+                    };
+                    let (hi_x, hi_y) = if pixel {
+                        (x1.round(), y1.round())
+                    } else {
+                        (x1.ceil(), y1.ceil())
+                    };
+                    Some(Reshape::Crop {
+                        x: lo_x,
+                        y: lo_y,
+                        width: (hi_x - lo_x) as u32,
+                        height: (hi_y - lo_y) as u32,
+                    })
+                }
+                (.., Some(k), _, _) => Some(Reshape::Scale { sx: k, sy: k }),
+                (.., Some(t), _) => Some(Reshape::Turn(t.parse::<i32>()?)),
+                (.., Some(f)) => Some(Reshape::Flip { level: f == "h" }),
+                _ => None,
+            };
+            let mut ops = match shape {
+                Some(r) => klad_render::reshape::ops(&opened, &r)?,
+                None => Vec::new(),
+            };
+            if paper.is_some() || wrap.is_some() || tile.is_some() {
+                ops.push(Op::Canvas {
+                    wrap: wrap.map(|w| w == "on"),
+                    tile: tile.as_deref().map(tile_size).transpose()?,
+                    size: None,
+                    background: paper.map(|p| (p != "none").then_some(p)),
+                });
+            }
+            agent::edit(&bundle, &ops, &output(&flags, 0))?;
+        }
+        Command::Grid {
+            bundle,
+            every,
+            sub,
+            offset,
+            iso,
+            colour,
+            opacity,
+            show,
+            snap,
+            off,
+            flags,
+        } => {
+            let pair = |text: Option<String>| -> Result<Option<[f32; 2]>> {
+                text.map(|t| {
+                    let v = parse_numbers(&t)?;
+                    match v.as_slice() {
+                        [a] => Ok([*a, *a]),
+                        [a, b] => Ok([*a, *b]),
+                        _ => Err(anyhow!("give one number or two: 16 or 16,8")),
+                    }
+                })
+                .transpose()
+            };
+            let on = |v: Option<String>| v.map(|v| v == "on");
+            let edit = klad_core::guides::GridEdit {
+                off,
+                every: pair(every)?,
+                sub,
+                offset: pair(offset)?,
+                iso: on(iso),
+                colour,
+                opacity,
+                show: on(show),
+                snap: on(snap),
+            };
+            match edit == klad_core::guides::GridEdit::default() {
+                true => {
+                    let doc = Bundle::open(&bundle)?.doc;
+                    let g = &doc.guides;
+                    match &g.grid {
+                        None => println!("no grid; snapping {}", if g.snap { "on" } else { "off" }),
+                        Some(grid) => println!(
+                            "grid every {}x{} px, a stronger line every {}, from {},{}, {}, {} at {}; {}, snapping {}",
+                            grid.every[0],
+                            grid.every[1],
+                            grid.sub,
+                            grid.offset[0],
+                            grid.offset[1],
+                            if grid.iso { "isometric" } else { "square" },
+                            grid.colour,
+                            grid.opacity,
+                            if g.show_grid { "shown" } else { "hidden" },
+                            if g.snap { "on" } else { "off" }
+                        ),
+                    }
+                }
+                false => agent::edit(&bundle, &[Op::Grid(edit)], &output(&flags, 0))?,
+            }
+        }
+        Command::Guides {
+            bundle,
+            x,
+            y,
+            rm_x,
+            rm_y,
+            clear,
+            hidden,
+            locked,
+            perspective,
+            ruler,
+            ellipse,
+            rm_guide,
+            clear_drawing_guides,
+            follow,
+            flags,
+        } => {
+            let on = |v: Option<String>| v.map(|v| v == "on");
+            let assists = assist_edit(
+                &perspective,
+                &ruler,
+                &ellipse,
+                rm_guide,
+                clear_drawing_guides,
+                on(follow),
+            )?;
+            let edit = klad_core::guides::GuideEdit {
+                add_x: x,
+                add_y: y,
+                rm_x,
+                rm_y,
+                clear,
+                hidden: on(hidden),
+                locked: on(locked),
+                snap: None,
+            };
+            let ops: Vec<Op> = [
+                (edit != klad_core::guides::GuideEdit::default()).then_some(Op::Guides(edit)),
+                (assists != klad_core::guides::AssistEdit::default()).then_some(Op::Assists(assists)),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            match ops.is_empty() {
+                true => {
+                    let doc = Bundle::open(&bundle)?.doc;
+                    let g = &doc.guides;
+                    let list = |v: &[f32]| v.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(" ");
+                    println!("upright at x: {}", list(&g.x));
+                    println!("level at y: {}", list(&g.y));
+                    println!(
+                        "{}{}; snapping {}",
+                        if g.hidden { "hidden" } else { "shown" },
+                        if g.locked { ", locked" } else { "" },
+                        if g.snap { "on" } else { "off" }
+                    );
+                    g.assists.iter().enumerate().for_each(|(i, a)| {
+                        let at = a
+                            .handles()
+                            .iter()
+                            .map(|p| format!("{},{}", p[0], p[1]))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        println!("drawing guide {i}: {} at {at}", a.word());
+                    });
+                    if !g.assists.is_empty() {
+                        println!("the brush {}", if g.follow { "follows them" } else { "paints freely" });
+                    }
+                }
+                false => agent::edit(&bundle, &ops, &output(&flags, 0))?,
+            }
+        }
+        Command::Canvas {
+            bundle,
+            wrap,
+            tile,
+            flags,
+            ..
         } => match (wrap, tile) {
             (None, None) => {
                 let canvas = Bundle::open(&bundle)?.doc.canvas;
@@ -2963,6 +3988,8 @@ fn run() -> Result<()> {
                 &[Op::Canvas {
                     wrap: wrap.map(|w| w == "on"),
                     tile: tile.as_deref().map(tile_size).transpose()?,
+                    size: None,
+                    background: None,
                 }],
                 &output(&flags, 0),
             )?,
@@ -3296,6 +4323,101 @@ fn run() -> Result<()> {
             }
             agent::edit(&bundle, &[Op::Detach { ids }], &output(&flags, 0))?;
         }
+        Command::Merge {
+            bundle,
+            layers,
+            down,
+            visible,
+            flags,
+        } => {
+            let opened = Bundle::open(&bundle)?;
+            let keys = match (down, visible) {
+                (Some(layer), _) => vec![klad_core::merge::below(&opened, &layer)?, layer],
+                (None, true) => flatten::visible(&opened),
+                (None, false) => layers,
+            };
+            match klad_core::merge::merge(&opened, &keys) {
+                Ok(mut merged) => {
+                    let brushes = klad_brush::BrushSet::for_bundle(&opened)?;
+                    let kept = klad_render::keep::merged(&opened, &brushes, &mut merged.ops)?;
+                    agent::edit(&bundle, &merged.ops, &output(&flags, 0))?;
+                    eprintln!("merged {} layers into {}", merged.count, merged.into);
+                    if kept > 0 {
+                        eprintln!(
+                            "note: {kept} alpha-locked marks keep to the paint of their own layer (cut along its edge), so the picture stays as it was"
+                        );
+                    }
+                    if !merged.baked.is_empty() {
+                        eprintln!(
+                            "note: the opacity of {} went onto each of its strokes",
+                            merged.baked.join(", ")
+                        );
+                    }
+                }
+                Err(e) if visible => {
+                    let brushes = klad_brush::BrushSet::for_bundle(&opened)?;
+                    let ops = flatten::picture(&opened, &brushes, &keys)?;
+                    agent::edit(&bundle, &ops, &output(&flags, 0))?;
+                    eprintln!("note: merged as one picture on a vector layer named merged, as {e:#}");
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Command::Ungroup { bundle, group, flags } => {
+            let opened = Bundle::open(&bundle)?;
+            let (ops, lost) = klad_core::merge::ungroup(&opened.doc, &group)?;
+            agent::edit(&bundle, &ops, &output(&flags, 0))?;
+            if !lost.is_empty() {
+                eprintln!("note: the group's {} went with it", lost.join(" and "));
+            }
+        }
+        Command::Style {
+            bundle,
+            from,
+            ids,
+            flags,
+        } => agent::edit(&bundle, &[Op::Style { from, ids }], &output(&flags, 0))?,
+        Command::Combine {
+            bundle,
+            ids,
+            unite,
+            subtract,
+            intersect,
+            exclude,
+            flags,
+        } => {
+            let how = match (unite, subtract, intersect, exclude) {
+                (true, ..) => klad_render::combine::Combine::Unite,
+                (_, true, ..) => klad_render::combine::Combine::Subtract,
+                (_, _, true, _) => klad_render::combine::Combine::Intersect,
+                (.., true) => klad_render::combine::Combine::Exclude,
+                _ => return Err(anyhow!("give one of --unite, --subtract, --intersect or --exclude")),
+            };
+            let doc = Bundle::open(&bundle)?.doc;
+            let ops = klad_render::combine::combine(&doc, &ids, how)?;
+            agent::edit(&bundle, &ops, &output(&flags, 0))?;
+        }
+        Command::Order {
+            bundle,
+            ids,
+            front,
+            back,
+            up,
+            down,
+            flags,
+        } => {
+            if ids.is_empty() {
+                return Err(anyhow!("give the shapes, strokes or fills to put in front or behind"));
+            }
+            let to = match (front, back, up, down) {
+                (true, false, false, false) => klad_core::markedit::Order::Front,
+                (false, true, false, false) => klad_core::markedit::Order::Back,
+                (false, false, true, false) => klad_core::markedit::Order::Forward,
+                (false, false, false, true) => klad_core::markedit::Order::Backward,
+                _ => return Err(anyhow!("give one of --front, --back, --up or --down")),
+            };
+            agent::edit(&bundle, &[Op::Order { ids, to }], &output(&flags, 0))?;
+        }
         Command::Align {
             bundle,
             ids,
@@ -3382,6 +4504,13 @@ fn run() -> Result<()> {
             convert,
             flags,
         } => {
+            if convert {
+                let doc = Bundle::open(&bundle)?.doc;
+                if let Some(ops) = klad_render::combine::text_to_path(&doc, &node)? {
+                    agent::edit(&bundle, &ops, &output(&flags, 0))?;
+                    return Ok(());
+                }
+            }
             let edits = paths::Edits {
                 move_to,
                 nudge,
@@ -3434,6 +4563,9 @@ fn run() -> Result<()> {
             bundle,
             layer,
             polygon,
+            ellipse,
+            at,
+            tolerance,
             area,
             cut,
             offset,
@@ -3447,13 +4579,21 @@ fn run() -> Result<()> {
             frame,
             flags,
         } => {
-            let polygon = match (area, polygon) {
-                (Some([x, y, w, h]), _) => {
+            let cut = cut || at.is_some();
+            let polygon = match (area, polygon, ellipse, at) {
+                (Some([x, y, w, h]), ..) => {
                     let (x0, y0, x1, y1) = (x as f32, y as f32, (x + w) as f32, (y + h) as f32);
                     vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
                 }
-                (None, Some(text)) => text.split_whitespace().map(parse_pair).collect::<Result<Vec<_>>>()?,
-                (None, None) => Vec::new(),
+                (None, Some(text), ..) => text.split_whitespace().map(parse_pair).collect::<Result<Vec<_>>>()?,
+                (None, None, Some(e), _) => {
+                    let [x, y, w, h]: [f32; 4] = parse_numbers(&e)?
+                        .try_into()
+                        .map_err(|_| anyhow!("--ellipse takes x,y,w,h"))?;
+                    klad_core::region::ellipse(x, y, w, h, 64)
+                }
+                (None, None, None, Some([x, y])) => wand_polygon(&bundle, &layer, frame, x, y, tolerance)?,
+                (None, None, None, None) => Vec::new(),
             };
             if polygon.len() < 3 {
                 return Err(anyhow!("--polygon needs at least 3 x,y points"));
@@ -3589,6 +4729,10 @@ fn run() -> Result<()> {
             layer,
             path,
             points,
+            line,
+            rect,
+            ellipse,
+            follow,
             brush,
             color,
             size,
@@ -3604,6 +4748,21 @@ fn run() -> Result<()> {
             normal,
             flags,
         } => {
+            let (line, points) = match follow {
+                false => (line, points.as_deref().map(parse_points).transpose()?),
+                true => {
+                    let given = match (&line, &points) {
+                        (Some(l), _) => match parse_numbers(l)?[..] {
+                            [x0, y0, x1, y1] => vec![[x0, y0, 1.0], [x1, y1, 1.0]],
+                            _ => bail!("--line takes x0,y0,x1,y1"),
+                        },
+                        (None, Some(p)) => parse_points(p)?,
+                        (None, None) => bail!("--follow bends --points or --line"),
+                    };
+                    (None, Some(followed(&bundle, given)?))
+                }
+            };
+            library_brush(&bundle, &brush)?;
             let taper = taper
                 .as_deref()
                 .map(|t| {
@@ -3612,6 +4771,12 @@ fn run() -> Result<()> {
                         .map_err(|_| anyhow!("--taper takes two lengths: in,out"))
                 })
                 .transpose()?;
+            let path = match (line, rect, ellipse) {
+                (Some(l), _, _) => Some(figure_path("line", &l)?),
+                (_, Some(r), _) => Some(figure_path("rect", &r)?),
+                (_, _, Some(e)) => Some(figure_path("ellipse", &e)?),
+                _ => path,
+            };
             let spec = StrokeSpec {
                 layer,
                 frame,
@@ -3621,7 +4786,7 @@ fn run() -> Result<()> {
                 opacity,
                 flow,
                 path,
-                points: points.as_deref().map(parse_points).transpose()?,
+                points,
                 pressure: pressure.as_deref().map(parse_numbers).transpose()?.unwrap_or_default(),
                 tilt: [0.0, 0.0],
                 speed,
@@ -4216,9 +5381,37 @@ fn run() -> Result<()> {
             part,
             value,
             smooth,
+            mode,
+            strength,
+            hardness,
+            at,
             frame,
             flags,
         } => {
+            if let Some(p) = at {
+                let opened = Bundle::open(&bundle)?;
+                let owner = layer_id(&bundle, &layer)?;
+                let found = opened.doc.find_layer(&owner)?;
+                let bones = match &found.content {
+                    klad_core::doc::LayerContent::Bones {} => found.bones.clone(),
+                    _ => bail!("{layer} is not a bones layer"),
+                };
+                let bone = bone.ok_or_else(|| anyhow!("--at reads one bone's weight: give --bone"))?;
+                let index = bones
+                    .iter()
+                    .position(|b| b.name == bone)
+                    .ok_or_else(|| anyhow!("no bone {bone} on {layer}"))?;
+                let weights = opened.read_weights(&owner)?;
+                let used = weights.at(&bones, p)[index];
+                println!(
+                    "{bone} at {},{}: painted {:.2}, used {:.2}",
+                    p[0],
+                    p[1],
+                    weights.value_at(&bone, p),
+                    used
+                );
+                return Ok(());
+            }
             let set = set
                 .as_deref()
                 .map(|text| {
@@ -4244,7 +5437,14 @@ fn run() -> Result<()> {
                 part,
                 value,
                 smooth,
-                resolved: None,
+                mode: mode
+                    .as_deref()
+                    .map(klad_core::rig::Mode::parse)
+                    .transpose()?
+                    .unwrap_or_default(),
+                strength,
+                hardness,
+                ..WeightsSpec::default()
             };
             agent::edit(&bundle, &[Op::Weights(spec)], &output(&flags, frame))?;
         }
@@ -4590,6 +5790,11 @@ fn run() -> Result<()> {
             depth,
             background,
             references,
+            clipboard,
+            svg,
+            vectors_only,
+            outline_text,
+            only,
             sheet,
             frames,
             gif,
@@ -4610,7 +5815,43 @@ fn run() -> Result<()> {
             occluders,
             tolerance,
             shaders,
+            format,
+            quality,
+            lossless,
+            matte,
+            animated,
+            dpi,
+            paper,
+            pages,
         } => {
+            let format = match (
+                format.as_deref(),
+                out.as_deref().and_then(klad_render::formats::Format::of_path),
+            ) {
+                (Some(f), _) => Some(klad_render::formats::Format::parse(f)?),
+                (None, found) => found,
+            };
+            let quality = klad_render::formats::Quality {
+                quality: quality.unwrap_or(90.0),
+                lossless,
+                matte: klad_render::formats::matte_of(matte.as_deref())?,
+            };
+            if let Some(q) = Some(quality.quality).filter(|q| !(1.0..=100.0).contains(q)) {
+                return Err(anyhow!("--quality takes 1 to 100, not {q}"));
+            }
+            let others = svg
+                || aseprite
+                || sheet.is_some()
+                || frames.is_some()
+                || gif.is_some()
+                || tileset.is_some()
+                || godot.is_some();
+            if let (true, Some(f)) = (others, format.filter(|f| *f != klad_render::formats::Format::Png)) {
+                return Err(anyhow!(
+                    "--format {} is for a picture, a PDF or a video: leave out --svg, --gif, --sheet, --frames, --aseprite and the Godot exports",
+                    f.extension()
+                ));
+            }
             let maps = maps.as_deref().map(Map::list).transpose()?.unwrap_or_default();
             let extras = sprites::Extras {
                 occluders: occluders.then_some(tolerance),
@@ -4667,7 +5908,52 @@ fn run() -> Result<()> {
                     invert,
                 };
                 match (&sheet, &frames, &godot) {
+                    _ if svg => svgout::run(
+                        &bundle,
+                        &svgout::Export {
+                            layer: layer.clone(),
+                            frame,
+                            frames: frames.clone(),
+                            vectors_only,
+                            outline_text,
+                            only: only.clone(),
+                            out,
+                        },
+                    ),
                     _ if aseprite => aseprite::export(&bundle, out, variant.as_deref()),
+                    _ if format == Some(klad_render::formats::Format::Pdf) => formats::pdf(
+                        &bundle,
+                        formats::PdfArgs {
+                            frame,
+                            pages: pages.clone(),
+                            dpi,
+                            paper: paper.clone(),
+                            background,
+                            references,
+                            variant: variant.clone(),
+                            out,
+                        },
+                    ),
+                    _ if format == Some(klad_render::formats::Format::Psd) => {
+                        psdfile::export(&bundle, frame, references, background, out)
+                    }
+                    _ if format == Some(klad_render::formats::Format::Mp4) => sprites::animated(
+                        &bundle,
+                        animated.as_deref().unwrap_or("all"),
+                        &look,
+                        &sprites::Anim::Mp4(klad_render::video::Settings {
+                            quality: if quality.quality == 90.0 { 80.0 } else { quality.quality },
+                            matte: quality.matte,
+                        }),
+                        out,
+                    ),
+                    _ if format == Some(klad_render::formats::Format::Webp) && animated.is_some() => sprites::animated(
+                        &bundle,
+                        animated.as_deref().unwrap_or("all"),
+                        &look,
+                        &sprites::Anim::Webp(quality),
+                        out,
+                    ),
                     _ if tileset.is_some() => {
                         sprites::tileset(&bundle, tileset.clone().flatten().or(out), store, &look, frame)
                     }
@@ -4676,6 +5962,33 @@ fn run() -> Result<()> {
                     (_, Some(spec), _) => sprites::frames(&bundle, spec, &look, out),
                     (_, _, Some(dir)) => sprites::godot(&bundle, dir.clone().or(out), store, &look, &packing, &extras),
                     _ if scenes => Ok(()),
+                    _ if clipboard => {
+                        let tmp = std::env::temp_dir().join(format!("klad-clipboard-{}.png", std::process::id()));
+                        export::run(
+                            &bundle,
+                            export::Export {
+                                layer: layer.clone(),
+                                frame,
+                                scale,
+                                depth: 8,
+                                background,
+                                references,
+                                variant,
+                                out: Some(tmp.clone()),
+                                maps: maps.clone(),
+                                invert,
+                                format: klad_render::formats::Format::Png,
+                                quality,
+                                only: only.clone(),
+                            },
+                        )?;
+                        let read = std::fs::read(&tmp);
+                        let _ = std::fs::remove_file(&tmp);
+                        let picture = klad_render::pixelise::decode(&read?)?;
+                        klad_render::clipboard::write(&picture)?;
+                        eprintln!("copied a {}x{} picture to the clipboard", picture.width, picture.height);
+                        Ok(())
+                    }
                     _ => export::run(
                         &bundle,
                         export::Export {
@@ -4689,18 +6002,73 @@ fn run() -> Result<()> {
                             out,
                             maps: maps.clone(),
                             invert,
+                            format: format.unwrap_or(klad_render::formats::Format::Png),
+                            quality,
+                            only: only.clone(),
                         },
                     ),
                 }
             })?;
         }
+        Command::SaveAs { bundle, to } => {
+            let to = match to.parent().is_none_or(|p| p.as_os_str().is_empty()) {
+                true => bundle.with_file_name(klad_core::drawings::with_extension(&to)),
+                false => to,
+            };
+            let made = klad_core::drawings::copy(&bundle, &to)?;
+            Bundle::open(&made)?;
+            println!("{}", made.display());
+        }
+        Command::Rename { bundle, to } => println!("{}", klad_core::drawings::rename(&bundle, &to)?.display()),
         Command::Brushes {
             bundle,
             show,
             json,
             set,
             picture,
+            library,
+            save,
+            save_as,
+            take,
+            forget,
+            rename,
+            group,
+            shift,
+            export_library,
+            import_library,
         } => match (bundle.as_deref(), set, picture) {
+            (bundle, _, _)
+                if brushes::Mine {
+                    list: library,
+                    save: save.clone(),
+                    take: take.clone(),
+                    forget: forget.clone(),
+                    rename: rename.clone(),
+                    group: group.clone(),
+                    shift: shift.clone(),
+                    export: export_library.clone(),
+                    import: import_library.clone(),
+                    ..Default::default()
+                }
+                .any() =>
+            {
+                brushes::mine(
+                    bundle,
+                    brushes::Mine {
+                        list: library,
+                        save,
+                        save_as,
+                        take,
+                        forget,
+                        rename,
+                        group,
+                        shift,
+                        export: export_library,
+                        import: import_library,
+                    },
+                    json,
+                )?
+            }
             (Some(b), Some(set), _) => brushes::set(b, &set[0], Path::new(&set[1]))?,
             (Some(b), None, Some(picture)) => brushes::picture(b, &picture[0], Path::new(&picture[1]))?,
             (None, Some(_), _) | (None, None, Some(_)) => anyhow::bail!("--set and --picture need a bundle"),
@@ -4839,6 +6207,32 @@ fn run() -> Result<()> {
             };
             maps::hash(&bundle, &frames, &map)?
         }
+        Command::Preview { bundles, all, changed } => {
+            let drawings = match all {
+                Some(folder) => preview::drawings_in(&folder)?,
+                None => bundles,
+            };
+            let failed = drawings
+                .iter()
+                .filter(|path| match preview::write(path, changed) {
+                    Ok(preview::Done::Written(png)) => {
+                        println!("{}", png.display());
+                        false
+                    }
+                    Ok(preview::Done::Unchanged(path)) => {
+                        println!("unchanged {}", path.display());
+                        false
+                    }
+                    Err(e) => {
+                        eprintln!("error: {}: {e:#}", path.display());
+                        true
+                    }
+                })
+                .count();
+            if failed > 0 {
+                bail!("{failed} of {} drawings got no preview", drawings.len());
+            }
+        }
         Command::Hash {
             bundle,
             frame,
@@ -4953,6 +6347,14 @@ fn run() -> Result<()> {
             }
         }
         Command::Bench { strokes, size, seed } => bench::run(strokes, size, seed)?,
+        Command::Mcp {
+            root,
+            install,
+            uninstall,
+            print,
+            status,
+            client,
+        } => mcp(root, install, uninstall, print, status, client)?,
         #[cfg(feature = "editor")]
         Command::Open { bundle } => klad_app::run(bundle)?,
     }
@@ -5018,6 +6420,7 @@ fn render(
 ) -> Result<()> {
     let start = Instant::now();
     let bundle = Bundle::open(path)?;
+    note_memory(&bundle.doc);
     let view = match &look.focus {
         Some(id) => agent::focus_view(&bundle, id, frame, scale)?,
         None => {

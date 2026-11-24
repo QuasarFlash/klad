@@ -32,7 +32,14 @@ thread_local! {
 static NATIVE: AtomicBool = AtomicBool::new(false);
 
 pub const RECENT: usize = 10;
-pub const OUTSIDE_A_DRAWING: [Cmd; 4] = [Cmd::NewDocument, Cmd::OpenDocument, Cmd::OpenRecent, Cmd::Quit];
+pub const OUTSIDE_A_DRAWING: [Cmd; 6] = [
+    Cmd::NewDocument,
+    Cmd::OpenDocument,
+    Cmd::OpenRecent,
+    Cmd::Quit,
+    Cmd::ConnectAgent,
+    Cmd::Welcome,
+];
 
 pub fn native() -> bool {
     NATIVE.load(Ordering::Relaxed)

@@ -6,7 +6,7 @@
 
 *Don't want to build it? Sign up for the pre-built app release at [klad.studio](https://klad.studio).*
 
-**There is no image model in klad.** Your agent (Claude Code, Codex, anything that can run commands) decides what to paint; klad gives it brushes, layers and a timeline. Whatever either of you puts down stays what it was: a stroke with its path, pressure, brush and colour, a shape with its points, a fill with its region. So there's no rerolling and hoping for the best: if one leaf looks off, you fix that leaf.
+**There is no image model in klad.** Your agent (Claude Code, Codex, Claude Desktop, anything that can run commands or speak MCP) decides what to paint; klad gives it brushes, layers and a timeline. Whatever either of you puts down stays what it was: a stroke with its path, pressure, brush and colour, a shape with its points, a fill with its region. So there's no rerolling and hoping for the best: if one leaf looks off, you fix that leaf.
 
 | | |
 |---|---|
@@ -26,7 +26,7 @@ An image generator hands you pixels, and the only edit left is another roll of t
 
 - **It's paint, not just vectors.** A stroke keeps its path and pressure like a vector does, and still lands as paint. Loaded oil leaves ridges that catch the light, and smudge drags the paint already on the layer. The smudge stays a stroke too: move it later and klad blends it again where it lands.
 - **It can also do just vectors.** Shapes with editable points, gradients, glows and real text in about fifty open fonts that come with it, for posters, covers and cards.
-- **It's a full painting and animation app.** Two dozen brushes and a brush editor, layers, masks, clipping, effects, a timeline with onion skins and clips, in-betweens made from your key drawings, bones with IK, and exports as PNGs, sprite sheets, GIFs or straight into Godot.
+- **It's a full painting and animation app.** Two dozen brushes and a brush editor, your own brushes in every drawing, perspective guides the brush follows, a grid and snapping, layers, masks, clipping, effects, a timeline with onion skins and clips, in-betweens made from your key drawings, bones with IK, several drawings open at once, and exports as PNG, JPEG, WebP, TIFF, PSD with its layers, PDF with sharp shapes, SVG, video, sprite sheets, GIFs or straight into Godot.
 - **It does pixel art on a real grid.** Whole pixels in the colours of a palette, with tiles, palette variants and Aseprite files in and out: see [Pixel art](#pixel-art).
 - **Your drawings stay yours.** A drawing is a folder of plain files on your computer, and klad needs no account. It only looks for a new version once a day, and you can turn that off. An edit changes only the files of what it edits, so drawings live well in git.
 
@@ -111,17 +111,17 @@ There are no installers yet, so you build klad yourself. It takes about ten minu
 
 ### From source
 
-1. Install Rust with [rustup](https://rustup.rs) and [`just`](https://github.com/casey/just) (`brew install just`, or `cargo install just`). On Linux also `pkg-config`, `libfreetype-dev`, `libfontconfig1-dev`, `libxkbcommon-dev` and `libwayland-dev`.
+1. Install Rust with [rustup](https://rustup.rs) and [`just`](https://github.com/casey/just) (`brew install just`, or `cargo install just`). On Linux also `pkg-config`, `libfreetype-dev`, `libfontconfig1-dev`, `libxkbcommon-dev` and `libwayland-dev`. On Windows also the Visual Studio Build Tools with **Desktop development with C++** and [Git for Windows](https://git-scm.com/download/win), and run the steps below in Git Bash (`winget install Casey.Just` installs `just`).
 2. Build it and open the editor:
 
    ```sh
    git clone https://github.com/klad-app/klad && cd klad
    just compile
-   target/release/klad open      # on Linux: target/linux/release/klad open
+   target/release/klad open      # on Linux: target/linux/release/klad open, on Windows: target/windows/release/klad.exe open
    ```
 
    The editor opens on its start window: make a drawing and start painting, open a sample, or take first steps (**Help > First steps**).
-3. Put `klad` on your path, for you and for your agent: `target/release/klad install` (on Linux `target/linux/release/klad install`; on a Mac it may ask for your password).
+3. Put `klad` on your path, for you and for your agent: `target/release/klad install` (on Linux `target/linux/release/klad install`, on Windows `target/windows/release/klad.exe install`; on a Mac it may ask for your password).
 
 What you build is for your own use, or your company's if it had less than 500,000 euros in revenue last year (see [Licence](#licence)).
 
@@ -138,12 +138,12 @@ What you build is for your own use, or your company's if it had less than 500,00
 
 - **Samples.** Eight drawings to look at and draw on, from a lantern to a walking creature and a pixel art tileset. The start window shows them; `klad samples` lists them and copies one out. `just samples` builds every drawing in `samples/` from its generator; the eight in `samples/shipped.json` go into every build.
 - **Guides.** `docs/guide/` shows how to paint, select, fill, draw pixel art, animate, rig and export in the editor, one recipe at a time, starting with [Getting started](docs/guide/getting-started.md).
-- **A Mac app.** On a Mac, `just app` makes `klad.app` and a disk image in `dist/`; `just dist` packs this machine's build as an archive. Each machine builds for itself: a Mac builds the Mac version, Linux the Linux one.
+- **A Mac app.** On a Mac, `just app` makes `klad.app` (Apple silicon and Intel in one, macOS 14 or later) and a disk image in `dist/`. With a Developer ID Application certificate in the keychain it also signs both, has Apple notarise them and staples the tickets, and writes `klad-<version>-macos.zip` of the signed app; it finds the notary's login under the keychain profile `klad-notary` (`xcrun notarytool store-credentials klad-notary`, or set `NOTARY_PROFILE`). Without the certificate, or with `KLAD_SIGN=0`, the app is signed ad hoc and other Macs warn before opening it. `just dist` packs this machine's build as an archive. Each machine builds for itself: a Mac builds the Mac version, Linux the Linux one.
 
 ## What's rough
 
 - **You build it yourself.** Signed builds for macOS, Windows and Linux are planned, under the same licence as the source; [leave your email on klad.studio](https://klad.studio/pricing) to hear when they are ready.
-- **The editor is made on a Mac.** On Linux it starts and you draw with the mouse: tablets give no pressure there yet. On Windows it builds and its tests pass, but nobody has drawn with it there, so tell us what you see.
+- **The editor is made on a Mac.** On Linux it starts and you draw with the mouse: tablets give no pressure there yet. On Windows it builds, its tests pass and the pen works through Windows Ink, but it is drawn with far less than on a Mac, so tell us what you see.
 - **Some illustration basics are missing:** snapping, a grid for shapes, and SVG import and export.
 - **Bones are a preview:** their commands may still change.
 - **The file format still moves.** Drawings keep opening as klad changes: a new format version comes with a migration.
@@ -167,11 +167,11 @@ just samples    # build the sample drawings
 
 ## Licence
 
-klad is source-available, not open source, copyright Indicode BV.
+klad is source-available, not open source, copyright Indicode.
 
-- The app, meaning everything not listed in the next point, is under the [PolyForm Internal Use License 1.0.0](https://polyformproject.org/licenses/internal-use/1.0.0) with three additional permissions and one limit (`LICENSE`): you may use it for your own personal purposes, building it from source free of charge, as well as inside your company; you may send changes to Indicode BV to propose them as contributions; and the drawings you make with it are yours to share, with the brush settings and pictures klad copies into them. The limit: a company (counted with the companies it controls or is controlled by) that had 500,000 euros or more in revenue in its last tax year needs a bought licence for each person who uses klad for it. You may build it and change it for those uses; you may not distribute it, from source or as a build.
-- Buying a build, on itch.io, Steam or from Indicode BV, gets you that bought licence, and the build is licensed under these same terms: one licence for the source and the builds, with no separate end-user licence.
+- The app, meaning everything not listed in the next point, is under the [PolyForm Internal Use License 1.0.0](https://polyformproject.org/licenses/internal-use/1.0.0) with three additional permissions and one limit (`LICENSE`): you may use it for your own personal purposes, building it from source free of charge, as well as inside your company; you may send changes to Indicode to propose them as contributions; and the drawings you make with it are yours to share, with the brush settings and pictures klad copies into them. The limit: a company (counted with the companies it controls or is controlled by) that had 500,000 euros or more in revenue in its last tax year needs a company seat for each person who uses klad for it: a yearly subscription, sold only on klad.studio, that ends at the end of the last year paid for once it is cancelled. You may build it and change it for those uses; you may not distribute it, from source or as a build.
+- Buying a build, on itch.io, Steam or from Indicode, is a personal licence: you get the build, licensed under these same terms, for the uses above. It is not a company seat. One licence covers the source and the builds, with no separate end-user licence.
 - These files are under the MIT License (`LICENSE-MIT`), so any program or agent can work with klad drawings: `docs/format.md` (the file format), `docs/cli.md` (the command reference), `docs/skill/` (the agent skills) and `crates/client/` (the `klad-client` crate).
-- Contributions are licensed to Indicode BV for inclusion in klad and in its sold builds, under the contributor licence agreement (`CLA.md`); see `CONTRIBUTING.md`.
+- Contributions are licensed to Indicode for inclusion in klad and in its sold builds, under the contributor licence agreement (`CLA.md`); see `CONTRIBUTING.md`.
 
 klad is built on open source libraries, fonts and Skia; their licences are in `THIRD-PARTY-NOTICES.md`, also shown by `klad licences` and in the editor's About window.

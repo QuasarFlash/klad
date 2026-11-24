@@ -13,7 +13,7 @@ use serde_json::{Map, json};
 use std::collections::BTreeMap;
 use std::sync::mpsc::{Receiver, channel};
 
-const ROW: f32 = 32.0;
+const ROW: f32 = theme::ROW;
 
 pub use crate::composite::{THUMB, thumbnail};
 
@@ -242,9 +242,9 @@ impl Editor {
     fn small_toggle(ui: &mut egui::Ui, glyph: &str, on: bool, hint: String) -> bool {
         let colour = if on { theme::TEXT } else { theme::WEAK };
         ui.add(
-            egui::Button::new(RichText::new(glyph).size(15.0).color(colour))
+            egui::Button::new(RichText::new(glyph).size(theme::ICON).color(colour))
                 .frame(false)
-                .min_size(vec2(22.0, theme::TARGET)),
+                .min_size(vec2(22.0, theme::CONTROL)),
         )
         .hint(hint)
         .clicked()
@@ -255,18 +255,21 @@ impl Editor {
         let response = ui.interact(rect, id, Sense::click_and_drag());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &row.name));
         let response = response.hint(format!(
-            "{}: click to draw on it, cmd click to select strokes on it too (S), double-click its name to rename it, drag it to move it",
+            "{}: click to draw on it, cmd click to select strokes on it too (S), double-click its name to rename it, drag it to move it, right-click for its menu",
             row.name
         ));
         let active = self.scene.active == row.path;
         let also = self.also.contains(&row.id);
         let painter = ui.painter_at(rect);
-        if active {
-            painter.rect_filled(rect, 3.0, Color32::from_gray(54));
-        } else if also {
-            painter.rect_filled(rect, 3.0, Color32::from_gray(47));
-        } else if response.hovered() {
-            painter.rect_filled(rect, 3.0, Color32::from_gray(42));
+        let fill = match (active, also, response.hovered()) {
+            (true, _, false) => Some(theme::ACCENT_SUBTLE),
+            (true, _, true) => Some(theme::ACCENT_SUBTLE_HOVER),
+            (false, true, _) => Some(theme::HOVER),
+            (false, false, true) => Some(theme::CONTROL_FILL),
+            (false, false, false) => None,
+        };
+        if let Some(fill) = fill {
+            painter.rect_filled(rect, theme::radius::CONTROL, fill);
         }
         if also {
             painter.rect_filled(
@@ -383,6 +386,12 @@ impl Editor {
             if name.clicked() {
                 self.row_click(ui, row);
             }
+            if name.secondary_clicked() && !row.mask && !active && !also {
+                self.queued_activate = Some(row.path.clone());
+            }
+            if !row.mask {
+                name.context_menu(|ui| self.layer_menu(ui, row));
+            }
         }
         child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
@@ -423,9 +432,9 @@ impl Editor {
             if row.has_mask {
                 let r = ui
                     .add(
-                        egui::Button::new(RichText::new(icon::MASK).size(14.0))
+                        egui::Button::new(RichText::new(icon::MASK).size(theme::ICON_SMALL))
                             .selected(self.scene.active.last() == Some(&MASK) && self.scene.active.starts_with(&row.path))
-                            .min_size(vec2(22.0, theme::TARGET)),
+                            .min_size(vec2(22.0, theme::CONTROL)),
                     )
                     .hint("the mask: click to paint on it, alt click turns it on or off, right-click shows its row in the timeline");
                 if r.clicked() {
@@ -448,11 +457,11 @@ impl Editor {
                 }
             }
             if place == Where::Panel && !row.skeletons.is_empty() {
-                let glyph = RichText::new(icon::BONE).size(14.0).color(match row.rig {
+                let glyph = RichText::new(icon::BONE).size(theme::ICON_SMALL).color(match row.rig {
                     Some(_) => theme::ACCENT,
                     None => theme::WEAK,
                 });
-                let button = egui::Button::new(glyph).frame(false).min_size(vec2(22.0, theme::TARGET));
+                let button = egui::Button::new(glyph).frame(false).min_size(vec2(22.0, theme::CONTROL));
                 egui::containers::menu::MenuButton::from_button(button)
                     .ui(ui, |ui| {
                         let mut chosen = None;
@@ -506,7 +515,7 @@ impl Editor {
                 .iter()
                 .filter(|(on, _, _)| *on)
                 .for_each(|(_, glyph, what)| {
-                    ui.label(RichText::new(*glyph).size(12.0).color(theme::ACCENT)).on_hover_text(*what);
+                    ui.label(RichText::new(*glyph).size(theme::LABEL).color(theme::ACCENT)).on_hover_text(*what);
                 });
         });
         if response.clicked() && !renaming {
@@ -514,6 +523,12 @@ impl Editor {
         }
         if response.double_clicked() && !row.mask {
             self.renaming = Some(rename(row.name.clone(), true));
+        }
+        if response.secondary_clicked() && !row.mask && !active && !also {
+            self.queued_activate = Some(row.path.clone());
+        }
+        if !row.mask {
+            response.context_menu(|ui| self.layer_menu(ui, row));
         }
         if !ops.is_empty() {
             self.check(|e| e.apply(ops));
@@ -641,13 +656,11 @@ impl Editor {
         if blend != layer.blend {
             props.push(("blend".to_string(), json!(blend)));
         }
-        if let Some(v) = self.number(
+        if let Some(v) = self.fraction(
             ui,
             &format!("{id}.o"),
             "opacity ",
             layer.opacity,
-            0.0..=1.0,
-            0.01,
             "the active layer's opacity",
         ) {
             props.push(("opacity".to_string(), json!(v)));
@@ -658,13 +671,14 @@ impl Editor {
     pub(super) fn layers_body(&mut self, ui: &mut egui::Ui, height: f32) -> f32 {
         let top = ui.cursor().top();
         egui::Frame::new()
-            .inner_margin(egui::Margin {
-                left: 8,
-                right: 8,
-                top: 6,
-                bottom: 5,
-            })
-            .show(ui, |ui| self.layers_bar(ui));
+            .inner_margin(egui::Margin::symmetric(theme::space::SM as i8, 0))
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.horizontal(|ui| {
+                    self.check(|e| e.layer_header(ui));
+                });
+                self.layers_bar(ui);
+            });
         let bar = ui.cursor().top() - top;
         let rows = self.layer_rows(Where::Panel);
         let kept = rows.len().min(layout::LAYER_ROWS_KEPT) as f32;
@@ -705,7 +719,10 @@ impl Editor {
             ]
             .into_iter()
             .for_each(|(cmd, label)| {
-                self.command_button(ui, cmd, label);
+                match label {
+                    Some(words) => self.command_words(ui, cmd, words),
+                    None => self.command_button(ui, cmd, None),
+                };
             });
         });
     }
@@ -715,9 +732,10 @@ impl Editor {
         let mut placed = Vec::new();
         let mut responses = Vec::new();
         ui.spacing_mut().item_spacing.y = 0.0;
+        let pressing = ui.input(|i| i.pointer.any_down());
         rows.into_iter().for_each(|row| {
             let (rect, _) = ui.allocate_exact_size(vec2(width, ROW), Sense::hover());
-            if self.scene.active == row.path && self.layer_in_sight.as_ref() != Some(&row.id) {
+            if self.scene.active == row.path && self.layer_in_sight.as_ref() != Some(&row.id) && !pressing {
                 match ui.clip_rect().contains_rect(rect) {
                     true => self.layer_in_sight = Some(row.id.clone()),
                     false => ui.scroll_to_rect_animation(rect, None, egui::style::ScrollAnimation::none()),

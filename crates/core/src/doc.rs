@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const FORMAT: &str = "klad/8";
+pub const FORMAT: &str = "klad/9";
 pub const MAX_SIZE: u32 = 16384;
 pub const MASK: usize = usize::MAX;
 
@@ -30,6 +30,8 @@ pub struct Document {
     pub atmosphere: Option<Atmosphere>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub maps: Option<crate::maps::Maps>,
+    #[serde(default, skip_serializing_if = "crate::guides::Guides::is_empty")]
+    pub guides: crate::guides::Guides,
     #[serde(skip)]
     pub next_id: u64,
     #[serde(skip)]
@@ -47,6 +49,7 @@ impl PartialEq for Document {
             && self.export == other.export
             && self.atmosphere == other.atmosphere
             && self.maps == other.maps
+            && self.guides == other.guides
     }
 }
 
@@ -1183,6 +1186,7 @@ impl Document {
             export: Exports::default(),
             atmosphere: None,
             maps: None,
+            guides: crate::guides::Guides::default(),
             next_id: 0,
             here: Here::default(),
         }

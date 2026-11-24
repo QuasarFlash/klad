@@ -285,7 +285,10 @@ impl Editor {
         });
         ui.add_space(16.0);
         ui.label(
-            RichText::new("Tab hides the panels, shift Tab the dock, cmd K finds any command.").color(theme::WEAK),
+            RichText::new(crate::commands::local_keys(
+                "Tab hides the panels, shift Tab the dock, cmd K finds any command.",
+            ))
+            .color(theme::WEAK),
         );
     }
 
@@ -363,7 +366,7 @@ impl Editor {
                             .into_iter()
                             .for_each(|(text, width, colour)| {
                                 ui.allocate_ui_with_layout(
-                                    vec2(width, theme::TARGET),
+                                    vec2(width, theme::CONTROL),
                                     egui::Layout::left_to_right(egui::Align::Center),
                                     |ui| {
                                         ui.set_min_width(width);

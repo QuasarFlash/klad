@@ -69,8 +69,16 @@ fn link(exe: &Path, _dir: &Path) -> Result<PathBuf> {
     Ok(exe.to_path_buf())
 }
 
+fn plain(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy().to_string();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
 pub fn install(dir: Option<&Path>) -> Result<()> {
-    let exe = std::env::current_exe()?.canonicalize()?;
+    let exe = plain(std::env::current_exe()?.canonicalize()?);
     let dir = match dir {
         Some(d) => d.to_path_buf(),
         None => default_dir()?,
@@ -103,5 +111,24 @@ mod tests {
         let target = std::fs::read_link(dir.join("klad")).unwrap();
         assert_eq!(target, std::env::current_exe().unwrap().canonicalize().unwrap());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod paths {
+    use super::*;
+
+    #[test]
+    fn a_windows_path_goes_on_the_path_without_its_long_path_prefix() {
+        assert_eq!(
+            plain(PathBuf::from(r"\\?\C:\Users\me\klad\klad.exe")),
+            PathBuf::from(r"C:\Users\me\klad\klad.exe")
+        );
+        let share = PathBuf::from(r"\\?\UNC\server\share\klad.exe");
+        assert_eq!(plain(share.clone()), share, "a network path keeps its form");
+        assert_eq!(
+            plain(PathBuf::from("/usr/local/bin/klad")),
+            PathBuf::from("/usr/local/bin/klad")
+        );
     }
 }

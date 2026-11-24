@@ -858,7 +858,7 @@ impl Editor {
         let mut added = None;
         egui::ComboBox::from_id_salt(format!("{}.effect.add", layer.id))
             .width(120.0)
-            .height(EFFECTS.len() as f32 * (theme::TARGET + 6.0))
+            .height(EFFECTS.len() as f32 * (theme::CONTROL + 6.0))
             .selected_text(format!("{} add an effect", theme::icon::PLUS))
             .show_ui(ui, |ui| {
                 EFFECTS.iter().for_each(|name| {

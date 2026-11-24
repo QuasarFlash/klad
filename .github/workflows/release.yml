@@ -14,9 +14,6 @@ jobs:
   windows:
     needs: check
     runs-on: windows-latest
-    env:
-      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
-      ITCH_TARGET: ${{ vars.ITCH_TARGET }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,14 +27,7 @@ jobs:
       - name: Build
         shell: bash
         run: bash packaging/archive.sh x86_64-pc-windows-msvc dist
-      # TODO: sign klad.exe and klad-editor.exe before they are pushed
-      - name: Push to itch.io
-        if: env.BUTLER_API_KEY != '' && env.ITCH_TARGET != ''
-        shell: bash
-        run: |
-          curl -fsSL -o butler.zip https://broth.itch.zone/butler/windows-amd64/LATEST/archive/default
-          unzip -q butler.zip -d butler
-          ./butler/butler.exe push dist/klad-*-windows-x86_64 "$ITCH_TARGET:windows" --userversion "${GITHUB_REF_NAME#v}"
+      # TODO: sign klad.exe and klad-editor.exe, then put the archive in the private bucket
 
   release:
     needs: windows
@@ -49,8 +39,7 @@ jobs:
       - name: Notes
         run: |
           version="${GITHUB_REF_NAME#v}"
-          awk -v v="$version" '$0 ~ "^## "v"( |$)" {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
-          [ -s notes.md ] || echo "klad $version" > notes.md
+          bash packaging/notes.sh "$version" > notes.md
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}

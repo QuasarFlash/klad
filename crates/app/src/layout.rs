@@ -2,8 +2,8 @@ use egui::Vec2;
 use serde::{Deserialize, Serialize};
 
 pub const STRIP: f32 = 44.0;
-pub const STATUS: f32 = 28.0;
-pub const TITLE: f32 = 30.0;
+pub const STATUS: f32 = crate::theme::CONTROL;
+pub const TITLE: f32 = crate::theme::CONTROL;
 const SHRINK_FIRST: [Pane; 8] = [
     Pane::Brush,
     Pane::Preview,
@@ -116,7 +116,7 @@ impl Pane {
         match self {
             Pane::Tool => 260.0,
             Pane::Brush => 150.0,
-            Pane::Layers => 240.0,
+            Pane::Layers => 240.0 + crate::theme::CONTROL,
             Pane::Inspector => 220.0,
             Pane::Notes => 90.0,
             Pane::History => 160.0,
@@ -399,6 +399,25 @@ impl Layout {
     }
 }
 
+pub fn take_ctrl_tabs(raw: &mut egui::RawInput) -> i32 {
+    let mut by = 0;
+    raw.events.retain(|e| match e {
+        egui::Event::Key {
+            key: egui::Key::Tab,
+            pressed,
+            modifiers,
+            ..
+        } if modifiers.ctrl && !modifiers.alt => {
+            if *pressed {
+                by += if modifiers.shift { -1 } else { 1 };
+            }
+            false
+        }
+        _ => true,
+    });
+    by
+}
+
 pub fn take_tabs(raw: &mut egui::RawInput) -> Vec<bool> {
     let mut shifts = Vec::new();
     raw.events.retain(|e| match e {
@@ -530,17 +549,18 @@ mod tests {
             chosen: Some(Pane::Tool),
             ..Fit::default()
         };
-        let bodies = layout.bodies(345.0, &fit);
-        assert!((used(&bodies) - 345.0).abs() < 0.01);
+        let titles = 6.0 * TITLE;
+        let bodies = layout.bodies(titles + 165.0, &fit);
+        assert!((used(&bodies) - (titles + 165.0)).abs() < 0.01);
         assert_eq!(body(&bodies, Pane::Tool), 165.0, "{bodies:?}");
-        let middling = layout.bodies(180.0 + 165.0 + 230.0 + 20.0, &fit);
+        let middling = layout.bodies(titles + 165.0 + 230.0 + 20.0, &fit);
         assert_eq!(
             body(&middling, Pane::Layers),
             165.0,
             "three rows before the rest: {middling:?}"
         );
         assert_eq!(body(&middling, Pane::Tool), 230.0 + 20.0, "{middling:?}");
-        let roomier = layout.bodies(560.0, &fit);
+        let roomier = layout.bodies(titles + Pane::Tool.min_body() + 150.0, &fit);
         assert_eq!(body(&roomier, Pane::Tool), Pane::Tool.min_body(), "{roomier:?}");
         assert_eq!(body(&roomier, Pane::Layers), 150.0, "{roomier:?}");
     }

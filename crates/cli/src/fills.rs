@@ -120,6 +120,17 @@ pub fn resolve(bundle: &Bundle, ops: &mut [Op]) -> Result<Vec<String>> {
     if !ops.iter().any(|op| matches!(op, Op::Fill(_))) {
         return Ok(Vec::new());
     }
+    if let Some((i, what)) = ops.iter().enumerate().find_map(|(i, op)| match op {
+        Op::Pose(_) => Some((i, "a pose")),
+        Op::Inbetween(_) => Some((i, "an in-between")),
+        Op::Weights(_) => Some((i, "a weights op")),
+        _ => None,
+    }) {
+        bail!(
+            "op {}: {what} needs a batch of its own after the fills it works on: it reads the drawings from the bundle as they are, so apply the drawing first and then {what} (two klad apply runs, or two klad commands)",
+            i + 1
+        );
+    }
     let mut running = Running {
         bundle,
         brushes: BrushSet::for_bundle(bundle)?,

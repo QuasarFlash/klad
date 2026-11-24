@@ -1,7 +1,10 @@
 mod color;
 mod commands;
 mod composite;
+mod connect;
+mod cursor;
 mod editor;
+mod finder;
 mod frames;
 mod gpu;
 mod home;
@@ -24,8 +27,18 @@ mod sync;
 mod theme;
 pub mod updates;
 mod view;
+mod welcome;
+mod widgets;
 
 pub use home::run;
+
+pub fn agent_roots() -> Vec<std::path::PathBuf> {
+    settings::default_path()
+        .as_deref()
+        .map(settings::Settings::load)
+        .unwrap_or_default()
+        .agent_roots()
+}
 
 pub const VERSION: &str = match env!("KLAD_BUILD").is_empty() {
     true => env!("CARGO_PKG_VERSION"),

@@ -691,6 +691,17 @@ impl Editor {
                 self.check(|e| e.save_brush());
             }
             if ui
+                .button(format!("{} save in your brushes", theme::icon::STAR))
+                .hint("in this drawing and in your brushes, which every drawing shows")
+                .clicked()
+            {
+                self.check(|e| {
+                    e.save_brush()?;
+                    let id = e.brush.clone();
+                    e.save_to_yours(&id)
+                });
+            }
+            if ui
                 .add_enabled(self.custom.is_some(), egui::Button::new("back to the brush"))
                 .hint("drop the edits and draw with the brush as it was")
                 .clicked()

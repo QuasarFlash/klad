@@ -19,6 +19,9 @@ pub struct Export {
     pub out: Option<PathBuf>,
     pub maps: Vec<Map>,
     pub invert: bool,
+    pub format: klad_render::formats::Format,
+    pub quality: klad_render::formats::Quality,
+    pub only: Vec<String>,
 }
 
 pub(crate) fn scale_tag(scale: f32) -> String {
@@ -51,6 +54,7 @@ pub fn run(path: &Path, opts: Export) -> Result<()> {
     let start = Instant::now();
     let bundle = Bundle::open(path)?;
     let doc = &bundle.doc;
+    crate::note_memory(doc);
     if opts.frame >= doc.timeline.frames {
         bail!(
             "frame {} is past the last frame {}",
@@ -82,12 +86,28 @@ pub fn run(path: &Path, opts: Export) -> Result<()> {
         references: opts.references,
         detail,
     };
-    let image = render(doc, opts.frame, &rasters, &target, options)?;
+    let image = match opts.only.is_empty() {
+        true => render(doc, opts.frame, &rasters, &target, options)?,
+        false => {
+            if layer.is_some() || !opts.maps.is_empty() {
+                bail!("--only cuts the picture to a selection: leave out --layer and --maps");
+            }
+            crate::formats::only_image(&bundle, opts.frame, &opts.only, opts.scale)?
+        }
+    };
     let rendered = start.elapsed().as_secs_f64() * 1000.0;
-    let bytes = match opts.depth {
-        8 => png8(&image)?,
-        16 => png16(&image)?,
-        other => bail!("--depth takes 8 or 16, not {other}"),
+    let format = opts.format;
+    if opts.depth == 16 && !format.deep() {
+        bail!("--depth 16 is for PNG and TIFF; a {} has 8 bits", format.name());
+    }
+    if !opts.maps.is_empty() && format != klad_render::formats::Format::Png {
+        bail!("light maps are written as PNGs: leave out --format or --maps");
+    }
+    let bytes = match (format, opts.depth) {
+        (klad_render::formats::Format::Png, 8) => png8(&image)?,
+        (klad_render::formats::Format::Png, 16) => png16(&image)?,
+        (_, 8 | 16) => klad_render::formats::encode(&image, format, opts.depth == 16, opts.quality)?,
+        (_, other) => bail!("--depth takes 8 or 16, not {other}"),
     };
     let name = layer.map(|l| {
         if l.name.is_empty() {
@@ -96,7 +116,12 @@ pub fn run(path: &Path, opts: Export) -> Result<()> {
             l.name.as_str()
         }
     });
-    let usual = default_path(&bundle, name, opts.frame, opts.scale, opts.variant.as_deref());
+    let name = match opts.only.is_empty() {
+        true => name,
+        false => Some("selection"),
+    };
+    let usual =
+        default_path(&bundle, name, opts.frame, opts.scale, opts.variant.as_deref()).with_extension(format.extension());
     let out = match opts.out {
         Some(folder) if folder.is_dir() => folder.join(usual.file_name().unwrap_or_default()),
         Some(file) => file,
@@ -117,11 +142,19 @@ pub fn run(path: &Path, opts: Export) -> Result<()> {
         })?;
     }
     eprintln!(
-        "{}x{}  {}-bit{}  {} KB  rendered {rendered:.0} ms, {:.0} ms in all",
+        "{}x{}  {} {}-bit{}  {} KB  rendered {rendered:.0} ms, {:.0} ms in all",
         image.width(),
         image.height(),
+        format.name(),
         opts.depth,
-        if opts.depth == 8 { " dithered" } else { "" },
+        if opts.depth == 8
+            && format != klad_render::formats::Format::Jpeg
+            && !(format == klad_render::formats::Format::Webp && !opts.quality.lossless)
+        {
+            " dithered"
+        } else {
+            ""
+        },
         bytes.len() / 1024,
         start.elapsed().as_secs_f64() * 1000.0
     );
@@ -163,6 +196,9 @@ mod tests {
                 out: Some(out.clone()),
                 maps: Vec::new(),
                 invert: false,
+                format: klad_render::formats::Format::Png,
+                quality: klad_render::formats::Quality::default(),
+                only: Vec::new(),
             },
         )
         .unwrap();

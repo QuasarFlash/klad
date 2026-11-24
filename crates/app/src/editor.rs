@@ -1,24 +1,33 @@
+mod arrange;
+mod assists;
 mod between;
 mod bones;
 mod brushwin;
 mod buffer;
+mod canvas;
 mod cells;
 mod checks;
+mod clip;
 mod clips;
 mod commands;
 mod compare;
 mod copy;
 mod depth;
+mod drawingfile;
 mod export;
 mod first;
+mod framesin;
 mod history;
 mod keys;
+mod layerops;
 mod layers;
 mod lock;
 mod look;
 mod make;
 mod maps;
+mod marquee;
 mod options;
+mod outline;
 mod paintover;
 mod panels;
 mod pins;
@@ -26,16 +35,22 @@ mod pixels;
 mod prefs;
 mod selection;
 mod shift;
+mod snap;
+mod straight;
 mod target;
 mod text;
 mod timeline;
 mod tweens;
+mod typed;
 mod words;
+mod yours;
 
 #[cfg(test)]
 pub(crate) use commands::install_job;
 #[cfg(test)]
 mod drag_time;
+#[cfg(test)]
+mod edit_tests;
 #[cfg(test)]
 mod inventory;
 #[cfg(test)]
@@ -421,6 +436,7 @@ fn transform_props(t: &klad_core::doc::Transform) -> Map<String, Value> {
     .collect()
 }
 
+#[derive(Clone)]
 struct Drag {
     grab: Grab,
     node: String,
@@ -435,6 +451,31 @@ struct Drag {
     slop: f32,
     crossed: bool,
     outside: bool,
+    shift: bool,
+    alt: bool,
+    free: bool,
+    toggle: bool,
+}
+
+fn factor(k: f32, whole: bool) -> f32 {
+    let k = if k.abs() < 0.02 {
+        0.02f32.copysign(k)
+    } else {
+        k.clamp(-50.0, 50.0)
+    };
+    match whole {
+        true if k.round() == 0.0 => 1.0f32.copysign(k),
+        true => k.round(),
+        false => k,
+    }
+}
+
+fn ratio(now: f32, start: f32, pivot: f32) -> f32 {
+    let span = start - pivot;
+    match span.abs() < 1.0 {
+        true => 1.0,
+        false => (now - pivot) / span,
+    }
 }
 
 impl Drag {
@@ -443,15 +484,62 @@ impl Drag {
         self.crossed |= (self.now - self.start).length() > self.slop;
     }
 
-    fn scale(&self) -> f32 {
-        if self.grab != Grab::Scale {
-            return 1.0;
+    fn keys(&mut self, m: egui::Modifiers) {
+        self.shift = m.shift;
+        self.alt = m.alt && self.grab != Grab::Move;
+    }
+
+    fn hint(&self) -> &'static str {
+        match self.grab {
+            Grab::Move if self.copy => "shift keeps the copy level or upright",
+            Grab::Move => "shift keeps it level or upright; alt as you start a drag moves a copy",
+            Grab::Scale if self.free => "shift frees the proportions; alt scales from the middle",
+            Grab::Scale => "alt scales from the middle",
+            Grab::Rotate => "shift turns in steps of 15 degrees",
+            Grab::Stretch(_) => "alt stretches both sides from the middle",
         }
-        let free = ((self.now - self.center).length() / (self.start - self.center).length().max(1.0)).clamp(0.02, 50.0);
-        match self.whole {
+    }
+
+    fn pivot(&self) -> Vec2 {
+        if self.alt || self.grab != Grab::Scale {
+            return self.center;
+        }
+        let near = (0..4)
+            .min_by(|&a, &b| {
+                (self.corners[a] - self.start)
+                    .length()
+                    .total_cmp(&(self.corners[b] - self.start).length())
+            })
+            .unwrap_or(0);
+        self.corners[(near + 2) % 4]
+    }
+
+    fn factors(&self) -> (f32, f32) {
+        if self.grab != Grab::Scale {
+            return (1.0, 1.0);
+        }
+        let p = self.pivot();
+        if self.shift && self.free && upright(&self.corners) {
+            return (
+                factor(ratio(self.now.x, self.start.x, p.x), self.whole),
+                factor(ratio(self.now.y, self.start.y, p.y), self.whole),
+            );
+        }
+        let free = ((self.now - p).length() / (self.start - p).length().max(1.0)).clamp(0.02, 50.0);
+        let k = match self.whole {
             true => free.round().max(1.0),
             false => free,
-        }
+        };
+        (k, k)
+    }
+
+    fn scale(&self) -> f32 {
+        self.factors().0
+    }
+
+    fn uneven(&self) -> Option<(f32, f32)> {
+        let (kx, ky) = self.factors();
+        (kx != ky).then_some((kx, ky))
     }
 
     fn angle(&self) -> f32 {
@@ -459,14 +547,21 @@ impl Drag {
             return 0.0;
         }
         let free = (self.now - self.center).angle() - (self.start - self.center).angle();
-        match self.whole {
-            true => (free / std::f32::consts::FRAC_PI_2).round() * std::f32::consts::FRAC_PI_2,
-            false => free,
-        }
+        let step = match (self.whole, self.shift) {
+            (true, _) => std::f32::consts::FRAC_PI_2,
+            (false, true) => std::f32::consts::PI / 12.0,
+            (false, false) => return free,
+        };
+        (free / step).round() * step
     }
 
     fn slide(&self) -> Vec2 {
         let d = self.now - self.start;
+        let d = match self.shift {
+            true if d.x.abs() >= d.y.abs() => vec2(d.x, 0.0),
+            true => vec2(0.0, d.y),
+            false => d,
+        };
         match self.whole {
             true => vec2(d.x.round(), d.y.round()),
             false => d,
@@ -477,24 +572,12 @@ impl Drag {
         let Grab::Stretch(side) = self.grab else {
             return None;
         };
-        let pivot = edge(&self.corners, (side + 2) % 4);
+        let pivot = match self.alt {
+            true => self.center,
+            false => edge(&self.corners, (side + 2) % 4),
+        };
         let axis = if side % 2 == 0 { 1 } else { 0 };
-        let span = self.start[axis] - pivot[axis];
-        let k = if span.abs() < 1.0 {
-            1.0
-        } else {
-            (self.now[axis] - pivot[axis]) / span
-        };
-        let k = if k.abs() < 0.02 {
-            0.02f32.copysign(k)
-        } else {
-            k.clamp(-50.0, 50.0)
-        };
-        let k = match self.whole {
-            true if k.round() == 0.0 => 1.0f32.copysign(k),
-            true => k.round(),
-            false => k,
-        };
+        let k = factor(ratio(self.now[axis], self.start[axis], pivot[axis]), self.whole);
         Some((axis, pivot, k))
     }
 
@@ -512,8 +595,9 @@ impl Drag {
                 [1.0, 0.0, 0.0, 1.0, d.x, d.y]
             }
             Grab::Scale => {
-                let k = self.scale();
-                [k, 0.0, 0.0, k, c.x * (1.0 - k), c.y * (1.0 - k)]
+                let (kx, ky) = self.factors();
+                let p = self.pivot();
+                [kx, 0.0, 0.0, ky, p.x * (1.0 - kx), p.y * (1.0 - ky)]
             }
             Grab::Rotate => {
                 let (s, k) = self.angle().sin_cos();
@@ -554,12 +638,16 @@ impl Drag {
                     ..Default::default()
                 }
             }
-            Grab::Scale => MarkTransform {
-                sx: self.scale(),
-                sy: self.scale(),
-                pivot,
-                ..Default::default()
-            },
+            Grab::Scale => {
+                let (sx, sy) = self.factors();
+                let p = self.pivot();
+                MarkTransform {
+                    sx,
+                    sy,
+                    pivot: Some([p.x, p.y]),
+                    ..Default::default()
+                }
+            }
             Grab::Rotate => MarkTransform {
                 rotate: self.angle().to_degrees(),
                 pivot,
@@ -626,6 +714,8 @@ struct Live {
     recorder: Recorder,
     last_at: Instant,
     twin: Option<(f32, Stroke, StrokePainter)>,
+    straight: Option<straight::Straight>,
+    follow: Option<assists::Follow>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -711,6 +801,11 @@ struct Windows {
     font: bool,
     paintover: bool,
     compare: bool,
+    canvas: bool,
+    grid: bool,
+    assists: bool,
+    frames: bool,
+    connect: bool,
 }
 
 #[derive(Default)]
@@ -728,6 +823,8 @@ pub(crate) enum Want {
     Close,
     Gone,
     Path(std::path::PathBuf),
+    Cycle(i32),
+    Welcome,
 }
 
 pub(crate) struct Editor {
@@ -782,6 +879,7 @@ pub(crate) struct Editor {
     navigating: bool,
     focused: bool,
     pen: Option<Pen>,
+    touch: Option<egui::TouchId>,
     readout: Readout,
     dirty: BTreeSet<usize>,
     pending: Option<Instant>,
@@ -859,6 +957,7 @@ pub(crate) struct Editor {
     cells_last: bool,
     focus: Focus,
     shape_clip: Option<Vec<serde_json::Value>>,
+    shape_from: Option<std::path::PathBuf>,
     twist: Option<(f32, f64)>,
     key_filter: String,
     selection: Option<String>,
@@ -883,10 +982,26 @@ pub(crate) struct Editor {
     pub(crate) pixel_size: u32,
     pub(crate) pixel_perfect: bool,
     pub(crate) pixel_shape: PixelShape,
+    pub(crate) brush_figure: straight::Figure,
+    brush_last: Option<(String, Vec2)>,
+    typed: Option<typed::Typed>,
+    own_picture: Option<clip::Own>,
+    look_from: Option<String>,
+    canvas_form: canvas::Form,
+    cropping: Option<canvas::Crop>,
+    window_focused: bool,
+    connect: crate::connect::Connect,
+    guide_drag: Option<snap::GuideDrag>,
+    assist_drag: Option<(usize, usize, [f32; 2])>,
+    yours: yours::Yours,
+    frames_in: framesin::FramesIn,
+    naming: Option<drawingfile::Naming>,
+    snap_lines: Option<(Option<f32>, Option<f32>)>,
     pub(crate) pixel_filled: bool,
     pub(crate) pixel_diagonal: bool,
     pub(crate) pixel_fill_all: bool,
-    pub(crate) select_box: bool,
+    pub(crate) marquee: marquee::Marquee,
+    pub(crate) wand_tolerance: f32,
     pub(crate) pixel_mode: PixelMode,
     pub(crate) pixel_dither: u32,
     pub(crate) pixel_two: bool,
@@ -919,6 +1034,9 @@ impl Editor {
         let scene = Scene::open_lazy(path)?;
         let brushes = BrushSet::for_bundle(&scene.bundle)?;
         let embedded = scene.bundle.brushes()?;
+        if let Err(e) = klad_core::drawings::keep_opened(&scene.bundle.root) {
+            crate::report::log(&format!("no copy of the drawing as opened, so Revert is off: {e:#}"));
+        }
         let ink = brushes
             .def("ink")
             .ok_or_else(|| crate::report::bug("the ink brush is missing from the library"))?;
@@ -1002,6 +1120,7 @@ impl Editor {
             navigating: false,
             focused: false,
             pen: if cfg!(test) { None } else { Pen::install() },
+            touch: None,
             readout: Readout::default(),
             pending: None,
             stats: Arc::default(),
@@ -1078,6 +1197,7 @@ impl Editor {
             cells_last: false,
             focus: Focus::Canvas,
             shape_clip: None,
+            shape_from: None,
             twist: None,
             key_filter: String::new(),
             selection: None,
@@ -1102,10 +1222,29 @@ impl Editor {
             pixel_size: 1,
             pixel_perfect: true,
             pixel_shape: PixelShape::Rect,
+            brush_figure: straight::Figure::Free,
+            brush_last: None,
+            typed: None,
+            own_picture: None,
+            look_from: None,
+            canvas_form: canvas::Form::default(),
+            cropping: None,
+            window_focused: true,
+            connect: crate::connect::Connect::here(),
+            guide_drag: None,
+            assist_drag: None,
+            frames_in: framesin::FramesIn::fresh(),
+            naming: None,
+            yours: yours::Yours::at(match cfg!(test) {
+                true => None,
+                false => klad_render::library::Library::home().ok(),
+            }),
+            snap_lines: None,
             pixel_filled: false,
             pixel_diagonal: false,
             pixel_fill_all: false,
-            select_box: true,
+            marquee: marquee::Marquee::Box,
+            wand_tolerance: klad_render::wand::TOLERANCE,
             pixel_mode: PixelMode::Draw,
             pixel_dither: 100,
             pixel_two: false,
@@ -1209,7 +1348,7 @@ impl Editor {
     }
 
     pub(crate) fn say(&mut self, tone: Tone, text: impl Into<String>) {
-        let text = text.into();
+        let text = crate::commands::local_keys(&text.into());
         if tone == Tone::Error {
             crate::report::log(&format!("editor: {text}"));
         }
@@ -1873,9 +2012,13 @@ impl Editor {
                 _ => None,
             })
             .map(|(id, node)| {
-                let t = match drag.stretch().filter(|_| !together) {
-                    Some((axis, _, k)) => lift::stretched(&node, affine, axis, k)?,
-                    None => lift::committed(&node, affine, drag.scale(), drag.angle().to_degrees())?,
+                let t = match (
+                    drag.stretch().filter(|_| !together),
+                    drag.uneven().filter(|_| !together),
+                ) {
+                    (Some((axis, _, k)), _) => lift::stretched(&node, affine, axis, k)?,
+                    (None, Some((kx, ky))) => lift::scaled(&node, affine, kx, ky)?,
+                    (None, None) => lift::committed(&node, affine, drag.scale(), drag.angle().to_degrees())?,
                 };
                 Ok(Op::Set {
                     id,
@@ -2109,6 +2252,10 @@ impl Editor {
             .collect()
     }
 
+    fn drag_keys(&self) -> Option<&'static str> {
+        self.drag.as_ref().filter(|d| d.moved()).map(Drag::hint)
+    }
+
     fn edges(&self) -> bool {
         match self.tool {
             _ if self.on_marks() => true,
@@ -2157,6 +2304,10 @@ impl Editor {
             slop: DRAG_SLOP / self.view.map_or(1.0, |v| v.zoom),
             crossed: false,
             outside: false,
+            shift: self.modifiers.shift,
+            alt: self.modifiers.alt && grab != Grab::Move,
+            free: self.edges() && self.shifting.is_none(),
+            toggle: false,
         });
     }
 
@@ -2268,6 +2419,9 @@ impl Editor {
             return self.finish_stroke_drag(&drag);
         }
         if !drag.moved() {
+            if drag.toggle && self.toggle_shape(drag.start)? {
+                return Ok(());
+            }
             if drag.grab == Grab::Move && !drag.fresh {
                 self.select_at(drag.start, true)?;
             }
@@ -2424,10 +2578,6 @@ impl Editor {
         Ok(())
     }
 
-    fn also_cels(&self) -> Vec<(String, String)> {
-        self.pick_cels(false)
-    }
-
     fn pick_cels(&self, every: bool) -> Vec<(String, String)> {
         let doc = &self.scene.bundle.doc;
         let active = self.scene.active_id();
@@ -2443,11 +2593,18 @@ impl Editor {
             .collect()
     }
 
+    fn marquee_here(&self) -> marquee::Marquee {
+        let grid = self.scene.on_grid();
+        match self.tool == Tool::Strokes || (grid && self.tool == Tool::Select) {
+            true => self.marquee,
+            false => marquee::Marquee::Loop,
+        }
+    }
+
     fn lasso_outline(&self, lasso: &Lasso) -> Vec<Vec2> {
         let grid = self.scene.on_grid();
-        let boxed = self.select_box && (self.tool == Tool::Strokes || (grid && self.tool == Tool::Select));
-        match (boxed, lasso.points.first(), lasso.points.last()) {
-            (true, Some(a), Some(b)) => {
+        match (self.marquee_here(), lasso.points.first(), lasso.points.last()) {
+            (marquee::Marquee::Box, Some(a), Some(b)) => {
                 let (lo, hi) = (a.min(*b), a.max(*b));
                 let (lo, hi) = match grid {
                     true => (lo.floor(), hi.ceil()),
@@ -2455,6 +2612,7 @@ impl Editor {
                 };
                 vec![lo, vec2(hi.x, lo.y), hi, vec2(lo.x, hi.y)]
             }
+            (marquee::Marquee::Ellipse, Some(a), Some(b)) => marquee::ellipse(*a, *b, self.modifiers.shift),
             _ => lasso.points.clone(),
         }
     }
@@ -2464,8 +2622,10 @@ impl Editor {
             return Ok(());
         };
         let zoom = self.view.map_or(1.0, |v| v.zoom);
-        let click = !lasso.far || lasso.points.len() < 3;
-        if click
+        let wand = self.marquee_here() == marquee::Marquee::Wand;
+        let click = !wand && (!lasso.far || lasso.points.len() < 3);
+        let reaches = click || (wand && self.settings.pick_all_layers && !self.modifiers.alt);
+        if reaches
             && !self.modifiers.shift
             && let Some((path, _)) = self.mark_at(lasso.points[0], 5.0 / zoom)
             && path != self.scene.active
@@ -2499,8 +2659,20 @@ impl Editor {
         let at = lasso.points[0];
         let erased = self.erased();
         let outline = self.lasso_outline(&lasso);
-        let polygon: Option<Vec<[f32; 2]>> =
-            (lasso.far && outline.len() >= 3).then(|| outline.iter().map(|p| [p.x, p.y]).collect());
+        let polygon: Option<Vec<[f32; 2]>> = match wand {
+            true => self.wand_polygon(at),
+            false => (lasso.far && outline.len() >= 3).then(|| outline.iter().map(|p| [p.x, p.y]).collect()),
+        };
+        if wand && polygon.is_none() {
+            self.say(
+                Tone::Refused,
+                match self.settings.pick_all_layers {
+                    true => "the wand takes an area of one colour: click on something painted",
+                    false => "the wand takes an area of one colour: click on what is painted on this layer",
+                },
+            );
+            return Ok(());
+        }
         let pick = |marks: &[Mark]| -> (Vec<u32>, bool) {
             match &polygon {
                 Some(polygon) => {
@@ -2535,22 +2707,28 @@ impl Editor {
                 (layer, cel, ids, crossing)
             })
             .collect();
-        let adding = self.modifiers.shift;
-        let previous = self.picked.clone().filter(|p| adding && p.cel == cel);
+        let taking = self.modifiers.alt && !click;
+        let adding = self.modifiers.shift && !(wand && taking);
+        let previous = self.picked.clone().filter(|p| (adding || taking) && p.cel == cel);
         let crossed = crossing || others.iter().any(|o| o.3);
-        let cut = polygon
-            .clone()
-            .filter(|_| self.cuts() && crossed)
-            .or_else(|| previous.as_ref().and_then(|p| p.cut.clone()));
-        let merge = |held: Vec<u32>, found: &[u32]| {
-            found.iter().fold(held, |mut ids, id| {
-                if adding && !lasso.far && ids.contains(id) {
+        let cut = match taking {
+            true => previous.as_ref().and_then(|p| p.cut.clone()),
+            false => polygon
+                .clone()
+                .filter(|_| (self.cuts() || wand) && crossed)
+                .or_else(|| previous.as_ref().and_then(|p| p.cut.clone())),
+        };
+        let far = lasso.far || wand;
+        let merge = |held: Vec<u32>, found: &[u32]| match taking {
+            true => held.into_iter().filter(|id| !found.contains(id)).collect(),
+            false => found.iter().fold(held, |mut ids, id| {
+                if adding && !far && ids.contains(id) {
                     ids.retain(|x| x != id);
                 } else if !ids.contains(id) {
                     ids.push(*id);
                 }
                 ids
-            })
+            }),
         };
         let ids = merge(previous.as_ref().map_or(Vec::new(), |p| p.ids.clone()), &found);
         let more: Vec<Part> = others
@@ -2575,10 +2753,7 @@ impl Editor {
             }
         }
         if self.picked.is_none() && polygon.is_some() && crossed {
-            let shape = match self.select_box && self.tool == Tool::Strokes {
-                true => "box",
-                false => "loop",
-            };
+            let shape = self.marquee_here().label();
             self.say(
                 Tone::Info,
                 format!("the {shape} holds no whole stroke: tick \"a box or loop cuts strokes at its edge\" in the bar to take the parts inside"),
@@ -3214,6 +3389,7 @@ impl Editor {
             .chain(bent.iter().map(|shaped| set(&shaped.node, &shaped.subs)))
             .collect();
         self.apply(ops)?;
+        self.first.reshaped = true;
         let rev = self.scene.bundle.doc.rev;
         self.shaped = Some(Shaped {
             node: id,
@@ -3371,6 +3547,17 @@ impl Editor {
             && ctx
                 .layer_id_at(e.pos)
                 .is_none_or(|l| l.order == egui::Order::Background);
+        if self.cropping.is_some() {
+            self.crop_pen(e.phase, c, on_canvas);
+            return Ok(());
+        }
+        if self.guide_pen(&e, view, rect, c, on_canvas)? {
+            return Ok(());
+        }
+        if self.assist_pen(&e, view, rect, c)? {
+            return Ok(());
+        }
+        let c = self.snapped(&e, c);
         let picking = self.modifiers.alt && !self.modifiers.command && matches!(self.tool, Tool::Brush | Tool::Fill);
         let sizing_now = self.modifiers.alt && self.modifiers.command && self.tool == Tool::Brush;
         match (e.phase, self.sizing) {
@@ -3484,8 +3671,10 @@ impl Editor {
                 }
             }
             (Tool::Strokes, Phase::Down) => match self.grab_at(view, rect, e.pos) {
-                Some((id, grab, corners)) => self.start_drag(id, grab, corners, c, false),
-                None => {
+                Some((id, grab, corners)) if !(self.modifiers.alt && grab == Grab::Move) => {
+                    self.start_drag(id, grab, corners, c, false)
+                }
+                _ => {
                     self.lasso = Some(Lasso {
                         points: vec![c],
                         start: e.pos,
@@ -3524,29 +3713,46 @@ impl Editor {
                     self.begin(&e, c)?;
                 }
             }
+            (Tool::Brush, Phase::Move) if self.live.as_ref().is_some_and(|l| l.straight.is_some()) => {
+                let m = self.modifiers;
+                if let Some(s) = self.live.as_mut().and_then(|l| l.straight.as_mut()) {
+                    s.to(c, m);
+                }
+                self.show_straight();
+                self.pending.get_or_insert(e.at);
+            }
             (Tool::Brush, Phase::Move) => {
                 if let Some(live) = self.live.as_mut() {
                     let dt = e.at.duration_since(live.last_at).as_secs_f32() * 1000.0;
                     let sample = live.recorder.push(raw_of(&e, c, dt));
-                    live.painter
-                        .push_on(&sample, &mut self.buffer, self.scene.active_raster());
-                    live.stroke.samples.push(sample);
-                    if let Some((axis, copy, painter)) = live.twin.as_mut() {
-                        let twin = make::mirrored(&sample, *axis);
-                        painter.push_on(&twin, &mut self.mirror_buffer, self.scene.active_raster());
-                        copy.samples.push(twin);
-                    }
+                    let ready = match live.follow.as_mut() {
+                        Some(follow) => follow.take(sample),
+                        None => vec![sample],
+                    };
+                    ready.into_iter().for_each(|sample| {
+                        live.painter
+                            .push_on(&sample, &mut self.buffer, self.scene.active_raster());
+                        live.stroke.samples.push(sample);
+                        if let Some((axis, copy, painter)) = live.twin.as_mut() {
+                            let twin = make::mirrored(&sample, *axis);
+                            painter.push_on(&twin, &mut self.mirror_buffer, self.scene.active_raster());
+                            copy.samples.push(twin);
+                        }
+                    });
                     live.last_at = e.at;
                     self.pending.get_or_insert(e.at);
                 }
             }
             (Tool::Brush, Phase::Up) => self.finish()?,
             (Tool::Select, Phase::Down) => match self.grab_at(view, rect, e.pos) {
-                Some((_, Grab::Move, _))
-                    if self.modifiers.shift
-                        && self.selection.is_some()
-                        && !self.on_marks()
-                        && self.toggle_shape(c)? => {}
+                Some((id, Grab::Move, corners))
+                    if self.modifiers.shift && self.selection.is_some() && !self.on_marks() =>
+                {
+                    self.start_drag(id, Grab::Move, corners, c, false);
+                    if let Some(drag) = self.drag.as_mut() {
+                        drag.toggle = true;
+                    }
+                }
                 Some((id, grab, corners)) => self.start_drag(id, grab, corners, c, false),
                 None if self.shifting.is_some() => {
                     if let Some((id, corners)) = self.handles() {
@@ -3589,7 +3795,13 @@ impl Editor {
             (Tool::Text, Phase::Move) if self.text_pressing => self.text_drag(c),
             (Tool::Text, Phase::Up) => self.text_pressing = false,
             (Tool::Bone, Phase::Down) => self.bone_down(c),
-            (Tool::Bone, Phase::Move) => self.bone_move(c),
+            (Tool::Bone, Phase::Move) => {
+                self.bones.pen = match e.tablet {
+                    true => e.pressure,
+                    false => 1.0,
+                };
+                self.bone_move(c)
+            }
             (Tool::Bone, Phase::Up) => self.bone_up()?,
             (Tool::Pen, Phase::Down) => self.pen_down(view, rect, e.pos, c)?,
             (Tool::Pen, Phase::Move) => self.pen_move(c),
@@ -3708,16 +3920,30 @@ impl Editor {
         if brush.def.color.is_some_and(|c| c.uses_second()) {
             stroke.second = Some(klad_core::color::to_u16(self.second));
         }
+        let zoom = self.view.map_or(1.0, |v| v.zoom);
+        let straight = self
+            .straight_figure()
+            .map(|(figure, from)| straight::Straight::new(figure, c, from, sample, zoom));
+        let follow = (straight.is_none() && self.following())
+            .then(|| assists::Follow::new(self.scene.bundle.doc.guides.assists.clone(), sample, zoom));
+        let first: Vec<klad_core::stroke::Sample> = match follow {
+            Some(_) => Vec::new(),
+            None => vec![sample],
+        };
         let mut painter = StrokePainter::live(&brush, &stroke);
-        painter.push_on(&sample, &mut self.buffer, self.scene.active_raster());
-        stroke.samples.push(sample);
+        first
+            .iter()
+            .for_each(|s| painter.push_on(s, &mut self.buffer, self.scene.active_raster()));
+        stroke.samples.extend(first.iter().copied());
         let twin = self.mirror.map(|axis| {
             let mut copy = stroke.clone();
             copy.id = id + 1;
             copy.seed = stroke.seed.wrapping_add(1);
-            copy.samples = vec![make::mirrored(&sample, axis)];
+            copy.samples = first.iter().map(|s| make::mirrored(s, axis)).collect();
             let mut painter = StrokePainter::live(&brush, &copy);
-            painter.push_on(&copy.samples[0], &mut self.mirror_buffer, self.scene.active_raster());
+            copy.samples
+                .iter()
+                .for_each(|s| painter.push_on(s, &mut self.mirror_buffer, self.scene.active_raster()));
             (axis, copy, painter)
         });
         self.live = Some(Live {
@@ -3727,7 +3953,12 @@ impl Editor {
             recorder,
             last_at: e.at,
             twin,
+            straight,
+            follow,
         });
+        if straight.is_some() {
+            self.show_straight();
+        }
         self.pending.get_or_insert(e.at);
         Ok(())
     }
@@ -3737,7 +3968,18 @@ impl Editor {
             return Ok(());
         };
         let start = Instant::now();
-        let tail = live.recorder.finish();
+        let straight = live.straight.take();
+        let tail = match straight {
+            Some(s) => {
+                live.stroke.samples = s.samples();
+                Vec::new()
+            }
+            None => live.recorder.finish(),
+        };
+        let tail = match live.follow.take() {
+            Some(follow) => follow.flush(tail),
+            None => tail,
+        };
         tail.iter()
             .for_each(|s| live.painter.push_on(s, &mut self.buffer, self.scene.active_raster()));
         live.painter.end(&mut self.buffer, self.scene.active_raster());
@@ -3749,7 +3991,12 @@ impl Editor {
             painter.end(&mut self.mirror_buffer, self.scene.active_raster());
         }
         live.stroke.samples.extend(tail);
-        let repainted = needs_repaint(&live.stroke);
+        if straight.is_some()
+            && let Some((axis, copy, _)) = live.twin.as_mut()
+        {
+            copy.samples = live.stroke.samples.iter().map(|s| make::mirrored(s, *axis)).collect();
+        }
+        let repainted = needs_repaint(&live.stroke) || straight.is_some();
         if repainted {
             self.dirty.extend(self.buffer.touched().iter().copied());
             self.buffer.reset();
@@ -3782,6 +4029,10 @@ impl Editor {
         let brush = live.stroke.brush.clone();
         let erasing = live.brush.blend == klad_brush::brush::StrokeBlend::Erase;
         let blend = stroke_blend(&live.brush, live.stroke.lock).unwrap_or(live.brush.blend);
+        let ending = live.stroke.samples.last().map(|s| {
+            let (x, y) = s.pos();
+            vec2(x, y)
+        });
         let attaching = Instant::now();
         live.stroke.on = self.attaching(&live.stroke, &live.brush.def);
         let attach = ms(attaching);
@@ -3792,10 +4043,14 @@ impl Editor {
             touched.extend(self.scene.commit_stroke(copy, &mut self.mirror_buffer, blend)?);
         }
         let commit = ms(start);
+        self.brush_last = self.scene.active_id().zip(ending);
         self.dirty.extend(touched);
         let saving = Instant::now();
         let bytes = self.scene.save_active("stroke")?;
-        self.first.drew |= !erasing;
+        match erasing {
+            true => self.first.erased = true,
+            false => self.first.painted += 1,
+        }
         if !erasing {
             self.used_colour();
         }
@@ -4151,15 +4406,20 @@ impl Editor {
         self.pen_keys(ui)?;
         self.bone_keys(ui);
         self.shift_keys(ui)?;
+        self.crop_keys(ui)?;
+        self.fit_buffers();
         self.command_keys(ui)?;
         let ctx = ui.ctx().clone();
         let was_focused = self.focused;
         self.focused = ctx.input(|i| i.focused);
         self.modifiers = ctx.input(|i| i.modifiers);
+        if let Some(drag) = self.drag.as_mut() {
+            drag.keys(self.modifiers);
+        }
         self.refresh_shape();
         let events = match &self.pen {
-            Some(pen) => pen.drain(ctx.content_rect().height()),
-            None => pen::from_egui(&ui.input(|i| i.events.clone())),
+            Some(pen) => pen.drain(&ctx),
+            None => pen::from_egui(&ui.input(|i| i.events.clone()), &mut self.touch),
         };
         let holding = self.writing() && matches!(self.tool, Tool::Select | Tool::Direct);
         self.held
@@ -4510,7 +4770,11 @@ impl Editor {
             painter.circle_filled(knob, HANDLE / 2.0 + 1.0, Color32::WHITE);
             painter.circle_stroke(knob, HANDLE / 2.0 + 1.0, egui::Stroke::new(1.0, accent));
         }
+        self.draw_canvas_edge(&painter, |c| self.screen(view, rect, c));
         self.draw_pins(&painter, |c| self.screen(view, rect, c));
+        self.crop_overlay(&painter, |c| self.screen(view, rect, c));
+        self.draw_guides(&painter, rect, |c| self.screen(view, rect, c));
+        self.draw_assists(&painter, rect, |c| self.screen(view, rect, c));
         self.draw_checks(&painter, |c| self.screen(view, rect, c));
         if let Some(lasso) = self.lasso.as_ref().filter(|l| l.far) {
             let line: Vec<Pos2> = self
@@ -4571,7 +4835,7 @@ impl Editor {
                 origin + vec2(radius + 8.0, 0.0),
                 egui::Align2::LEFT_CENTER,
                 format!("{:.1} px", self.size),
-                egui::FontId::proportional(13.0),
+                crate::theme::regular(crate::theme::BODY),
                 Color32::WHITE,
             );
             return;
@@ -4899,7 +5163,7 @@ impl Editor {
             ),
         };
         let button = egui::Button::new(egui::RichText::new(spec.icon).size(crate::theme::ICON))
-            .min_size(vec2(crate::theme::TARGET, crate::theme::TARGET));
+            .min_size(vec2(crate::theme::CONTROL, crate::theme::CONTROL));
         let enabled = refused.is_none();
         let response = ui.add_enabled(enabled, button).hint(hint);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, dye.what()));
@@ -5124,13 +5388,28 @@ impl Editor {
         Ok(())
     }
 
-    fn select_all_strokes(&mut self) {
-        let ids: Vec<u32> = self.scene.active_marks().iter().map(Mark::id).collect();
+    fn select_all_strokes(&mut self) -> Result<()> {
+        let pickable = |marks: &[Mark]| -> Vec<u32> {
+            let riding = klad_core::attach::following(marks);
+            marks.iter().map(Mark::id).filter(|id| !riding.contains(id)).collect()
+        };
+        let every = self.settings.pick_all_layers;
+        if every
+            && pickable(self.scene.active_marks()).is_empty()
+            && let Some((layer, _)) = self
+                .pick_cels(true)
+                .into_iter()
+                .find(|(_, cel)| !pickable(self.scene.marks_of(cel)).is_empty())
+            && let Some(klad_core::doc::Loc::Layer(path)) = self.scene.bundle.doc.locate(&layer)
+        {
+            self.activate(path)?;
+        }
+        let ids = pickable(self.scene.active_marks());
         let more: Vec<Part> = self
-            .also_cels()
+            .pick_cels(every)
             .into_iter()
             .map(|(layer, cel)| Part {
-                ids: self.scene.marks_of(&cel).iter().map(Mark::id).collect(),
+                ids: pickable(self.scene.marks_of(&cel)),
                 layer,
                 cel,
             })
@@ -5145,14 +5424,15 @@ impl Editor {
                 ..Picked::whole(cel, ids)
             });
         }
+        Ok(())
     }
 
     fn strokes_inspector(&mut self, ui: &mut egui::Ui) -> Result<()> {
         let Some((picked, chosen)) = self.chosen_marks() else {
-            ui.label(match self.also.is_empty() {
+            ui.label(crate::commands::local_keys(&match self.also.is_empty() {
                 true => "click a stroke or drag a loop around strokes on the active paint layer (shift adds); cmd click layers in the layers panel to select on several at once".to_string(),
                 false => format!("click a stroke or drag a loop: it selects on the active layer and {} more (cmd clicked in the layers panel)", self.also.len()),
-            });
+            }));
             return Ok(());
         };
         let fills = chosen.iter().filter(|(_, m)| m.as_fill().is_some()).count();
@@ -5317,6 +5597,36 @@ impl Editor {
         pending.filter(|p| (p - current).abs() > f32::EPSILON)
     }
 
+    fn fraction(&mut self, ui: &mut egui::Ui, key: &str, label: &str, current: f32, hint: &str) -> Option<f32> {
+        let mut value = self.edits.get(key).copied().unwrap_or(current);
+        let response = ui
+            .add(
+                egui::DragValue::new(&mut value)
+                    .speed(0.01)
+                    .range(0.0..=1.0)
+                    .prefix(label)
+                    .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                    .custom_parser(|text| {
+                        let trimmed = text.trim();
+                        let shown = trimmed.trim_end_matches('%').trim().parse::<f64>().ok()?;
+                        Some(match trimmed.ends_with('%') || shown > 1.0 {
+                            true => shown / 100.0,
+                            false => shown,
+                        })
+                    }),
+            )
+            .hint(hint);
+        if response.dragged() || response.has_focus() {
+            self.edits.insert(key.to_string(), value);
+            return None;
+        }
+        let pending = self.edits.remove(key);
+        if response.drag_stopped() || response.lost_focus() || response.changed() {
+            return Some(value);
+        }
+        pending.filter(|p| (p - current).abs() > f32::EPSILON)
+    }
+
     fn text(&mut self, ui: &mut egui::Ui, key: &str, label: &str, current: &str, hint: &str) -> Option<String> {
         let mut value = self.texts.get(key).cloned().unwrap_or_else(|| current.to_string());
         let label = ui.label(label);
@@ -5349,7 +5659,7 @@ impl Editor {
             }
         });
         let t = node.transform;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if let Some(v) = self.number(
                 ui,
                 &format!("{id}.x"),
@@ -5383,8 +5693,6 @@ impl Editor {
             ) {
                 props.push(("transform.rotate".into(), json!(v)));
             }
-        });
-        ui.horizontal(|ui| {
             if let Some(v) = self.number(
                 ui,
                 &format!("{id}.sx"),
@@ -5442,6 +5750,7 @@ impl Editor {
                 props.push(("blur".into(), json!(v)));
             }
         });
+        ui.horizontal(|ui| self.check(|e| e.outline_row(ui)));
         let mut remove = false;
         ui.horizontal(|ui| {
             let mut visible = node.visible;
@@ -5821,13 +6130,13 @@ impl Editor {
             }
         };
         if !self.settings.recent.is_empty() {
-            ui.label("recent");
+            crate::widgets::form_label(ui, "recent");
             let recent = self.settings.recent.clone();
             let current = color::hex(self.color);
             ui.horizontal_wrapped(|ui| {
                 recent.iter().for_each(|hex| {
                     if let Some(rgba) = color::rgba_of(hex)
-                        && color::swatch(ui, rgba, hex.eq_ignore_ascii_case(&current), 24.0)
+                        && color::swatch(ui, rgba, hex.eq_ignore_ascii_case(&current), crate::theme::CONTROL)
                             .hint(format!("{hex}, used lately"))
                             .clicked()
                     {
@@ -5855,7 +6164,7 @@ impl Editor {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.horizontal(|ui| {
-                    color::swatch(ui, self.color, false, 28.0).hint("the current colour");
+                    color::swatch(ui, self.color, false, crate::theme::CONTROL).hint("the current colour");
                     if let Some(text) = self.text(
                         ui,
                         "colour.hex",
@@ -5878,7 +6187,7 @@ impl Editor {
     }
 
     fn palette_part(&mut self, ui: &mut egui::Ui) -> Option<klad_core::ops::PaletteEdit> {
-        ui.label("palette");
+        crate::widgets::form_label(ui, "palette");
         let edit = self.palette_row(ui);
         let variants: Vec<String> = self
             .scene
@@ -5907,26 +6216,23 @@ impl Editor {
             });
         }
         ui.horizontal_wrapped(|ui| {
-            let label = ui.label("name");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.swatch_name)
-                    .hint_text("optional")
-                    .desired_width(110.0),
-            )
-            .labelled_by(label.id)
-            .hint("a name for the colour; agents can use it in place of the hex");
-            self.command_button(ui, Cmd::AddSwatch, Some("add colour"));
+            ui.spacing_mut().item_spacing.x = crate::theme::space::XS;
+            let label = crate::widgets::form_label(ui, "name");
+            ui.add(crate::widgets::field(&mut self.swatch_name, 88.0).hint_text("optional"))
+                .labelled_by(label.id)
+                .hint("a name for the colour; agents can use it in place of the hex");
+            self.command_plain(ui, Cmd::AddSwatch, "add colour");
             if self.can_run(Cmd::UpdateSwatch).is_none() {
-                self.command_button(ui, Cmd::UpdateSwatch, Some("update"));
+                self.command_plain(ui, Cmd::UpdateSwatch, "update");
             }
-            self.command_button(ui, Cmd::AddRamp, Some("ramp"));
-            self.command_button(ui, Cmd::LoadPalette, Some("palettes"));
+            self.command_plain(ui, Cmd::AddRamp, "ramp");
+            self.command_plain(ui, Cmd::LoadPalette, "palettes");
             if variants.len() > 1 || self.can_run(Cmd::NewVariant).is_none() {
-                self.command_button(ui, Cmd::NewVariant, Some("new variant"));
+                self.command_plain(ui, Cmd::NewVariant, "new variant");
             }
             if !self.scene.bundle.doc.variants.shown.is_empty() {
-                self.command_button(ui, Cmd::RenameVariant, Some("rename variant"));
-                self.command_button(ui, Cmd::RemoveVariant, Some("remove variant"));
+                self.command_plain(ui, Cmd::RenameVariant, "rename variant");
+                self.command_plain(ui, Cmd::RemoveVariant, "remove variant");
             }
         });
         edit.or(show.map(|name| klad_core::ops::PaletteEdit::Variant { name }))
@@ -5934,15 +6240,13 @@ impl Editor {
 
     fn colour_channels(&mut self, ui: &mut egui::Ui) {
         let mut model = self.settings.colour_model;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            ui.spacing_mut().button_padding.x = 4.0;
-            color::Model::ALL.into_iter().for_each(|m| {
-                if ui.selectable_label(model == m, m.name()).hint(m.about()).clicked() {
-                    model = m;
-                }
-            });
-        });
+        let options: Vec<(color::Model, &str, &str)> = color::Model::ALL
+            .into_iter()
+            .map(|m| (m, m.name(), m.about()))
+            .collect();
+        if let Some(m) = crate::widgets::segmented_wide(ui, model, &options) {
+            model = m;
+        }
         if model != self.settings.colour_model {
             self.settings.colour_model = model;
             self.settings_dirty = true;
@@ -5965,15 +6269,18 @@ impl Editor {
         let [r, g, b, _] = self.color;
         let row = |ui: &mut egui::Ui, channel: &color::Channel, value: &mut f32, ramp: &dyn Fn(f32) -> [f32; 3]| {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
+                let gap = crate::theme::space::XS;
+                let value_box = 44.0;
+                ui.spacing_mut().item_spacing.x = gap;
                 ui.add_sized(
-                    [10.0, crate::theme::TARGET],
+                    [10.0, crate::theme::CONTROL],
                     egui::Label::new(egui::RichText::new(channel.name).color(crate::theme::WEAK)),
                 );
-                let width = (ui.available_width() - 48.0).max(CHANNEL_TRACK);
+                let width = (ui.available_width() - value_box - gap).max(CHANNEL_TRACK);
                 let slid = color::channel_slider(ui, channel, value, width, ramp).changed();
                 let typed = ui
-                    .add(
+                    .add_sized(
+                        [value_box, crate::theme::CONTROL],
                         egui::DragValue::new(value)
                             .range(channel.lo..=channel.hi)
                             .speed((channel.hi - channel.lo) / 200.0)
@@ -6059,19 +6366,27 @@ impl Editor {
         self.fill.reference = reference;
         let f = &mut self.fill;
         options::whole(ui, "close gaps px", |ui| {
-            ui.add(egui::Slider::new(&mut f.gap, 0.0..=fill::MAX_GAP).text("close gaps px"))
+            crate::widgets::labelled_slider(ui, "close gaps px", egui::Slider::new(&mut f.gap, 0.0..=fill::MAX_GAP))
         })
         .hint("openings in the lines up to this wide count as closed");
         options::whole(ui, "tolerance", |ui| {
-            ui.add(egui::Slider::new(&mut f.tolerance, 0.0..=1.0).text("tolerance"))
+            crate::widgets::labelled_slider(ui, "tolerance", egui::Slider::new(&mut f.tolerance, 0.0..=1.0))
         })
         .hint("how different a pixel may be from where you click and still fill");
         options::whole(ui, "grow under lines px", |ui| {
-            ui.add(egui::Slider::new(&mut f.expand, 0.0..=fill::MAX_EXPAND).text("grow under lines px"))
+            crate::widgets::labelled_slider(
+                ui,
+                "grow under lines px",
+                egui::Slider::new(&mut f.expand, 0.0..=fill::MAX_EXPAND),
+            )
         })
         .hint("the fill reaches this far under the lines, so no paper shows between line and colour");
         options::whole(ui, "opacity", |ui| {
-            ui.add(egui::Slider::new(&mut f.opacity, 0.05..=1.0).text("opacity"))
+            crate::widgets::labelled_slider(
+                ui,
+                "opacity",
+                crate::widgets::percent(egui::Slider::new(&mut f.opacity, 0.05..=1.0)),
+            )
         })
         .hint("the fill's opacity");
         options::note(
@@ -6096,7 +6411,9 @@ impl Editor {
         ui.spacing_mut().slider_width = 220.0;
         prefs::grid(ui, "settings pen", |ui| {
             prefs::row_label(ui, "Pen");
-            ui.label(if self.readout.device == 0 {
+            ui.label(if self.readout.device == 0 && cfg!(windows) {
+                "not identified yet: draw with it. No pressure? Turn on Windows Ink in the tablet's driver".to_string()
+            } else if self.readout.device == 0 {
                 "not identified yet: move it away from the tablet and back".to_string()
             } else {
                 key.clone()
@@ -6197,6 +6514,25 @@ impl Editor {
         crate::theme::surround(self.settings.defaults.surround)
     }
 
+    pub(crate) fn hand_over(&self, to: &mut Editor) {
+        to.clipboard.clone_from(&self.clipboard);
+        to.shape_clip.clone_from(&self.shape_clip);
+        to.shape_from.clone_from(&self.shape_from);
+        to.cells_last = self.cells_last;
+    }
+
+    pub(crate) fn hand_settings(&self, to: &mut Editor) {
+        to.settings = self.settings.clone();
+        to.settings_dirty = true;
+    }
+
+    pub(crate) fn reshown(&mut self) {
+        self.yours.reload();
+        self.dirty = self.scene.all_tiles().into_iter().collect();
+        self.frames.forget_all();
+        self.external.get_or_insert(now_ms());
+    }
+
     pub(crate) fn take_tabs(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         if !ctx.egui_wants_keyboard_input() {
             self.tabs.extend(crate::layout::take_tabs(raw_input));
@@ -6284,7 +6620,8 @@ mod tests {
             Grab::Stretch(3),
         ]
         .iter()
-        .for_each(|&grab| {
+        .flat_map(|&grab| [(false, false), (true, false), (false, true)].map(|(shift, alt)| (grab, shift, alt)))
+        .for_each(|(grab, shift, alt)| {
             let drag = Drag {
                 grab,
                 node: "c1:1,2".into(),
@@ -6304,14 +6641,124 @@ mod tests {
                 slop: 0.5,
                 crossed: true,
                 outside: false,
+                shift,
+                alt,
+                free: true,
+                toggle: false,
             };
             let committed = drag.mark_transform();
             let a = committed.affine(committed.pivot.unwrap_or([0.0, 0.0]));
-            drag.affine()
-                .iter()
-                .zip(a)
-                .for_each(|(p, c)| assert!((p - c).abs() < 1e-3, "{grab:?}: {:?} vs {a:?}", drag.affine()));
+            drag.affine().iter().zip(a).for_each(|(p, c)| {
+                assert!(
+                    (p - c).abs() < 1e-3,
+                    "{grab:?} shift {shift} alt {alt}: {:?} vs {a:?}",
+                    drag.affine()
+                )
+            });
         });
+    }
+
+    #[test]
+    fn shift_and_alt_change_how_a_drag_moves_scales_and_turns() {
+        let base = Drag {
+            grab: Grab::Move,
+            node: "n1".into(),
+            strokes: false,
+            whole: false,
+            fresh: false,
+            copy: false,
+            start: vec2(150.0, 150.0),
+            now: vec2(250.0, 170.0),
+            center: vec2(100.0, 100.0),
+            corners: [
+                vec2(50.0, 50.0),
+                vec2(150.0, 50.0),
+                vec2(150.0, 150.0),
+                vec2(50.0, 150.0),
+            ],
+            slop: 0.5,
+            crossed: true,
+            outside: false,
+            shift: false,
+            alt: false,
+            free: true,
+            toggle: false,
+        };
+        assert_eq!(base.slide(), vec2(100.0, 20.0));
+        assert_eq!(
+            Drag {
+                shift: true,
+                ..base.clone()
+            }
+            .slide(),
+            vec2(100.0, 0.0),
+            "shift keeps a move level"
+        );
+        let scale = Drag {
+            grab: Grab::Scale,
+            now: vec2(250.0, 250.0),
+            ..base.clone()
+        };
+        assert_eq!(
+            scale.pivot(),
+            vec2(50.0, 50.0),
+            "a corner scales from the opposite corner"
+        );
+        assert_eq!(scale.factors(), (2.0, 2.0));
+        assert_eq!(
+            Drag {
+                alt: true,
+                ..scale.clone()
+            }
+            .pivot(),
+            vec2(100.0, 100.0),
+            "alt from the middle"
+        );
+        let free = Drag {
+            shift: true,
+            now: vec2(250.0, 150.0),
+            ..scale.clone()
+        };
+        assert_eq!(free.factors(), (2.0, 1.0), "shift frees the proportions");
+        assert_eq!(
+            Drag {
+                free: false,
+                ..free.clone()
+            }
+            .factors()
+            .0,
+            Drag {
+                free: false,
+                ..free.clone()
+            }
+            .factors()
+            .1
+        );
+        let turn = Drag {
+            grab: Grab::Rotate,
+            start: vec2(200.0, 100.0),
+            now: vec2(100.0 + 100.0 * 0.4f32.cos(), 100.0 + 100.0 * 0.4f32.sin()),
+            shift: true,
+            ..base.clone()
+        };
+        assert!(
+            (turn.angle().to_degrees() - 30.0).abs() < 1e-3,
+            "shift turns in 15 degree steps: {}",
+            turn.angle().to_degrees()
+        );
+        let stretch = Drag {
+            grab: Grab::Stretch(1),
+            start: vec2(150.0, 100.0),
+            now: vec2(200.0, 100.0),
+            alt: true,
+            ..base.clone()
+        };
+        let (_, pivot, k) = stretch.stretch().unwrap();
+        assert_eq!(
+            (pivot, k),
+            (vec2(100.0, 100.0), 2.0),
+            "alt stretches both sides from the middle"
+        );
     }
 
     #[test]

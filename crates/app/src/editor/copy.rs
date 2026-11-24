@@ -29,18 +29,35 @@ impl Piece {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Copied {
     pieces: Vec<Piece>,
+    from: std::path::PathBuf,
+    brushes: Vec<(String, klad_core::brushes::BrushDef)>,
 }
 
 impl Copied {
-    fn count(&self) -> usize {
-        self.pieces.iter().map(Piece::count).sum()
+    pub(super) fn marks(&self) -> Vec<Mark> {
+        self.pieces
+            .iter()
+            .flat_map(|p| {
+                let cut = p.cut.clone();
+                p.around
+                    .iter()
+                    .cloned()
+                    .map(move |mut m| {
+                        if let Some(polygon) = &cut {
+                            m.cuts_mut().push(klad_core::cut::Cut {
+                                keep: klad_core::cut::Keep::Inside,
+                                polygon: polygon.clone(),
+                            });
+                        }
+                        m
+                    })
+                    .chain(p.whole.iter().cloned())
+            })
+            .collect()
     }
 
-    fn whence(&self) -> String {
-        match &self.pieces[..] {
-            [one] => one.cel.clone(),
-            many => format!("{} layers", many.len()),
-        }
+    fn count(&self) -> usize {
+        self.pieces.iter().map(Piece::count).sum()
     }
 }
 
@@ -142,7 +159,20 @@ impl Editor {
             .map(|l| l.id.as_str())
             .collect();
         pieces.sort_by_key(|p| order.iter().position(|id| *id == p.layer));
-        (!pieces.is_empty()).then_some(Copied { pieces })
+        let brushes = pieces
+            .iter()
+            .flat_map(|p| p.around.iter().chain(&p.whole))
+            .filter_map(Mark::as_stroke)
+            .map(|s| s.brush.clone())
+            .collect::<std::collections::BTreeSet<String>>()
+            .into_iter()
+            .filter_map(|id| self.embedded.get(&id).map(|def| (id, def.clone())))
+            .collect();
+        (!pieces.is_empty()).then_some(Copied {
+            pieces,
+            from: self.scene.bundle.root.clone(),
+            brushes,
+        })
     }
 
     fn copied_shapes(&self) -> Vec<Value> {
@@ -160,38 +190,68 @@ impl Editor {
         }
     }
 
-    pub(super) fn copy_picked(&mut self, ctx: &egui::Context) {
+    fn keep_picked(&mut self, ctx: &egui::Context) -> Option<String> {
+        if let Some(picture) = self.selection_picture() {
+            self.picture_out(ctx, picture);
+        }
         let shapes = self.copied_shapes();
         if !shapes.is_empty() {
             let what = counted(shapes.len(), "shape");
-            ctx.copy_text(format!("klad: {what}"));
-            self.say(
-                Tone::Done,
-                format!("copied {what}: cmd V puts a copy on this or another frame, in place"),
-            );
             self.shape_clip = Some(shapes);
+            self.shape_from = Some(self.scene.bundle.root.clone());
             self.clipboard = None;
             self.cells_last = false;
-            return;
+            return Some(what);
         }
-        let Some(copied) = self.copied() else {
-            self.say(
-                Tone::Refused,
-                "select strokes (S) or a shape (V) first; cmd C copies them",
-            );
-            return;
-        };
+        let copied = self.copied()?;
         self.shape_clip = None;
-        ctx.copy_text(format!("klad: {} marks of {}", copied.count(), copied.whence()));
-        self.say(
-            Tone::Done,
-            format!(
-                "copied {}: cmd V puts a copy on this or another frame, in place",
-                counted(copied.count(), "mark")
-            ),
-        );
+        let what = counted(copied.count(), "mark");
         self.clipboard = Some(copied);
         self.cells_last = false;
+        Some(what)
+    }
+
+    pub(super) fn copy_picked(&mut self, ctx: &egui::Context) {
+        match self.keep_picked(ctx) {
+            Some(what) => self.say(
+                Tone::Done,
+                format!("copied {what}: cmd V puts a copy on this or another frame, in place"),
+            ),
+            None => self.say(
+                Tone::Refused,
+                "select strokes (S) or a shape (V) first; cmd C copies them",
+            ),
+        }
+    }
+
+    pub(super) fn cut_picked(&mut self) -> Result<()> {
+        let ctx = self.ctx.clone();
+        let Some(what) = self.keep_picked(&ctx) else {
+            self.say(
+                Tone::Refused,
+                "select strokes (S) or a shape (V) first; cmd X cuts them",
+            );
+            return Ok(());
+        };
+        match self.on_marks() {
+            true => self.edit_picked(LassoAction::Remove)?,
+            false => self.remove_shapes()?,
+        }
+        self.say(
+            Tone::Done,
+            format!("cut {what}: cmd V puts them back on this or another frame, in place (cmd Z undoes the cut)"),
+        );
+        Ok(())
+    }
+
+    pub(super) fn remove_shapes(&mut self) -> Result<()> {
+        let ids = self.shapes();
+        self.selection = None;
+        self.group.clear();
+        if !ids.is_empty() {
+            self.apply(vec![Op::Remove { ids }])?;
+        }
+        Ok(())
     }
 
     pub(super) fn paste(&mut self) -> Result<()> {
@@ -204,7 +264,92 @@ impl Editor {
         }
     }
 
+    fn bring_pictures(&mut self, shapes: &[Value]) -> Result<usize> {
+        let Some(from) = self.shape_from.clone().filter(|f| *f != self.scene.bundle.root) else {
+            return Ok(0);
+        };
+        fn sources(v: &Value, out: &mut Vec<String>) {
+            match v {
+                Value::Object(map) => {
+                    if let Some(Value::String(src)) = map.get("src") {
+                        out.push(src.clone());
+                    }
+                    map.values().for_each(|c| sources(c, out));
+                }
+                Value::Array(items) => items.iter().for_each(|c| sources(c, out)),
+                _ => {}
+            }
+        }
+        let mut found = Vec::new();
+        shapes.iter().for_each(|s| sources(s, &mut found));
+        let root = self.scene.bundle.root.clone();
+        found
+            .iter()
+            .filter(|src| !src.contains("..") && !std::path::Path::new(src).is_absolute())
+            .filter(|src| !root.join(src).exists() && from.join(src).is_file())
+            .try_fold(0, |n, src| {
+                klad_core::bundle::write_atomic(&root.join(src), &std::fs::read(from.join(src))?)?;
+                Ok(n + 1)
+            })
+    }
+
+    fn bring_brushes(&mut self, copied: &Copied) -> Result<()> {
+        if copied.from == self.scene.bundle.root {
+            return Ok(());
+        }
+        copied.brushes.iter().try_for_each(|(id, def)| {
+            if self.scene.bundle.embed_brush(id, def)? {
+                self.embedded.insert(id.clone(), def.clone());
+                self.brushes.insert(id, def.clone());
+            }
+            Ok(())
+        })
+    }
+
+    fn rebound(&self, copied: Copied) -> Copied {
+        if copied.from == self.scene.bundle.root {
+            return copied;
+        }
+        let palette = &self.scene.bundle.doc.palette;
+        let swatch_of = |colour: [u16; 4]| {
+            palette
+                .iter()
+                .filter(|s| !s.id.is_empty())
+                .find(|s| {
+                    klad_core::color::parse_hex(&s.color).is_ok_and(|c| klad_core::color::to_u16(c)[..3] == colour[..3])
+                })
+                .map(|s| s.id.clone())
+        };
+        let rebind = |m: &Mark| -> Mark {
+            match m {
+                Mark::Fill(fill) => {
+                    let mut fill = fill.clone();
+                    if let klad_core::fill::FillSource::Cells { entry, .. } = &mut fill.source
+                        && !entry.is_empty()
+                    {
+                        *entry = swatch_of(fill.color).unwrap_or_default();
+                    }
+                    Mark::Fill(fill)
+                }
+                other => other.clone(),
+            }
+        };
+        Copied {
+            pieces: copied
+                .pieces
+                .into_iter()
+                .map(|p| Piece {
+                    around: p.around.iter().map(rebind).collect(),
+                    whole: p.whole.iter().map(rebind).collect(),
+                    ..p
+                })
+                .collect(),
+            ..copied
+        }
+    }
+
     fn paste_shapes(&mut self, shapes: Vec<Value>) -> Result<()> {
+        self.bring_pictures(&shapes)?;
         let frame = self.scene.frame;
         let home = self.vector_home("shapes");
         let ops: Vec<Op> = home
@@ -366,6 +511,7 @@ impl Editor {
 
     pub(super) fn canvas_menu(&mut self, ui: &mut egui::Ui) {
         [
+            Cmd::Cut,
             Cmd::Copy,
             Cmd::Paste,
             Cmd::DuplicateInPlace,
@@ -376,6 +522,10 @@ impl Editor {
         .for_each(|cmd| self.menu_entry(ui, cmd));
         ui.separator();
         [Cmd::SelectAll, Cmd::Deselect]
+            .into_iter()
+            .for_each(|cmd| self.menu_entry(ui, cmd));
+        ui.separator();
+        super::arrange::ARRANGE
             .into_iter()
             .for_each(|cmd| self.menu_entry(ui, cmd));
     }
@@ -392,10 +542,13 @@ impl Editor {
     }
 
     pub(super) fn paste_copied(&mut self, copied: Copied, word: &str) -> Result<()> {
+        self.bring_brushes(&copied)?;
+        let copied = self.rebound(copied);
         let doc = &self.scene.bundle.doc;
         let paintable = |l: &&klad_core::doc::Layer| l.kind() == Kind::Paint && !l.locked;
         let in_hand = self.scene.active_id();
-        let own = copied.pieces.len() > 1 && copied.pieces.iter().any(|p| Some(&p.layer) == in_hand.as_ref());
+        let here = copied.from == self.scene.bundle.root;
+        let own = here && copied.pieces.len() > 1 && copied.pieces.iter().any(|p| Some(&p.layer) == in_hand.as_ref());
         let (targets, onto): (Vec<(&Piece, CopyTarget)>, String) = match own {
             false => {
                 let Some(layer) = self.scene.active_layer().filter(paintable) else {

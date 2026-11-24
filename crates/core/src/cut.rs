@@ -1,5 +1,6 @@
 use crate::varint::{self, Reader};
 use anyhow::{Result, bail};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Keep {
@@ -72,6 +73,82 @@ pub fn clip_bounds(cuts: &[Cut], bounds: [f32; 4]) -> Option<[f32; 4]> {
         })
 }
 
+pub fn around_pixels(keep: &[bool], width: usize, height: usize, origin: (f32, f32)) -> Vec<[f32; 2]> {
+    let kept = |x: i64, y: i64| {
+        x >= 0 && y >= 0 && x < width as i64 && y < height as i64 && keep[y as usize * width + x as usize]
+    };
+    let mut out: BTreeMap<(i64, i64), Vec<(i64, i64)>> = BTreeMap::new();
+    let mut edge = |from: (i64, i64), to: (i64, i64)| out.entry(from).or_default().push(to);
+    (0..height as i64).for_each(|y| {
+        (0..width as i64).filter(|&x| kept(x, y)).for_each(|x| {
+            if !kept(x, y - 1) {
+                edge((x, y), (x + 1, y));
+            }
+            if !kept(x + 1, y) {
+                edge((x + 1, y), (x + 1, y + 1));
+            }
+            if !kept(x, y + 1) {
+                edge((x + 1, y + 1), (x, y + 1));
+            }
+            if !kept(x - 1, y) {
+                edge((x, y + 1), (x, y));
+            }
+        })
+    });
+    let mut rings: Vec<Vec<(i64, i64)>> = Vec::new();
+    while let Some(&start) = out.keys().next() {
+        let mut ring = vec![start];
+        let mut here = start;
+        while let Some(list) = out.get_mut(&here) {
+            let next = list.pop();
+            if list.is_empty() {
+                out.remove(&here);
+            }
+            match next {
+                Some(n) if n == start => break,
+                Some(n) => {
+                    ring.push(n);
+                    here = n;
+                }
+                None => break,
+            }
+        }
+        rings.push(ring);
+    }
+    let straight = |ring: &[(i64, i64)]| -> Vec<(i64, i64)> {
+        let n = ring.len();
+        (0..n)
+            .filter(|&i| {
+                let (a, b, c) = (ring[(i + n - 1) % n], ring[i], ring[(i + 1) % n]);
+                (b.0 - a.0) * (c.1 - b.1) != (b.1 - a.1) * (c.0 - b.0)
+            })
+            .map(|i| ring[i])
+            .collect()
+    };
+    let rings: Vec<Vec<[f32; 2]>> = rings
+        .iter()
+        .map(|r| straight(r))
+        .filter(|r| r.len() >= 3)
+        .map(|r| {
+            r.iter()
+                .map(|&(x, y)| [origin.0 + x as f32, origin.1 + y as f32])
+                .collect()
+        })
+        .collect();
+    let Some(anchor) = rings.first().and_then(|r| r.first()).copied() else {
+        return Vec::new();
+    };
+    rings
+        .iter()
+        .enumerate()
+        .flat_map(|(i, ring)| {
+            let closing = ring.first().copied().into_iter();
+            let back = (i > 0).then_some(anchor).into_iter();
+            ring.iter().copied().chain(closing).chain(back)
+        })
+        .collect()
+}
+
 pub fn encode(out: &mut Vec<u8>, cuts: &[Cut]) {
     varint::put(out, cuts.len() as u64);
     cuts.iter().for_each(|cut| {
@@ -114,6 +191,40 @@ mod tests {
             keep,
             polygon: vec![[10.0, 10.0], [50.0, 10.0], [50.0, 50.0], [10.0, 50.0]],
         }
+    }
+
+    #[test]
+    fn a_cut_around_pixels_keeps_exactly_those_pixels_with_holes_and_islands() {
+        let rows = [
+            "..........",
+            ".####.....",
+            ".#..#..##.",
+            ".####..##.",
+            "......#...",
+            ".....#.##.",
+            "..........",
+        ];
+        let (w, h) = (rows[0].len(), rows.len());
+        let keep: Vec<bool> = rows.iter().flat_map(|r| r.chars().map(|c| c == '#')).collect();
+        let polygon = around_pixels(&keep, w, h, (100.0, 50.0));
+        assert!(polygon.len() < 60, "straight runs are one edge: {}", polygon.len());
+        (0..h).for_each(|y| {
+            (0..w).for_each(|x| {
+                let at = (100.0 + x as f32 + 0.5, 50.0 + y as f32 + 0.5);
+                assert_eq!(inside_polygon(&polygon, at), keep[y * w + x], "pixel {x},{y}");
+                [(0.1, 0.1), (0.9, 0.1), (0.1, 0.9), (0.9, 0.9)]
+                    .iter()
+                    .for_each(|(dx, dy)| {
+                        let corner = (100.0 + x as f32 + dx, 50.0 + y as f32 + dy);
+                        assert_eq!(
+                            inside_polygon(&polygon, corner),
+                            keep[y * w + x],
+                            "pixel {x},{y} near its corner"
+                        );
+                    });
+            })
+        });
+        assert!(around_pixels(&[false; 4], 2, 2, (0.0, 0.0)).is_empty());
     }
 
     #[test]

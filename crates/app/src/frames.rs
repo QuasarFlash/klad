@@ -61,6 +61,13 @@ impl FrameCache {
         self.keys.clear();
     }
 
+    pub fn forget_all(&mut self) {
+        self.keys.clear();
+        self.entries.clear();
+        self.uploads.clear();
+        self.drops.clear();
+    }
+
     pub fn set_level(&mut self, level: u32) {
         if level != self.level {
             self.level = level;

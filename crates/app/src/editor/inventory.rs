@@ -424,7 +424,7 @@ fn tools(out: &mut Vec<String>) {
         &TOOL,
         |h| {
             h.state_mut().tool = Tool::Strokes;
-            h.state_mut().select_all_strokes();
+            h.state_mut().select_all_strokes().unwrap();
         },
     );
     shot(
@@ -435,7 +435,7 @@ fn tools(out: &mut Vec<String>) {
         &TOOL,
         |h| {
             h.state_mut().tool = Tool::Strokes;
-            h.state_mut().select_all_strokes();
+            h.state_mut().select_all_strokes().unwrap();
         },
     );
     shot(
@@ -612,7 +612,7 @@ fn panes(out: &mut Vec<String>) {
         |h| {
             only(h, Pane::Inspector);
             h.state_mut().tool = Tool::Strokes;
-            h.state_mut().select_all_strokes();
+            h.state_mut().select_all_strokes().unwrap();
         },
     );
     shot(
@@ -928,9 +928,10 @@ fn start(out: &mut Vec<String>) {
         out.push(section(name, how, &rows, &[], &lists));
     };
     let mut h = home(false);
+    h.run_steps(60);
     record(
-        "start window: the first launch",
-        "klad started with fresh settings.",
+        "welcome: the first launch",
+        "klad started with fresh settings: the welcome's first screen, once the K is painted.",
         &mut h,
     );
     let mut h = home(true);

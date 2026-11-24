@@ -160,7 +160,8 @@ fn span_of(
     anchor: (u32, usize),
 ) -> Option<Span> {
     let (a, b) = (first.min(last), first.max(last));
-    let ids: Vec<String> = rows[a..=b.min(rows.len().saturating_sub(1))]
+    let ids: Vec<String> = rows
+        .get(a..=b.min(rows.len().saturating_sub(1)))?
         .iter()
         .filter(|r| matches!(r.kind, Kind::Paint | Kind::Vector))
         .map(|r| r.id.clone())
@@ -885,8 +886,8 @@ impl Editor {
         let last = self.scene.bundle.doc.timeline.frames - 1;
         self.timeline.span = span_of(&rows, (0, last), (0, rows.len().saturating_sub(1)), (0, 0));
         self.focus = super::Focus::Timeline;
-        if let Some(span) = &self.timeline.span {
-            self.say(
+        match &self.timeline.span {
+            Some(span) => self.say(
                 Tone::Done,
                 format!(
                     "selected frames 0 to {last} of {}: cmd C copies them, cmd D repeats them after themselves",
@@ -895,7 +896,8 @@ impl Editor {
                         n => format!("{n} layers"),
                     }
                 ),
-            );
+            ),
+            None => self.say(Tone::Refused, "no frames to select: add a paint or vector layer first"),
         }
     }
 
@@ -994,9 +996,17 @@ impl Editor {
         Ok(())
     }
 
-    pub(super) fn delete_here(&mut self) -> Result<()> {
+    pub(super) fn remove_cels(&mut self, ids: Vec<String>) -> Result<Option<usize>> {
+        let count = ids.len();
+        match ids.is_empty() {
+            true => Ok(None),
+            false => Ok(self.timeline_apply(vec![Op::Remove { ids }])?.map(|_| count)),
+        }
+    }
+
+    pub(super) fn cels_here(&self) -> Vec<String> {
         let doc = &self.scene.bundle.doc;
-        let ids: Vec<String> = match &self.timeline.span {
+        match &self.timeline.span {
             Some(span) => span
                 .rows
                 .iter()
@@ -1011,9 +1021,13 @@ impl Editor {
                 .map(|(cel, _)| cel.id)
                 .into_iter()
                 .collect(),
-        };
-        let (count, spanned, frame) = (ids.len(), self.timeline.span.is_some(), self.scene.frame);
-        if !ids.is_empty() && self.timeline_apply(vec![Op::Remove { ids }])?.is_some() {
+        }
+    }
+
+    pub(super) fn delete_here(&mut self) -> Result<()> {
+        let ids = self.cels_here();
+        let (spanned, frame) = (self.timeline.span.is_some(), self.scene.frame);
+        if let Some(count) = self.remove_cels(ids)? {
             self.say(
                 Tone::Done,
                 match (spanned, count) {
@@ -1144,6 +1158,10 @@ impl Editor {
             Some(&MASK) => above[..above.len() - 1].to_vec(),
             _ => above,
         };
+        let doc = &self.scene.bundle.doc;
+        let owner = (1..owner.len())
+            .find(|k| doc.locate_path(&owner[..*k]).is_some_and(|group| !group.visible))
+            .map_or(owner.clone(), |k| owner[..k].to_vec());
         let place = match self.scene.bundle.doc.locate_path(&owner) {
             Some(layer) => Place {
                 above: Some(layer.id.clone()),
@@ -1180,23 +1198,22 @@ impl Editor {
         let folded = self.settings.layout.timeline_folded;
         ui.horizontal_wrapped(|ui| {
             let caret = if folded { icon::FOLDED } else { icon::OPEN };
-            if ui
-                .add(
-                    egui::Button::new(RichText::new(caret).size(theme::ICON))
-                        .min_size(vec2(theme::TARGET, theme::TARGET)),
-                )
-                .hint(match folded {
+            if crate::widgets::icon_button(
+                ui,
+                caret,
+                match folded {
                     true => "open the timeline: its layers and frames",
                     false => "fold the timeline to this row",
-                })
-                .clicked()
+                },
+            )
+            .clicked()
             {
                 self.settings.layout.timeline_folded = !folded;
                 self.settings_dirty = true;
             }
             let shown = self.shown_frame();
             let mut typed = shown;
-            let label = ui.label(RichText::new("frame").strong());
+            let label = crate::widgets::bar_label(ui, "frame");
             let field = ui
                 .add(egui::DragValue::new(&mut typed).range(0..=t.frames - 1))
                 .labelled_by(label.id)
@@ -1226,7 +1243,7 @@ impl Editor {
             if let Some((a, b)) = range.as_mut() {
                 ui.add(egui::DragValue::new(a).range(0..=t.frames - 1))
                     .hint("the loop range's first frame");
-                ui.label("to");
+                crate::widgets::bar_label(ui, "to");
                 ui.add(egui::DragValue::new(b).range(0..=t.frames - 1))
                     .hint("the loop range's last frame");
                 *b = (*b).max(*a);
@@ -1239,7 +1256,8 @@ impl Editor {
             self.command_button(ui, Cmd::Onion, None);
             self.command_button(ui, Cmd::OnionSettings, None);
             ui.separator();
-            ui.label("shift K on");
+            crate::widgets::bar_label(ui, "shift K on")
+                .hint("where shift K puts the next drawing: one, two or three frames after this one");
             [
                 (Cmd::ExposeOnes, "1s"),
                 (Cmd::ExposeTwos, "2s"),
@@ -1250,11 +1268,11 @@ impl Editor {
                 self.command_button(ui, cmd, Some(label));
             });
             ui.separator();
-            ui.label("fps");
+            crate::widgets::bar_label(ui, "fps");
             let fps = ui
                 .add(egui::DragValue::new(&mut self.timeline.fps).range(1..=240))
                 .hint("frames per second of the document; drag, or double-click and type");
-            ui.label("length");
+            crate::widgets::bar_label(ui, "length");
             let length = ui
                 .add(egui::DragValue::new(&mut self.timeline.length).range(1..=100_000))
                 .hint("the timeline's length in frames");
@@ -1266,9 +1284,12 @@ impl Editor {
                     origin: None,
                 });
             }
-            ui.label("zoom");
-            ui.add(egui::Slider::new(&mut self.timeline.cell, 8.0..=40.0).show_value(false))
-                .hint("the width of a frame in the timeline");
+            crate::widgets::labelled_slider(
+                ui,
+                "zoom",
+                egui::Slider::new(&mut self.timeline.cell, 8.0..=40.0).show_value(false),
+            )
+            .hint("the width of a frame in the timeline");
         });
         self.timeline_apply(ops)?;
         if let Some(frame) = go {
@@ -1305,9 +1326,13 @@ impl Editor {
             ui.selectable_value(&mut onion.by, By::Frames, "frames")
                 .hint("count frames: on twos the nearest drawing is two frames off and fainter");
         });
-        ui.add(egui::Slider::new(&mut onion.opacity, 0.05..=1.0).text("opacity"))
-            .hint("the nearest ghost's opacity");
-        ui.add(egui::Slider::new(&mut onion.falloff, 0.1..=1.0).text("falloff"))
+        crate::widgets::labelled_slider(
+            ui,
+            "opacity",
+            crate::widgets::percent(egui::Slider::new(&mut onion.opacity, 0.05..=1.0)),
+        )
+        .hint("the nearest ghost's opacity");
+        crate::widgets::labelled_slider(ui, "falloff", egui::Slider::new(&mut onion.falloff, 0.1..=1.0))
             .hint("each step further keeps this much of the opacity");
         ui.checkbox(&mut onion.tint, "tint: red before, green after")
             .hint("off: the ghosts keep their own colours");
@@ -1367,7 +1392,7 @@ impl Editor {
             pos2(strip.left() + 4.0, strip.top() + clips::LANE / 2.0),
             Align2::LEFT_CENTER,
             "clips",
-            FontId::proportional(11.0),
+            theme::regular(theme::SMALL),
             Color32::GRAY,
         );
         let (rect, _) = ui.allocate_exact_size(vec2(NAMES, RULER), Sense::hover());
@@ -1375,7 +1400,7 @@ impl Editor {
             rect.left_center() + vec2(4.0, 0.0),
             Align2::LEFT_CENTER,
             "layers",
-            FontId::proportional(11.0),
+            theme::regular(theme::SMALL),
             Color32::GRAY,
         );
         let rows = self.layer_rows(layers::Where::Timeline);
@@ -1903,7 +1928,7 @@ fn paint_block(painter: &egui::Painter, block: Rect, cw: f32, fill: Color32, lab
             room.left_center(),
             Align2::LEFT_CENTER,
             label,
-            FontId::monospace(10.0),
+            FontId::monospace(theme::SMALL),
             Color32::from_gray(if faded { 140 } else { 230 }),
         );
     }

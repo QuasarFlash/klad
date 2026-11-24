@@ -30,7 +30,8 @@ const TIMELINE_KEYS: [Cmd; 6] = [
     Cmd::MoveLater,
 ];
 const ZOOM_STEP: f32 = 1.25;
-const ON_THE_DRAWING: [Cmd; 12] = [
+const ON_THE_DRAWING: [Cmd; 13] = [
+    Cmd::CutCells,
     Cmd::NewDrawing,
     Cmd::NewDrawingAfter,
     Cmd::Duplicate,
@@ -140,6 +141,7 @@ impl Editor {
     pub(super) fn for_focus(&self, cmd: Cmd) -> Cmd {
         match (self.on_timeline(), cmd) {
             (true, Cmd::Copy) => Cmd::CopyCells,
+            (true, Cmd::Cut) => Cmd::CutCells,
             (true, Cmd::Paste) if self.cells_last || (self.clipboard.is_none() && self.shape_clip.is_none()) => {
                 Cmd::PasteCells
             }
@@ -198,7 +200,7 @@ impl Editor {
                 .then(|| "no clip here: click a clip's bar above the frame numbers".to_string())
         };
         let editing = self.busy().then(|| "finish the stroke or drag first".to_string());
-        let spanned = matches!(cmd, Cmd::Duplicate | Cmd::DeleteDrawing) && span.is_some();
+        let spanned = matches!(cmd, Cmd::Duplicate | Cmd::DeleteDrawing | Cmd::CutCells) && span.is_some();
         if let Some(locked) = layer.filter(|l| l.locked && ON_THE_DRAWING.contains(&cmd) && !spanned) {
             return Some(super::lock::Locked(vec![locked.name.clone()]).to_string());
         }
@@ -235,7 +237,44 @@ impl Editor {
                     .then(|| "select a shape or strokes with V first".to_string()),
             }
             .or(editing),
-            Cmd::Copy | Cmd::MoveToNewLayer => match self.selected() {
+            Cmd::BringToFront | Cmd::BringForward | Cmd::SendBackward | Cmd::SendToBack => self.can_arrange(),
+            Cmd::ClearGuides => {
+                let g = &self.scene.bundle.doc.guides;
+                (g.x.is_empty() && g.y.is_empty()).then(|| "there are no guides: drag one out of a ruler (cmd R shows them)".to_string())
+            }
+            Cmd::CropToSelection => match self.selected() {
+                Some(Selected::Strokes | Selected::Shape(_)) => editing,
+                _ => Some("select strokes (S) or shapes (V) first: the canvas becomes their box".to_string()),
+            },
+            Cmd::Trim
+            | Cmd::CanvasRight
+            | Cmd::CanvasLeft
+            | Cmd::Canvas180
+            | Cmd::CanvasFlipLevel
+            | Cmd::CanvasFlipUpright
+            | Cmd::CropTool => editing.or_else(|| self.timeline_edit()),
+            Cmd::Ungroup => match layer {
+                Some(l) if l.kind() == LayerKind::Group => None,
+                _ => Some("pick a group in the layers panel first".to_string()),
+            },
+            Cmd::MergeDown | Cmd::LayerUp | Cmd::LayerDown | Cmd::ExportLayer => match layer {
+                Some(_) if !self.scene.active_is_mask() => None,
+                Some(_) => Some("this is the layer's mask: pick the layer itself".to_string()),
+                None => pick_layer(),
+            },
+            Cmd::MergeSelected => (self.chosen_layers().len() < 2)
+                .then(|| "select two layers or more: cmd click their rows in the layers panel".to_string()),
+            Cmd::CopyLook => match self.selected() {
+                Some(Selected::Shape(_)) => None,
+                _ => Some("select a shape with V first: its fill, outline and opacity are copied".to_string()),
+            },
+            Cmd::PasteLook => match (self.look_from.is_some(), self.selected()) {
+                (false, _) => Some("copy a shape's look first: select it with V and press alt cmd C".to_string()),
+                (true, Some(Selected::Shape(_))) => editing,
+                _ => Some("select the shapes to give the look to with V first".to_string()),
+            },
+            Cmd::Unite | Cmd::SubtractShapes | Cmd::Intersect | Cmd::Exclude => self.can_combine().or(editing),
+            Cmd::Copy | Cmd::Cut | Cmd::MoveToNewLayer => match self.selected() {
                 Some(Selected::Strokes | Selected::Shape(_)) => editing,
                 _ => Some("select strokes (S) or a shape (V) first".to_string()),
             },
@@ -245,6 +284,12 @@ impl Editor {
                 _ => None,
             },
             Cmd::Save => None,
+            Cmd::WeightPaint | Cmd::WeightAdd | Cmd::WeightRemove | Cmd::WeightSmooth | Cmd::PickWeight => {
+                (self.tool != Tool::Bone || self.bones.mode != super::bones::Mode::Weights)
+                    .then(|| "these are for the bone tool's weights: press the bone tool, then weights".to_string())
+            }
+            Cmd::RevertDrawing => (!klad_core::drawings::has_opened(&self.scene.bundle.root))
+                .then(|| "klad has no copy of how the drawing was when it was opened".to_string()),
             Cmd::SelectAllFrames => self.timeline_edit(),
             Cmd::TransformLayer => self
                 .scene
@@ -262,6 +307,12 @@ impl Editor {
                     .is_empty()
                     .then(|| "this drawing has no pixels yet".to_string()),
             },
+            Cmd::SelectAll if self.settings.pick_all_layers => (self.scene.active_marks().is_empty()
+                && self
+                    .pick_cels(true)
+                    .iter()
+                    .all(|(_, cel)| self.scene.marks_of(cel).is_empty()))
+            .then(|| "no visible, unlocked layer has strokes on this frame".to_string()),
             Cmd::SelectAll => (!self.active_paint() || self.scene.active_marks().is_empty())
                 .then(|| "the active layer has no strokes on this frame".to_string()),
             Cmd::Thinner | Cmd::Thicker if self.scene.on_grid() => {
@@ -390,6 +441,7 @@ impl Editor {
                     .path_commit
                     .as_ref()
                     .map(|_| "the last edit is being written: try again in a moment".to_string())),
+            Cmd::MakePath if self.text_node().is_some() => None,
             Cmd::MakePath => match direct.and_then(|d| self.scene.bundle.doc.item(&d.node)) {
                 Some(klad_core::doc::Item::Node(_, _, n)) if matches!(n.shape, Shape::Path { .. }) => {
                     Some("it is a path already".into())
@@ -524,6 +576,10 @@ impl Editor {
             Cmd::CopyCells => span.is_none().then_some(()).and_then(|_| {
                 self.drawing_here()
                     .is_none()
+                    .then(|| "select frames first: drag over them in the timeline".to_string())
+            }),
+            Cmd::CutCells => self.timeline_edit().or_else(|| {
+                (span.is_none() && self.drawing_here().is_none())
                     .then(|| "select frames first: drag over them in the timeline".to_string())
             }),
             Cmd::PasteCells | Cmd::PasteCellsLinked => match &self.timeline.cells {
@@ -712,6 +768,26 @@ impl Editor {
             Cmd::ExportSheet => self.exporting(super::export::What::Sheet),
             Cmd::ExportGif => self.exporting(super::export::What::Gif),
             Cmd::ExportAseprite => self.exporting(super::export::What::Aseprite),
+            Cmd::ExportSvg => self.exporting(super::export::What::Svg),
+            Cmd::ExportPdf => self.exporting(super::export::What::Pdf),
+            Cmd::ExportVideo => self.exporting(super::export::What::Video),
+            Cmd::CanvasWindow => self.windows.canvas,
+            Cmd::ShowGrid => {
+                let g = &self.scene.bundle.doc.guides;
+                g.show_grid && g.grid.is_some()
+            }
+            Cmd::Snap => self.scene.bundle.doc.guides.snap,
+            Cmd::GridWindow => self.windows.grid,
+            Cmd::Rulers => self.settings.rulers,
+            Cmd::HideGuides => !self.scene.bundle.doc.guides.hidden,
+            Cmd::LockGuides => self.scene.bundle.doc.guides.locked,
+            Cmd::AssistsWindow => self.windows.assists,
+            Cmd::ImportFrames => self.windows.frames,
+            Cmd::FollowGuides => {
+                let g = &self.scene.bundle.doc.guides;
+                g.follow && !g.assists.is_empty()
+            }
+            Cmd::CropTool => self.cropping.is_some(),
             Cmd::ExportGodotWindow => self.exporting(super::export::What::Godot),
             Cmd::Pixelize => self.windows.pixels,
             Cmd::TileSize => self.windows.tiles,
@@ -726,9 +802,12 @@ impl Editor {
             Cmd::MessageLog => self.windows.log,
             Cmd::Spin => self.spin,
             Cmd::Link => self.windows.link,
+            Cmd::ConnectAgent => self.windows.connect,
             _ => return None,
         };
-        Some(on)
+        let other_tool =
+            self.cropping.is_some() && cmd != Cmd::CropTool && cmd.spec().group == crate::commands::Group::Tools;
+        Some(on && !other_tool)
     }
 
     fn mask_of_active(&self) -> Option<&klad_core::doc::Layer> {
@@ -825,6 +904,9 @@ impl Editor {
     }
 
     fn run(&mut self, cmd: Cmd) -> Result<()> {
+        if cmd.spec().group == crate::commands::Group::Tools && cmd != Cmd::CropTool && self.cropping.is_some() {
+            self.cropping = None;
+        }
         let area = self.canvas_rect.size();
         let frame = self.shown_frame();
         let last = self.scene.bundle.doc.timeline.frames - 1;
@@ -1004,15 +1086,15 @@ impl Editor {
                         .map_or(Vec::new(), |d| d.points.iter().copied().collect());
                     self.commit_path(PathEdit::Remove { points })?;
                 }
-                _ => {
-                    let ids = self.shapes();
-                    self.selection = None;
-                    self.group.clear();
-                    if !ids.is_empty() {
-                        self.apply(vec![Op::Remove { ids }])?;
-                    }
-                }
+                _ => self.remove_shapes()?,
             },
+            Cmd::Cut => self.cut_picked()?,
+            Cmd::BringToFront | Cmd::BringForward | Cmd::SendBackward | Cmd::SendToBack => {
+                if let Some(to) = super::arrange::order_of(cmd) {
+                    self.arrange(to)?;
+                }
+            }
+            Cmd::CutCells => self.cut_selected_cells()?,
             Cmd::Deselect => {
                 self.timeline.span = None;
                 match self.tool {
@@ -1036,13 +1118,36 @@ impl Editor {
             Cmd::Paste => self.paste()?,
             Cmd::MoveToNewLayer => self.move_to_new_layer()?,
             Cmd::Save => self.say_saved(),
+            Cmd::SaveCopy => self.ask_name(super::drawingfile::Ask::SaveCopy),
+            Cmd::RenameDrawing => self.ask_name(super::drawingfile::Ask::Rename),
+            Cmd::DuplicateDrawing => {
+                self.duplicate_drawing()?;
+            }
+            Cmd::RevertDrawing => self.revert_drawing()?,
+            Cmd::NextOpen => self.wants = Some(super::Want::Cycle(1)),
+            Cmd::WeightPaint => self.weight_mode(klad_core::rig::Mode::Paint),
+            Cmd::WeightAdd => self.weight_mode(klad_core::rig::Mode::Add),
+            Cmd::WeightRemove => self.weight_mode(klad_core::rig::Mode::Remove),
+            Cmd::WeightSmooth => self.weight_mode(klad_core::rig::Mode::Smooth),
+            Cmd::PickWeight => self.pick_weight(),
+            Cmd::PreviousOpen => self.wants = Some(super::Want::Cycle(-1)),
             Cmd::SelectAllFrames => self.select_all_frames(),
             Cmd::ExportFrames => self.open_export(super::export::What::Frames),
             Cmd::ExportSheet => self.open_export(super::export::What::Sheet),
             Cmd::ExportGif => self.open_export(super::export::What::Gif),
             Cmd::ExportAseprite => self.open_export(super::export::What::Aseprite),
+            Cmd::ExportSvg => self.open_export(super::export::What::Svg),
+            Cmd::ExportPdf => self.open_export(super::export::What::Pdf),
+            Cmd::ExportVideo => self.open_export(super::export::What::Video),
+            Cmd::CopyLook => self.copy_look(),
+            Cmd::PasteLook => self.paste_look()?,
+            Cmd::Unite | Cmd::SubtractShapes | Cmd::Intersect | Cmd::Exclude => {
+                if let Some(how) = super::outline::combine_of(cmd) {
+                    self.combine_shapes(how)?;
+                }
+            }
             Cmd::ExportGodotWindow => self.open_export(super::export::What::Godot),
-            Cmd::SelectAll => self.select_all_strokes(),
+            Cmd::SelectAll => self.select_all_strokes()?,
             Cmd::SelectSameColour => self.select_same_colour(),
             Cmd::TransformLayer => self.start_shift()?,
             Cmd::CutLasso if self.scene.on_grid() => self.cut_pixels = !self.cut_pixels,
@@ -1119,7 +1224,10 @@ impl Editor {
             Cmd::Simplify => self.commit_path(PathEdit::Simplify {
                 tolerance: self.simplify_px,
             })?,
-            Cmd::MakePath => self.commit_path(PathEdit::Convert)?,
+            Cmd::MakePath => match self.text_node() {
+                Some(id) => self.text_to_path(&id)?,
+                None => self.commit_path(PathEdit::Convert)?,
+            },
             Cmd::AddSwatch => {
                 let edit = PaletteEdit::Add {
                     color: crate::color::hex(self.color),
@@ -1148,9 +1256,60 @@ impl Editor {
             Cmd::NewMapLayer => self.new_map_layer()?,
             Cmd::MakeMapLayer => self.make_map_layer()?,
             Cmd::MakeColourLayer => self.make_colour_layer()?,
-            Cmd::GroupLayer => self.new_group(true)?,
-            Cmd::DuplicateLayer => self.duplicate_layer()?,
-            Cmd::DeleteLayer => self.delete_layer()?,
+            Cmd::GroupLayer => {
+                if !self.group_chosen()? {
+                    self.new_group(true)?;
+                }
+            }
+            Cmd::DuplicateLayer => {
+                if !self.duplicate_chosen()? {
+                    self.duplicate_layer()?;
+                }
+            }
+            Cmd::DeleteLayer => {
+                if !self.delete_chosen()? {
+                    self.delete_layer()?;
+                }
+            }
+            Cmd::Ungroup => self.ungroup()?,
+            Cmd::ShowGrid => self.toggle_grid(false)?,
+            Cmd::Snap => self.toggle_grid(true)?,
+            Cmd::GridWindow => self.windows.grid = !self.windows.grid,
+            Cmd::Rulers => {
+                self.settings.rulers = !self.settings.rulers;
+                self.settings_dirty = true;
+            }
+            Cmd::HideGuides => self.guides_switch(true)?,
+            Cmd::LockGuides => self.guides_switch(false)?,
+            Cmd::ClearGuides => self.clear_guides()?,
+            Cmd::AssistsWindow => self.windows.assists = !self.windows.assists,
+            Cmd::ImportFrames => self.windows.frames = !self.windows.frames,
+            Cmd::FollowGuides => self.toggle_follow()?,
+            Cmd::CanvasWindow
+            | Cmd::CropTool
+            | Cmd::CropToSelection
+            | Cmd::Trim
+            | Cmd::CanvasRight
+            | Cmd::CanvasLeft
+            | Cmd::Canvas180
+            | Cmd::CanvasFlipLevel
+            | Cmd::CanvasFlipUpright => self.run_canvas(cmd)?,
+            Cmd::MergeDown => self.merge_down()?,
+            Cmd::MergeSelected => {
+                let ids = self.chosen_layers();
+                self.merge_layers(ids)?;
+            }
+            Cmd::MergeVisible => self.merge_visible()?,
+            Cmd::LayerUp => self.move_layer(true)?,
+            Cmd::LayerDown => self.move_layer(false)?,
+            Cmd::LayerAbove => self.step_layer(true)?,
+            Cmd::LayerBelow => self.step_layer(false)?,
+            Cmd::ExportLayer => {
+                let layer = self.scene.active_id();
+                self.open_export(super::export::What::Image);
+                self.windows.export = true;
+                self.export.layer = layer;
+            }
             Cmd::RenameLayer => {
                 if let Some(l) = self.scene.active_layer() {
                     let place = match self.settings.layout.is_open(crate::layout::Pane::Layers) {
@@ -1172,8 +1331,11 @@ impl Editor {
             Cmd::PasteCellsLinked => self.paste_cells(true)?,
             Cmd::ClipSettings => self.windows.clip = !self.windows.clip,
             Cmd::NewDocument => self.wants = Some(super::Want::New),
+            Cmd::NewFromClipboard => self.new_from_clipboard()?,
+            Cmd::CopyMerged => self.copy_merged()?,
             Cmd::CloseDocument => self.wants = Some(super::Want::Close),
             Cmd::FirstSteps => self.first.open = !self.first.open,
+            Cmd::Welcome => self.wants = Some(super::Want::Welcome),
             Cmd::Quit => self.ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Cmd::OpenDocument => self.wants = Some(super::Want::Open),
             Cmd::OpenRecent => self.wants = Some(super::Want::Recent),
@@ -1189,6 +1351,7 @@ impl Editor {
             Cmd::ShowParts => self.checks.parts = !self.checks.parts,
             Cmd::ShowArcs => self.show_arcs()?,
             Cmd::InstallCommand => self.start_job(install_job()),
+            Cmd::ConnectAgent => self.windows.connect = !self.windows.connect,
             Cmd::ReportProblem => self.windows.report = !self.windows.report,
             Cmd::ContactSupport => self.contact_support(),
             Cmd::Guides => self.open_link(klad_core::contact::GUIDES.to_string()),
@@ -1201,11 +1364,15 @@ impl Editor {
             Cmd::NewVectorLayer => self.add_layer("vector")?,
             Cmd::ToggleVisible => {
                 let on = self.is_on(cmd) == Some(true);
-                self.set_active("visible", json!(!on))?;
+                if !self.chosen_set("visible", !on)? {
+                    self.set_active("visible", json!(!on))?;
+                }
             }
             Cmd::ToggleLocked => {
                 let on = self.is_on(cmd) == Some(true);
-                self.set_active("locked", json!(!on))?;
+                if !self.chosen_set("locked", !on)? {
+                    self.set_active("locked", json!(!on))?;
+                }
             }
             Cmd::ToggleClip => {
                 let on = self.is_on(cmd) == Some(true);
@@ -1377,6 +1544,8 @@ impl Editor {
                 self.apply(vec![Op::Canvas {
                     wrap: Some(wrap),
                     tile: None,
+                    size: None,
+                    background: None,
                 }])?;
                 self.dirty.extend(self.scene.all_tiles());
             }
@@ -1410,6 +1579,18 @@ impl Editor {
             return Ok(());
         }
         self.flip_and_roll(ui)?;
+        let images: Vec<std::sync::Arc<egui::ColorImage>> = ui.input(|i| {
+            i.events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::PasteImage(image) => Some(image.clone()),
+                    _ => None,
+                })
+                .collect()
+        });
+        if !typing && !self.windows.settings {
+            images.iter().try_for_each(|image| self.paste_image(image))?;
+        }
         let bindings = self.bindings.clone();
         let pressed: Vec<(Option<Cmd>, bool, bool)> = ui.input(|i| {
             i.events
@@ -1418,6 +1599,7 @@ impl Editor {
                 .filter(|e| !(popup && matches!(e, egui::Event::Key { key: Key::Escape, .. })))
                 .filter_map(|e| match e {
                     egui::Event::Copy => Some((Some(Cmd::Copy), false, false)),
+                    egui::Event::Cut => Some((Some(Cmd::Cut), false, false)),
                     egui::Event::Paste(_) => Some((Some(Cmd::Paste), false, false)),
                     egui::Event::Key {
                         key,
@@ -1447,7 +1629,7 @@ impl Editor {
                         Repeat::Yes => false,
                         Repeat::WhenShown => self.waiting(),
                     };
-                let once = matches!(cmd, Cmd::Copy | Cmd::Paste);
+                let once = matches!(cmd, Cmd::Copy | Cmd::Cut | Cmd::Paste);
                 if skip || (once && !done.insert(cmd)) {
                     return Ok(());
                 }
@@ -1489,7 +1671,32 @@ impl Editor {
             Some(_) => theme::BODY,
             None => theme::ICON,
         };
-        self.command_sized(ui, cmd, label, size, egui::vec2(theme::TARGET, theme::TARGET))
+        self.command_sized(ui, cmd, label, size, egui::vec2(theme::CONTROL, theme::CONTROL))
+    }
+
+    pub(super) fn command_words(&mut self, ui: &mut egui::Ui, cmd: Cmd, words: &str) -> egui::Response {
+        let button = crate::widgets::ghost_button(words)
+            .selected(self.is_on(cmd) == Some(true))
+            .min_size(egui::vec2(theme::CONTROL, theme::CONTROL));
+        let enabled = self.can_run(cmd).is_none();
+        let response = ui.add_enabled(enabled, button).hint(self.command_hint(cmd));
+        let name = cmd.spec().name;
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
+        if response.clicked() {
+            self.queued.push(cmd);
+        }
+        response
+    }
+
+    pub(super) fn command_plain(&mut self, ui: &mut egui::Ui, cmd: Cmd, words: &str) -> egui::Response {
+        let button = crate::widgets::secondary_button(words).selected(self.is_on(cmd) == Some(true));
+        let response = ui
+            .add_enabled(self.can_run(cmd).is_none(), button)
+            .hint(self.command_hint(cmd));
+        if response.clicked() {
+            self.queued.push(cmd);
+        }
+        response
     }
 
     pub(super) fn command_sized(
@@ -1508,6 +1715,10 @@ impl Editor {
         let button = egui::Button::new(RichText::new(text).size(size))
             .selected(self.is_on(cmd) == Some(true))
             .min_size(min);
+        let button = match label {
+            Some(_) => button,
+            None => egui::class::HasClasses::with_class(button, theme::GHOST),
+        };
         let response = ui
             .add_enabled(self.can_run(cmd).is_none(), button)
             .hint(self.command_hint(cmd));
@@ -1526,23 +1737,6 @@ impl Editor {
             self.queued.push(cmd);
         }
         response
-    }
-
-    pub(super) fn key_letter(&self, ui: &egui::Ui, rect: egui::Rect, cmd: Cmd) {
-        if let Some(k) = self
-            .bindings
-            .keys(cmd)
-            .first()
-            .filter(|k| !k.command && !k.alt && !k.shift)
-        {
-            ui.painter().text(
-                rect.right_bottom() - egui::vec2(3.0, 2.0),
-                egui::Align2::RIGHT_BOTTOM,
-                k.label(),
-                egui::FontId::proportional(9.0),
-                theme::WEAK,
-            );
-        }
     }
 }
 
@@ -1614,7 +1808,7 @@ impl Editor {
         .hint("the drawing without its cache, so whoever reads the issue sees what you see");
         let text = self.problem_report(None);
         egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-            ui.add(egui::Label::new(RichText::new(&text).monospace().size(11.0)).wrap());
+            ui.add(egui::Label::new(RichText::new(&text).monospace().size(theme::SMALL)).wrap());
         });
         ui.horizontal(|ui| {
             if ui

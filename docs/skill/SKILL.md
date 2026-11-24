@@ -12,6 +12,18 @@ This skill is the tool. The craft of drawing itself (planning a picture, light o
 
 Working on klad itself: the repository's `CLAUDE.md`, `CONTRIBUTING.md` and `docs/DESIGN.md` are the source of truth. Build the CLI with `just compile` (`just build` also counts the version up, for the person making a build); the binary is `target/release/klad` on macOS and `target/linux/release/klad` on Linux.
 
+## Through an agent app (MCP)
+
+When an app such as Claude Desktop, the Codex app or Cursor starts `klad mcp`, you get tools instead of a shell. They take the same ops and commands as the rest of this guide:
+
+- `look` renders a frame and gives you the picture (`klad render`, with `region` and `overlay`).
+- `read` gives JSON: `layers` (`klad ls`), a layer's `strokes`, the person's `selection`, their `notes`, or the `document`.
+- `edit` applies ops as `klad apply` does, in one step the person can undo.
+- `run` runs any other command: `{"command": "export", "drawing": "art.klad", "args": ["-o", "art.png"]}`.
+- `new` makes a drawing, `note_done` marks a note done, and `open` shows a drawing in the person's editor.
+
+A drawing is a path, or a name in the person's drawings folder. klad works only in the folders the person allowed, and refuses `open`, `watch` and `install` through `run`. Read the commands below as what these tools take.
+
 ## The loop
 
 1. Look: `klad ls art.klad` (tree, top layer first, ids and bounds) and `klad render art.klad --scale 0.5 --overlay ids,bbox`. Read the PNG it prints.
@@ -26,6 +38,7 @@ Keep renders small unless detail matters: `--scale 0.5` or `--focus <id>` costs 
 - `klad notes art.klad`: notes the user pinned on the canvas, each with a `--region` render command. Do the work, then `klad notes art.klad --done <id>`; the editor shows the pin as done at once and lists it under done in the Notes pane, so mark a note done only when it is. `--clear-done` removes the done ones, when the user asks for a clean list.
 - `klad selection art.klad`: the layer, shapes, path and strokes the user selected in the editor (strokes as `<cel>:s<id>`), with bounds and a `--focus` command.
 - `klad strokes art.klad <layer> --json`: the user's strokes with points and pressure, to trace their shapes (a ridge line and tree positions from a pen sketch, for example).
+- `klad preview art.klad`: when a drawing is done and the user hasn't had it open in the editor, this writes the picture Finder shows for it (space and icons). The editor does it itself when a drawing closes, so don't run it after every edit.
 
 ## Vector nodes
 
@@ -56,7 +69,7 @@ klad stroke art.klad l4 --brush ink --size 5 --taper 8,20 --path 'M100 100 L140 
 - Painting brushes: `wet` picks up the colour under it and mixes it in, `smudge` pulls paint along, `blender` softens what it crosses; all three read only the layer they paint on (paint the colours to mix on one layer). `leaves`, `grass` and `splatter` scatter their picture tips with jittered colour (`leaves` picks one of several leaf shapes per dab: `leaf`, `leaf-oval`, `leaf-lance`, `leaf-twig`; a tip takes more pictures as `{"image":{"image":"leaf","more":["leaf-oval","leaf-lobed"]}}`); `two-tone` paints `--second` at a light press and `--color` at a full one. `--second '#e0a040'` (`"second"` in `apply`) is the second colour for brushes with colour dynamics.
 - New brushes: write the JSON (copy one from `--show`; keys `tip` (`round`, `chalk` or `{"image":{"image":"name"}}`), `dual`, `grain` (`paper` or `image`, `strength`, `scale`, `contrast`, `pressure`), `color` (`hue`, `saturation`, `value`, `strokeHue`, ..., `pressure`, `along`), `paint` (`wet`, `smudge`, `blend`), `feather` (0 to 1, a round tip's edge fades like an airbrush; a soft eraser is the eraser with `"feather":0.8`), `fringe` (0 to 1, the edge frays into streaks along the stroke, like a dry brush)) and `klad brushes art.klad --set my-oil brush.json` (`-` reads stdin). Pictures for tips and textures: `klad brushes art.klad --picture bark bark.png` (dark is paint, or the alpha). Ids and pictures are fixed once in the bundle, since strokes keep their brush.
 - `--taper in,out` thins the first and last px of the line to a point whatever the pressure; without it the brush's taper applies (`ink` is `10,24`), `--taper 0,0` gives round ends. Short hatching wants about `8,20`, long contours `30,80`.
-- `--pressure` spreads values evenly along the stroke; several subpaths in `--path` make several strokes. `--points 'x,y,p x,y,p'` gives explicit samples.
+- `--pressure` spreads values evenly along the stroke; several subpaths in `--path` make several strokes. `--points 'x,y,p x,y,p'` gives explicit samples. `--line x0,y0,x1,y1`, `--rect x,y,w,h` and `--ellipse x,y,w,h` paint a straight line or around a rectangle or ellipse with the brush (paint, not shapes).
 - In `apply`: `{"op":"stroke","layer":"l4","brush":"ink","size":14,"color":"#1b1b1b","path":"M...","pressure":[0.1,1,0.05],"taper":[12,30]}`.
 - Agent strokes are marked `agent` in `klad strokes`; the user's are `human`.
 
@@ -71,6 +84,23 @@ klad recolour art.klad c4:s12 c4:s13 c4:s40 --to '#e3962f'   # several at once, 
 klad rm art.klad c4:s12 c4:s13
 klad transform art.klad c4:s3 c4:s5 --move 40,-10 --rotate 15 --scale 1.2
 klad transform art.klad --layer figure --move -120,0           # a whole layer or group: every drawing, its shapes, bones and poses
+klad order art.klad c4:s3 --front                              # in front of the other marks of its drawing; --back, --up, --down; shapes too (`{"op":"order","ids":[...],"to":"front"}`)
+klad style art.klad n4 n7 n9                                   # n7 and n9 take n4's fill, outline and opacity ({"op":"style","from":"n4","ids":[...]})
+klad combine art.klad n3 n4 --unite                            # one path: --unite, --subtract (front from back), --intersect, --exclude
+klad path art.klad n12 --convert                               # a text node becomes the paths of its letters
+klad export art.klad --svg [--layer n] [--only n3,n4] [--vectors-only] [--outline-text] [--frames all]   # SVG: a group per layer, paint layers as pictures
+klad import logo.svg [--into art.klad]                         # an SVG's shapes as vector layers, in a new drawing or one you have
+klad merge art.klad --down ink                                 # ink into the layer under it, frame by frame; also `klad merge art.klad a b c` and `--visible`
+klad ungroup art.klad trees                                    # its layers take its place
+klad canvas art.klad --size 2400,1600 --anchor top-left        # also --crop x,y,w,h, --trim, --resize 0.5, --turn 90|-90|180, --flip h|v, --paper '#f4efe6'; everything on the canvas follows
+klad grid art.klad --every 16 --sub 4 --show on --snap on       # the grid the user sees and snaps to (--iso, --offset, --off); klad guides art.klad --x 120 --y 64 (--rm-x, --clear)
+klad guides art.klad --perspective -400,300,2400,300           # drawing guides the user's brush follows (--ruler, --ellipse, --follow off); klad stroke ... --points '...' --follow bends a stroke onto them
+klad brushes --library                                          # the user's own brushes, in every drawing; klad brushes art.klad --take <id> copies one in (klad stroke --brush <id> does it too)
+klad export art.klad -o art.jpg --quality 85                    # also .webp (--lossless), .tif (--depth 16), .pdf (vectors stay vectors; --pages all, --paper a4,landscape, --dpi 300), .mp4 (--animated run); --only n5,c3:s12 exports a selection alone
+klad export art.klad -o art.psd                                 # layers for Photoshop/Krita/Affinity; klad import art.psd opens one with its layers and groups
+klad import sheet.png --cell 32x32 --padding 1 --to art.klad    # a sprite sheet as frames on a new layer with a clip (--grid 8x4; a folder or several pictures: a frame each)
+klad save-as art.klad art-v2                                    # a copy with ids of its own (no undo history); klad rename art.klad hero renames the folder, an open editor follows
+klad weights art.klad bones --bone shin --set 300,420,24,1 --mode add --strength 0.3   # weight dabs: --mode paint|add|remove|smooth, --hardness; --at x,y reads the weight there
 klad show art.klad c4:s12
 klad render art.klad --focus c4:s12
 ```
@@ -91,6 +121,8 @@ klad lasso art.klad l4 --polygon '600,600 1400,560 1450,1300 640,1380' --cut --m
 klad lasso art.klad l4 --polygon '...' --cut --rotate 12 --scale 1.1
 klad lasso art.klad l4 --polygon '...' --flip h
 klad lasso art.klad l4 --polygon '...' --cut --rm
+klad lasso art.klad l4 --ellipse 600,600,400,300 --move 40,0     # the ellipse that fits the box
+klad lasso art.klad l4 --at 820,940 --tolerance 0.15 --rm         # a magic wand: the area of one colour there, cut at its edge
 ```
 
 - Without a move, turn, scale, flip or `--rm` it lists the strokes and fills inside the polygon and those crossing its edge.

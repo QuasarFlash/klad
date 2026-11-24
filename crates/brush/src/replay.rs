@@ -172,6 +172,18 @@ fn put(raster: &mut Raster, index: usize, tile: &Tile) {
     raster.restore(index, tile);
 }
 
+pub fn painted_over(base: &Raster, marks: &[Mark], brushes: &BrushSet) -> Result<Raster> {
+    let (width, height) = (base.width, base.height);
+    let mut raster = base.clone();
+    let mut buffer = StrokeBuffer::new(width, height);
+    let mut scope = Scope::plan(width, height, marks, brushes);
+    marks
+        .iter()
+        .enumerate()
+        .try_for_each(|(at, mark)| painted(&mut raster, &mut buffer, brushes, mark, &mut scope, at).map(|_| ()))?;
+    Ok(raster)
+}
+
 impl CelReplay {
     pub fn new(width: u32, height: u32) -> Self {
         let tiles = Raster::new(width, height);
@@ -325,10 +337,13 @@ impl CelReplay {
         Ok(footprint)
     }
 
-    fn rebuild(&mut self, raster: &mut Raster, next: Vec<Mark>, brushes: &BrushSet) -> Result<Updated> {
+    fn rebuild(&mut self, raster: &mut Raster, next: Vec<Mark>, brushes: &BrushSet, tiled: bool) -> Result<Updated> {
         let before: BTreeSet<usize> = raster.occupied().map(|(i, _)| i).collect();
         let replayed = next.len();
-        let (cel, fresh, _) = Self::replay(self.width, self.height, next, brushes)?;
+        let (cel, fresh, _) = match tiled {
+            true => Self::replay_tiled(self.width, self.height, next, brushes)?,
+            false => Self::replay(self.width, self.height, next, brushes)?,
+        };
         let tiles = before
             .into_iter()
             .chain(fresh.occupied().map(|(i, _)| i))
@@ -351,8 +366,11 @@ impl CelReplay {
             Mark::Stroke(stroke) => brushes.def(&stroke.brush).is_some_and(|d| d.reads_pixels()),
             Mark::Fill(_) => false,
         });
+        if next.len() >= TILED_FROM && kept.iter().all(Option::is_none) {
+            return self.rebuild(raster, next, brushes, true);
+        }
         if reads || !kept.iter().flatten().is_sorted_by(|a, b| a < b) || self.footprints.len() != self.keys.len() {
-            return self.rebuild(raster, next, brushes);
+            return self.rebuild(raster, next, brushes, false);
         }
         let mut kept_old = vec![false; self.keys.len()];
         kept.iter().flatten().for_each(|&j| kept_old[j] = true);

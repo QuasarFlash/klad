@@ -2452,6 +2452,8 @@ impl Scene {
             onions: self.onion_map().cloned(),
             brushes: brushes.clone(),
             vectors: std::sync::OnceLock::new(),
+            lifts: std::sync::OnceLock::new(),
+            slow: std::sync::atomic::AtomicBool::new(false),
         })
     }
 

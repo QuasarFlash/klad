@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 pub const NATIVE: bool = !cfg!(test);
 
-pub const PICTURES: [&str; 3] = ["png", "jpg", "jpeg"];
+pub const PICTURES: [&str; 4] = ["png", "jpg", "jpeg", "svg"];
 
 pub const CHOOSE_DRAWING: &str = if cfg!(target_os = "macos") {
     "Choose a .klad file..."
@@ -60,7 +60,7 @@ fn choose(start: Option<&Path>, prompt: &str, pick: Pick) -> Option<PathBuf> {
     panel.setAllowsMultipleSelection(false);
     panel.setCanCreateDirectories(pick == Pick::Folder);
     match pick {
-        Pick::Drawing => only_kinds(&panel, &["klad"]),
+        Pick::Drawing => only_kinds(&panel, &["klad", "aseprite", "ase", "psd", "png", "jpg", "jpeg", "svg"]),
         Pick::Picture => only_kinds(&panel, &PICTURES),
         Pick::Folder | Pick::File => {}
     }
@@ -98,7 +98,9 @@ pub fn choose_file(start: Option<&Path>, prompt: &str) -> Option<PathBuf> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn choose_picture(start: Option<&Path>, prompt: &str) -> Option<PathBuf> {
-    dialog(start, prompt).add_filter("PNG or JPEG", &PICTURES).pick_file()
+    dialog(start, prompt)
+        .add_filter("PNG, JPEG or SVG", &PICTURES)
+        .pick_file()
 }
 
 #[cfg(not(target_os = "macos"))]

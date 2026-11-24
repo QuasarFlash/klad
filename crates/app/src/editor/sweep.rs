@@ -309,7 +309,6 @@ impl Place {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
-    Dead,
     Idle,
 }
 
@@ -324,13 +323,11 @@ struct Known {
 }
 
 const ANYWHERE: &[Place] = &[Place::Own, Place::Other, Place::Empty];
-const OWN: &[Place] = &[Place::Own];
 const AWAY: &[Place] = &[Place::Other, Place::Empty];
 const NOWHERE: &[Place] = &[Place::Empty];
 const CLICK: &[Gesture] = &[Gesture::Click];
-const DRAG: &[Gesture] = &[Gesture::Drag];
 
-const KNOWN: [Known; 9] = [
+const KNOWN: [Known; 8] = [
     Known {
         hands: &["eraser"],
         rows: &["pixel"],
@@ -408,15 +405,6 @@ const KNOWN: [Known; 9] = [
         verdict: "quiet",
         kind: Kind::Idle,
         why: "nothing is there to take",
-    },
-    Known {
-        hands: &["select strokes"],
-        rows: &["mask"],
-        gestures: DRAG,
-        places: OWN,
-        verdict: "quiet",
-        kind: Kind::Dead,
-        why: "the drag starts on the stroke the click before took, so it moves it, and here the move does nothing and says nothing",
     },
     Known {
         hands: &["rectangles and ellipses"],
@@ -935,7 +923,7 @@ impl Desk {
             ),
             frame: ed.scene.frame,
             flags: format!(
-                "{} wants {:?} links {} copied {} {} {} jobs {} windows {} {} {} {} range {:?} ask {:?} developer {} swatch {:?} second {:?} pencil {}",
+                "{} wants {:?} links {} copied {} {} {} jobs {} windows {} {} {} {} {} range {:?} ask {:?} developer {} swatch {:?} second {:?} pencil {}",
                 Cmd::ALL
                     .iter()
                     .map(|cmd| match ed.is_on(*cmd) {
@@ -954,6 +942,7 @@ impl Desk {
                 ed.windows.palettes,
                 ed.windows.clip,
                 ed.windows.between,
+                ed.naming.is_some(),
                 ed.timeline.range,
                 ed.timeline.ask,
                 ed.settings.developer,
@@ -1014,7 +1003,10 @@ impl Desk {
             }
         };
         let screen: Vec<Pos2> = path.iter().map(|p| self.at(*p)).collect();
-        self.h.state_mut().select_box = !matches!(gesture, Gesture::Loop);
+        self.h.state_mut().marquee = match gesture {
+            Gesture::Loop => super::marquee::Marquee::Loop,
+            _ => super::marquee::Marquee::Box,
+        };
         self.stroke(&screen);
         match hand.finish {
             Finish::Nothing => {}
@@ -1109,7 +1101,6 @@ impl Cell {
 
     fn shown(&self) -> String {
         match (self.verdict(), self.known().map(|k| k.kind)) {
-            (verdict, Some(Kind::Dead)) => format!("**{verdict}**"),
             (verdict, Some(Kind::Idle)) => format!("{verdict}, nothing to do"),
             (verdict, None) => verdict.to_string(),
         }
@@ -1278,7 +1269,6 @@ fn grid_report(cells: &[Cell]) -> String {
         lines.push(format!(
             "| {} | {} | {} | {} | {} | {held} | {} |",
             match known.kind {
-                Kind::Dead => "dead end",
                 Kind::Idle => "nothing to do",
             },
             names(known.hands.to_vec()),
@@ -1975,7 +1965,6 @@ fn sweep_report(runs: &[Run]) -> String {
             Cmd::find(calm.cmd).map_or("", |c| c.spec().name),
             calm.cmd,
             match calm.kind {
-                Kind::Dead => "dead end",
                 Kind::Idle => "nothing to do",
             },
             calm.why,

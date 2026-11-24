@@ -150,6 +150,10 @@ pub enum MarkChange {
     Detach {
         ids: Vec<u32>,
     },
+    Order {
+        ids: Vec<u32>,
+        to: Order,
+    },
     Entry {
         entry: String,
         color: Option<[u16; 4]>,
@@ -181,7 +185,7 @@ impl MarkChange {
             MarkChange::Lasso { chosen, .. } => chosen.clone(),
             MarkChange::Paste { made, .. } => made.iter().map(|c| c.to).collect(),
             MarkChange::Put(marks) => marks.iter().map(Mark::id).collect(),
-            MarkChange::Detach { ids } => ids.clone(),
+            MarkChange::Detach { ids } | MarkChange::Order { ids, .. } => ids.clone(),
             MarkChange::Entry { changed, .. } => changed.clone(),
             MarkChange::Copy { .. } | MarkChange::Part { .. } => Vec::new(),
         }
@@ -200,6 +204,87 @@ impl MarkChange {
             _ => Vec::new(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Order {
+    Front,
+    Back,
+    Forward,
+    Backward,
+}
+
+impl Order {
+    pub fn parse(word: &str) -> Result<Order> {
+        Ok(match word {
+            "front" => Order::Front,
+            "back" => Order::Back,
+            "up" | "forward" => Order::Forward,
+            "down" | "backward" => Order::Backward,
+            other => bail!("order to {other:?}: use front, back, up or down"),
+        })
+    }
+
+    pub fn word(self) -> &'static str {
+        match self {
+            Order::Front => "front",
+            Order::Back => "back",
+            Order::Forward => "up",
+            Order::Backward => "down",
+        }
+    }
+}
+
+pub fn arrange<T>(items: &mut Vec<T>, chosen: impl Fn(&T) -> bool, meets: impl Fn(&T) -> bool, to: Order) -> bool {
+    let picked: Vec<usize> = (0..items.len()).filter(|&i| chosen(&items[i])).collect();
+    let (Some(&low), Some(&high)) = (picked.first(), picked.last()) else {
+        return false;
+    };
+    let others: Vec<usize> = (0..items.len()).filter(|&i| !chosen(&items[i])).collect();
+    let at = match to {
+        Order::Front => others.len(),
+        Order::Back => 0,
+        Order::Forward => others
+            .iter()
+            .position(|&i| i > high && meets(&items[i]))
+            .map_or(others.len(), |p| p + 1),
+        Order::Backward => others.iter().rposition(|&i| i < low && meets(&items[i])).unwrap_or(0),
+    };
+    let order: Vec<usize> = others[..at]
+        .iter()
+        .chain(&picked)
+        .chain(&others[at..])
+        .copied()
+        .collect();
+    if order.iter().enumerate().all(|(at, &i)| at == i) {
+        return false;
+    }
+    let mut rank = vec![0; order.len()];
+    order.iter().enumerate().for_each(|(at, &i)| rank[i] = at);
+    let mut ranked: Vec<(usize, T)> = std::mem::take(items)
+        .into_iter()
+        .enumerate()
+        .map(|(i, item)| (rank[i], item))
+        .collect();
+    ranked.sort_by_key(|(r, _)| *r);
+    *items = ranked.into_iter().map(|(_, item)| item).collect();
+    true
+}
+
+pub fn order_marks(marks: &mut Vec<Mark>, chosen: &[u32], to: Order) -> bool {
+    let moving: BTreeSet<u32> = marks
+        .iter()
+        .filter(|m| {
+            chosen.contains(&m.id()) || m.as_stroke().is_some_and(|s| s.on.iter().any(|id| chosen.contains(id)))
+        })
+        .map(Mark::id)
+        .collect();
+    let reach = union(&marks.iter().filter(|m| moving.contains(&m.id())).collect::<Vec<_>>());
+    let meets = |m: &Mark| match (reach, m.bounds()) {
+        (Some(a), Some(b)) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3],
+        _ => false,
+    };
+    arrange(marks, |m| moving.contains(&m.id()), meets, to)
 }
 
 pub fn union(marks: &[&Mark]) -> Option<[f32; 4]> {
@@ -366,8 +451,16 @@ fn set_fill(fill: &mut Fill, props: &Map<String, Value>) -> Result<()> {
     Ok(())
 }
 
+pub fn size_scale(a: Affine) -> f32 {
+    let area = (a[0] * a[3] - a[1] * a[2]).abs();
+    match (area - 1.0).abs() < 1e-5 {
+        true => 1.0,
+        false => libm::sqrtf(area),
+    }
+}
+
 pub fn transform_stroke(stroke: &mut Stroke, a: Affine) {
-    let scale = libm::sqrtf((a[0] * a[3] - a[1] * a[2]).abs());
+    let scale = size_scale(a);
     stroke.samples.iter_mut().for_each(|s| {
         let (x, y) = apply_affine(a, s.pos());
         let (tx, ty) = s.tilt();
@@ -782,6 +875,10 @@ pub fn apply_following(marks: &mut Vec<Mark>, change: &mut MarkChange, cel: &str
             ids.iter().try_for_each(|id| position(marks, cel, *id).map(|_| ()))?;
             attach::detach(marks, ids);
         }
+        MarkChange::Order { ids: chosen, to } => {
+            chosen.iter().try_for_each(|id| position(marks, cel, *id).map(|_| ()))?;
+            order_marks(marks, chosen, *to);
+        }
         MarkChange::Entry { entry, color, changed } => {
             *changed = marks
                 .iter_mut()
@@ -884,6 +981,24 @@ mod tests {
             .into()
     }
 
+    #[test]
+    fn a_turn_leaves_a_stroke_exactly_as_thick_and_a_scale_scales_it() {
+        (1..360).for_each(|deg| {
+            let (s, c) = (deg as f32).to_radians().sin_cos();
+            let Mark::Stroke(mut stroke) = line(1) else {
+                unreachable!()
+            };
+            transform_stroke(&mut stroke, [c, -s, s, c, 3.0, 4.0]);
+            assert_eq!(stroke.size, 10.0, "turned by {deg} degrees");
+            assert_eq!(stroke.taper, [4.0, 8.0], "turned by {deg} degrees");
+        });
+        let Mark::Stroke(mut stroke) = line(1) else {
+            unreachable!()
+        };
+        transform_stroke(&mut stroke, [2.0, 0.0, 0.0, 2.0, 0.0, 0.0]);
+        assert_eq!(stroke.size, 20.0);
+    }
+
     fn square(id: u32) -> Mark {
         let mut mask = vec![0u8; 64 * 64];
         (20..30).for_each(|y| (20..40).for_each(|x| mask[y * 64 + x] = 255));
@@ -934,6 +1049,29 @@ mod tests {
             "hidden marks are skipped"
         );
         assert_eq!(pick(&marks, (50.0, 20.0), 6.0, |_| false), None);
+    }
+
+    #[test]
+    fn arrange_goes_to_the_ends_or_one_place_past_what_it_meets() {
+        let run = |start: &[u32], chosen: &[u32], meets: &[u32], to: Order| {
+            let mut v = start.to_vec();
+            let changed = arrange(&mut v, |x| chosen.contains(x), |x| meets.contains(x), to);
+            (v, changed)
+        };
+        let all = [1, 2, 3, 4, 5];
+        assert_eq!(run(&[1, 2, 3, 4, 5], &[2], &all, Order::Front).0, [1, 3, 4, 5, 2]);
+        assert_eq!(run(&[1, 2, 3, 4, 5], &[2, 4], &all, Order::Back).0, [2, 4, 1, 3, 5]);
+        assert_eq!(run(&[1, 2, 3, 4, 5], &[2], &all, Order::Forward).0, [1, 3, 2, 4, 5]);
+        assert_eq!(
+            run(&[1, 2, 3, 4, 5], &[2], &[5], Order::Forward).0,
+            [1, 3, 4, 5, 2],
+            "past the next it meets"
+        );
+        assert_eq!(run(&[1, 2, 3, 4, 5], &[4], &[1], Order::Backward).0, [4, 1, 2, 3, 5]);
+        assert_eq!(run(&[1, 2, 3], &[3], &all, Order::Front), (vec![1, 2, 3], false));
+        assert_eq!(run(&[1, 2, 3], &[], &all, Order::Front), (vec![1, 2, 3], false));
+        assert_eq!(Order::parse("up").unwrap(), Order::Forward);
+        assert!(Order::parse("top").is_err());
     }
 
     #[test]

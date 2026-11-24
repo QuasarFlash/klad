@@ -146,12 +146,16 @@ impl Editor {
             self.apply(vec![klad_core::ops::Op::Canvas {
                 wrap: None,
                 tile: Some(Some(self.tile_size)),
+                size: None,
+                background: None,
             }])?;
         }
         if clear {
             self.apply(vec![klad_core::ops::Op::Canvas {
                 wrap: None,
                 tile: Some(None),
+                size: None,
+                background: None,
             }])?;
         }
         Ok(())
@@ -192,12 +196,13 @@ impl Editor {
             _ => 1,
         };
         form.size = form.size.clamp(least, 512);
-        ui.add(egui::Slider::new(&mut form.size, least..=512).text("longest side px"))
-            .hint(match form.source {
+        crate::widgets::labelled_slider(ui, "longest side px", egui::Slider::new(&mut form.size, least..=512)).hint(
+            match form.source {
                 Source::File => "the picture's longest side once it is pixels; 0 keeps its own size (up to 512 px)",
                 _ => "the longest side of the pixel drawing: 64 for a 64 px sprite",
-            });
-        ui.add(egui::Slider::new(&mut form.colors, 0..=64).text("colours"))
+            },
+        );
+        crate::widgets::labelled_slider(ui, "colours", egui::Slider::new(&mut form.colors, 0..=64))
             .hint("0: every pixel takes the nearest colour of the palette (or the picture's own colours when the palette is empty); from 2: that many colours are made from the picture");
         if form.colors == 1 {
             form.colors = 2;

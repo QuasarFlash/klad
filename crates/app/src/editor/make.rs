@@ -649,6 +649,10 @@ impl Editor {
     }
 
     pub(super) fn import_picture(&mut self, bytes: &[u8], name: &str) -> Result<()> {
+        self.import_picture_at(bytes, name, None)
+    }
+
+    pub(super) fn import_picture_at(&mut self, bytes: &[u8], name: &str, centre: Option<egui::Vec2>) -> Result<()> {
         let (src, w, h) = match klad_render::assets::import_image(&self.scene.bundle.root, bytes) {
             Ok(made) => made,
             Err(e) => {
@@ -659,7 +663,8 @@ impl Editor {
         let (cw, ch) = self.scene.size();
         let fit = (cw as f32 / w as f32).min(ch as f32 / h as f32).min(1.0);
         let (pw, ph) = (w as f32 * fit, h as f32 * fit);
-        let node = json!({"type": "image", "src": src, "x": (cw as f32 - pw) / 2.0, "y": (ch as f32 - ph) / 2.0, "w": pw, "h": ph});
+        let (mx, my) = centre.map_or((cw as f32 / 2.0, ch as f32 / 2.0), |c| (c.x, c.y));
+        let node = json!({"type": "image", "src": src, "x": mx - pw / 2.0, "y": my - ph / 2.0, "w": pw, "h": ph});
         let stem = std::path::Path::new(name)
             .file_stem()
             .and_then(|s| s.to_str())
@@ -684,6 +689,35 @@ impl Editor {
     }
 
     fn import_from(&mut self, path: &std::path::Path) {
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")) {
+            let name = path
+                .file_name()
+                .map_or("the SVG".to_string(), |n| n.to_string_lossy().to_string());
+            self.start_job(crate::jobs::Spec {
+                tag: crate::jobs::Tag::Edit,
+                name: format!("bring in {name}"),
+                exe: std::path::PathBuf::new(),
+                args: vec![
+                    "import".to_string(),
+                    path.to_string_lossy().to_string(),
+                    "--into".to_string(),
+                    self.scene.bundle.root.to_string_lossy().to_string(),
+                ],
+                env: Vec::new(),
+                reruns: 1,
+                summary: |_, err| {
+                    let notes: Vec<&str> = err.lines().filter_map(|l| l.trim().strip_prefix("note: ")).collect();
+                    match notes.first() {
+                        Some(note) => format!("the SVG's shapes are on new vector layers; {note}"),
+                        None => {
+                            "the SVG's shapes are on new vector layers: V moves them, A edits their points".to_string()
+                        }
+                    }
+                },
+                failure: |_, err| super::tweens::failure(err),
+            });
+            return;
+        }
         match std::fs::read(path) {
             Ok(bytes) => self.check(|e| e.import_picture(&bytes, &path.display().to_string())),
             Err(e) => self.say(

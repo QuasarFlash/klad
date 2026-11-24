@@ -31,4 +31,4 @@ Any other command runs through `Drawing::command` (text) or `Drawing::json` (for
 
 ## Licence
 
-MIT, copyright Indicode BV (`LICENSE`). klad itself is source-available under its own licence; this crate, the file format and the command reference are MIT so that any program or agent can work with klad drawings.
+MIT, copyright Indicode (`LICENSE`). klad itself is source-available under its own licence; this crate, the file format and the command reference are MIT so that any program or agent can work with klad drawings.

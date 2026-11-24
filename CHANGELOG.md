@@ -1,8 +1,77 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 (to come)
 
-Nothing yet.
+klad is a drawing and animation app where every stroke stays editable, hours later too, and where an AI agent can draw in the same drawing beside you from the command line. 1.0 fills in what painters, illustrators, pixel artists and animators reach for every day:
+
+- **Several drawings open**, with a tab each, and copy and paste between them. **Save a copy**, **Rename**, **Duplicate** and **Revert** in the File menu. ([Getting started](https://klad.studio/docs/guide/getting-started))
+- **Perspective you paint along**: one, two or three vanishing points, rulers and ellipses the brush follows, a grid, guides and snapping, and straight lines and shapes with the brush. ([Painting](https://klad.studio/docs/guide/painting), [Shapes and text](https://klad.studio/docs/guide/shapes-and-text))
+- **Your brushes in every drawing**, kept apart from any one drawing and shared as a file.
+- **Selections that do more**: an ellipse, a wand by colour, cut, in front and behind, typed numbers, and pictures to and from other apps through the clipboard. ([Selecting](https://klad.studio/docs/guide/selecting))
+- **The canvas and layers**: crop, trim, resize, turn and flip the whole drawing; merge layers; a right-click menu on every layer. ([Layers](https://klad.studio/docs/guide/layers))
+- **Out to every app**: PNG, JPEG, WebP, TIFF, PSD with its layers, PDF with shapes kept sharp, SVG, video, GIF and animated WebP, and the selection alone; PSD and SVG come in too, and sprite sheets come in as frames. ([Exporting](https://klad.studio/docs/guide/exporting), [Animating](https://klad.studio/docs/guide/animating))
+- **Rigs that bend cleanly**: a weight brush with add, remove, smooth and strength, and the weight under the pointer. ([Bones](https://klad.studio/docs/guide/bones))
+- **Big canvases handled with care**: klad tells you before a canvas is too big for your machine, and never ends without a word when memory runs out.
+
+Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and klad 0.4 does not open `klad/9` drawings.
+
+### Added
+
+- **A welcome** the first time klad opens: klad's K paints itself and shows who changes it, your agent and you, then one screen connects the agent app you use and one starts the first steps, each with Skip. Help > Welcome to klad shows it again.
+- **Agent apps without a terminal**: the welcome connects the agent app you use, and File > Connect an agent app… does it later. One click puts klad into Claude Desktop, the Codex app, Claude Code, Cursor or VS Code; the app's row stays amber until it has started klad, then turns green. They paint, read and edit your drawings through klad's MCP server (`klad mcp`, `klad mcp --install`). ([Working with an agent](https://klad.studio/docs/guide/with-an-agent))
+- **Several drawings open at once**, with a tab each above the canvas: click a tab or press **ctrl Tab**; opening a drawing that is open shows its tab. Strokes and shapes copied in one drawing paste into another with their brushes, pictures and palette colours.
+- **File > Save a copy…** (**shift cmd S**), **Rename…**, **Duplicate** and **Revert** (back to how the drawing was when you opened it, in one undo step); in the start window, right click a drawing to duplicate it or move it to the Trash (`klad save-as`, `klad rename`). A copy gets ids of its own.
+- **Drawing guides**: perspective with one, two or three vanishing points, a ruler and an ellipse that the brush follows; **View > Drawing guides…** adds them and drags their points; **cmd** frees a stroke (`klad guides --perspective --ruler --ellipse`, `klad stroke --follow`).
+- **Grid, guides and snapping**: a grid with its spacing, stronger lines, square or isometric look (**View > Grid…**, **cmd '**), rulers to drag guides out of (**cmd R**), and snapping of shapes, points, moves, the pen, straight strokes and bones to the grid, the guides and other shapes (**shift cmd '**; `klad grid`, `klad guides`).
+- **Straight lines and figures with the brush**: **shift** click paints a straight line from the last stroke, **shift** drag keeps a stroke level, upright or at 45 degrees, and the brush paints lines, rectangles and ellipses (`klad stroke --line --rect --ellipse`).
+- **Your brushes** in every drawing: save a brush from the brush editor or a right click; rename, group, move, forget and share them as one file. A drawing that uses one keeps its own copy (`klad brushes --save --library --take`).
+- **Selections**: an **ellipse** and a **wand** with a tolerance next to box and loop, **alt** to take away (`klad lasso --ellipse --at --tolerance`); **cmd X** cuts; **cmd ]** and **cmd [** bring forward and send back (`klad order`); numbers for position, size and angle in the selection bar.
+- **Transforming**: a corner scales from the opposite corner, **shift** frees the proportions, **alt** scales from the middle, **shift** keeps a move level and turns in 15 degree steps.
+- **Pictures through the clipboard**: a picture copied in another app pastes onto a new layer or a pixel layer; **cmd C** puts a picture of the selection on the clipboard, and **shift cmd C** copies what you see in it (`klad import --clipboard`, `klad export --clipboard`).
+- **Shapes**: the outline's width, ends and corners; copy a shape's look onto others (**alt cmd C**, **alt cmd V**, `klad style`); **Unite**, **Subtract**, **Intersect** and **Exclude** (`klad combine`); text to paths.
+- **The canvas**: a canvas size window with an anchor, scaling the whole drawing, the paper colour, the crop tool (**C**, with handles; past the edges it grows the canvas), **Crop to selection**, **Trim**, turn and flip (`klad canvas --size --crop --trim --resize --turn --flip --paper`).
+- **Layers**: **Merge down**, **Merge selected** and **Merge visible**, keeping strokes, pixels and shapes editable, **Ungroup**, and a right-click menu on every layer in the Layers pane and the timeline (`klad merge`, `klad ungroup`).
+- **Exports**: JPEG, WebP (lossy, lossless and animated), TIFF (8 or 16 bits), PSD with a layer for each layer and groups, PDF with vector layers kept as shapes (a page per frame or clip, on the drawing's size or a paper), MP4 video, SVG, and the selection alone (`klad export --format jpeg|webp|tiff|psd|pdf|mp4|svg --only`).
+- **Imports**: PSD from Photoshop, Krita and Affinity with its layers and groups; SVG as shapes; a sprite sheet cut into frames, or a folder of numbered pictures, onto a new layer with a clip (**File > Import frames…**, `klad import sheet.png --cell 32x32 --to art.klad`).
+- **The weight brush**: paint, add, remove and smooth (**shift 1** to **4**), a strength that the pen's pressure drives, hardness, the weight under the pointer and **alt I** to pick it up, a legend and every bone's weight in its own colour (`klad weights --mode --strength --hardness --at`).
+- **Windows, for 1.0**: `klad.exe` and `klad-editor.exe` carry klad's icon and its version, and so does the editor's window. Key names say **ctrl** on Windows and Linux, in the menus, hints and messages. Claude Desktop from its Windows installer connects (klad finds the settings that version reads), and its next step says how to quit it on Windows. Explorer gets a drawing's picture as its folder picture when the drawing closes or klad quits.
+- **Drawings preview in Finder**: select a drawing and press space to see it, and icon and gallery views show its picture. klad writes it when you close the drawing or quit, in the background (`klad preview`, `--all` for a folder).
+- **Very large canvases**: a canvas too big for the machine's memory is refused with the size it needs, a tight one is made with a warning, and the editor uses the graphics' real texture limit.
+
+### Changed
+
+- **The Mac app is one app for Apple silicon and Intel Macs**, signed and notarised so it opens without a warning, and needs macOS 14 Sonoma or later. The Windows build needs 64-bit Windows 10 or 11.
+- **Help > First steps** shows what klad does in six steps: paint a shape and erase part of it, paint and fill a second one, reshape the first stroke with edit points (the erased part bends with it), and let your agent change that stroke.
+- Opening a drawing keeps the one you were in open, in a tab, instead of closing it.
+- The bone tool's weights bar: the mode buttons, then size and weight; strength, hardness, pressure, the legend, **automatic** and **smooth all** under **⋯**.
+- The export window has a format row for pictures and its own pages for PDF and video; the GIF window also writes animated WebP.
+- Drawings are saved in format `klad/9` (the grid, guides and drawing guides).
+- The licence says plainly that the drawings you make are yours: you may sell them and use them in your own and your clients' commercial work.
+- The licence says that a larger company buys a company seat for each person who uses klad: a yearly subscription, sold only on klad.studio, that ends at the end of the last period paid for once it is cancelled. A build bought anywhere, itch.io and Steam included, is a personal licence.
+- The Mac disk image opens to a window with klad, an arrow and the Applications folder.
+
+### Fixed
+
+- Turning a selection by its knob left the strokes a hair thinner each time; a turn now leaves their thickness exactly as it was.
+- On Windows, `klad install` put klad's folder on the PATH in its long form (`\\?\C:\...`), which shells may not read.
+- A fill bent by bones got stair-steps and spikes along its edge; its weight now reaches past its soft edge. Where little weight is painted, a place fades into its nearest bones instead of jumping between them.
+- A pose, in-between or weights op in a batch with a fill is refused with what to do (a batch of its own after the drawing), instead of a message that sent you to the command you had run.
+- Running out of memory ends with a message, which the editor shows the next time it starts, instead of the app stopping without a word.
+- A canvas wider than 8192 px could not be shown by the editor; it now uses what the graphics can show and says so when a drawing is wider.
+- On Windows, a drawing whose folder is renamed while it is open is followed, as on the Mac and Linux.
+- A new layer made while a layer inside a hidden group was picked was hidden with the group, so nothing could be painted on it; it now goes above the hidden group.
+- Going to the layer above or below past the top or the bottom, and pasting a look onto the shape it came from, now say why nothing happened.
+- Moving strokes in a large drawing follows the pen again: while you drag, klad moves a picture of the strokes and draws them in their new place when you let go.
+- Select all (cmd A) no longer picks the eraser marks that ride on strokes, so deleting everything it picked works instead of naming a mark that was already gone.
+- The brush's **more** menu and the selection's numbers stay open while you pick and type in them; the numbers button says **numbers**, and duplicate has its own icon next to copy.
+- With **all layers** on, the wand selects on whatever layer is painted under the click, and select all takes the strokes of every layer.
+- On the Mac, the pointer no longer stays stuck as a resize arrow after you put the pen down straight from a number field or a panel edge.
+- A brush taken out of your brushes in one drawing no longer gives an error in another drawing that still listed it; that drawing keeps its own copy.
+- Merging layers painted with lock alpha no longer lets the strokes of one layer paint over the other: each stroke stays on the paint of the layer it came from, so the picture looks as it did before the merge.
+- Moving everything on a layer (select all, then drag) follows the pen however many strokes it holds, alpha-locked and thick oil strokes too, and lands about three times faster when you let go.
+- Select all frames in a drawing with no layers left closed klad; it now says to add a paint or vector layer first.
+- `klad merge` of large layers lists the first few strokes it copied instead of thousands, so an agent's answer stays short; `--json` still lists every one.
+- On Windows, lifting a tablet pen ends the stroke: with some tablets (a Huion H1060P) the stroke went on after the pen left the tablet. klad now reads the pen through Windows Ink itself, so it also gets the pen's tilt, its eraser end and every point the tablet sends, as on the Mac. ([Painting](https://klad.studio/docs/guide/painting#tune-your-pen))
 
 ## 0.4.0 (2026-11-19)
 

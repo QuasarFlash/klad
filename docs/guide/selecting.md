@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 12:00_
+_Last updated: 2026-11-19 22:40_
 
 # Changing strokes
 
@@ -12,19 +12,25 @@ Press **V**, press on what you want to move and drag. Hold **alt** to drag a cop
 
 ## Select strokes
 
-Press **S** and click a stroke. Shift click adds more. Drag a box around strokes to select them, or pick **loop** in the bar over the canvas and draw a loop around them. The box or loop takes the strokes that are wholly inside it; to take the parts of strokes that cross its edge too, tick **a box or loop cuts strokes at its edge** in the bar. **cmd A** selects everything on the layer at this frame.
+Press **S** and click a stroke. Shift click adds more. Drag a box around strokes to select them, or pick **loop** or **ellipse** in the bar over the canvas and draw around them. **wand** takes the area of one colour you click, up to its edge; its **tolerance** lets close colours in. Hold **shift** to add to the selection and **alt** to take away from it. The box or loop takes the strokes that are wholly inside it; to take the parts of strokes that cross its edge too, tick **a box or loop cuts strokes at its edge** in the bar. **cmd A** selects everything on the layer at this frame.
 
-To pick on every layer instead of only the active one, switch the bar over the canvas to **all layers**.
+To pick on every layer instead of only the active one, switch the bar over the canvas to **all layers**: a click, a loop, the wand and **cmd A** then reach every visible, unlocked layer, and the wand goes to the layer painted under the click.
 
 ## Change what you selected
 
-Drag inside the box to move it, a corner to scale it and the knob to turn it. A turned box stays turned, so the next drag works on it as you see it. The bar next to the selection recolours it, makes strokes thinner or thicker, duplicates it (**cmd D**) and deletes it (**Backspace**).
+Drag inside the box to move it, a corner to scale it and the knob to turn it. A turned box stays turned, so the next drag works on it as you see it. Hold **shift** to move level or upright, to turn in steps of 15 degrees or, on a corner, to change width and height apart; hold **alt** to scale or stretch from the middle. To type a position, size or angle, click **# numbers** in the bar, type in a field and press Return; the numbers stay open until you click elsewhere. The bar next to the selection recolours it, makes strokes thinner or thicker, duplicates it (**cmd D**) and deletes it (**Backspace**).
 
 To recolour, click the palette button in the bar and pick a colour on the wheel, from the drawing's palette or from the colours you used lately; **use the current colour** gives it the colour you paint with. Recolouring several strokes keeps each one's own lighter or darker shade, so a painted area stays painted.
 
 ## Copy and paste
 
-**cmd C** copies the selected strokes or shapes and **cmd V** pastes them in place, on this frame or on another one. Strokes are pasted on the layer you have selected, so to put them on another layer, select that layer before you paste. Shapes pasted while a paint layer is active get a vector layer of their own above it.
+**cmd C** copies the selected strokes or shapes, **cmd X** cuts them, and **cmd V** pastes them in place, on this frame or on another one. Strokes are pasted on the layer you have selected, so to put them on another layer, select that layer before you paste. Shapes pasted while a paint layer is active get a vector layer of their own above it.
+
+Copying also puts a picture of the selection on the clipboard, for other apps. **shift cmd C** copies what you see, every layer together: inside the selection, or the whole canvas. A picture copied in another app pastes with **cmd V** onto a new layer in the middle of the view, selected so you can move it; on a pixel layer it comes in as pixels in the drawing's palette.
+
+## Put something in front or behind
+
+Select it and press **cmd ]** to bring it forward or **cmd [** to send it back; add **shift** to go all the way. **Edit > Arrange** has the same. Strokes go past the next stroke they overlap.
 
 ## Split part of a drawing onto its own layer
 

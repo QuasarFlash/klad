@@ -36,15 +36,15 @@ These come from `CLAUDE.md`, which is also the guide for coding agents working o
 1. Fork, branch from `main`, keep the change to one thing.
 2. `just lint`, `just test` and `just audit` pass.
 3. Describe what changed and how you checked it; for anything visual, attach a render (`klad render`) before and after.
-4. The first time, the CLA assistant asks you in the pull request to sign the contributor licence agreement (`CLA.md`): one click, and it covers every later change. Under it your contribution is licensed to Indicode BV for inclusion in klad and in the builds of klad it sells; you keep the copyright to your work.
+4. The first time, the CLA assistant asks you in the pull request to sign the contributor licence agreement (`CLA.md`): reply to the pull request with the sentence it gives, and that covers every later change. Under it your contribution is licensed to Indicode for inclusion in klad and in the builds of klad it sells; you keep the copyright to your work.
 
-klad is source-available, not open source (`LICENSE`): its licence lets you send changes to Indicode BV to propose them, so a fork on GitHub for pull requests is fine; publishing klad or builds of it elsewhere is not. `docs/format.md`, `docs/cli.md`, `docs/skill/` and `crates/client/` are MIT (`LICENSE-MIT`); `klad-client` depends on nothing in the other crates, so it stays MIT on its own.
+klad is source-available, not open source (`LICENSE`): its licence lets you send changes to Indicode to propose them, so a fork on GitHub for pull requests is fine; publishing klad or builds of it elsewhere is not. `docs/format.md`, `docs/cli.md`, `docs/skill/` and `crates/client/` are MIT (`LICENSE-MIT`); `klad-client` depends on nothing in the other crates, so it stays MIT on its own.
 
 ## Releases
 
-The Mac and Windows builds are sold on itch.io (and later Steam); Linux is built from source. GitHub has the release notes, not downloads.
+The Mac and Windows builds are sold on klad.studio through Paddle. A purchase emails a link to the builds, which sit in a private bucket; Linux is built from source. GitHub has the release notes, not downloads.
 
-1. `just build minor` (or `major`) sets the release's version; move the changes under "Unreleased" in `CHANGELOG.md` to a section `## x.y.z (date)` with that version.. `just formats x.y.z` saves seven samples with their hashes into `tests/formats/x.y.z/` (after `just samples`; `packaging/formats.sh <klad> x.y.z <folder>` takes them from another folder, laid out as `<name>/<name>.klad`). Commit.
-2. On a Mac with [butler](https://itch.io/docs/butler/) logged in: `ITCH_TARGET=<user>/<page> just itch-mac` builds the app (arm64 and x86_64 in one) and pushes it to the page's `mac` channel.
-3. Tag `vx.y.z` and push the tag. The `release` workflow runs the checks, builds the Windows version and pushes it to the `windows` channel (with the `BUTLER_API_KEY` secret and the `ITCH_TARGET` variable set in the repository), then publishes that changelog section as the release notes, which the editor's update check reads.
-4. The builds are not signed yet.
+1. `just build minor` (or `major`) sets the release's version; move the changes under "Unreleased" in `CHANGELOG.md` to a section `## x.y.z (date)` with that version (or date a section written ahead, like `## 1.0.0 (to come)`). A section opens with a few lines for people deciding whether to update, then Added, Changed and Fixed; `just notes x.y.z` prints it as the release and the update notice will show it. `just formats x.y.z` saves seven samples with their hashes into `tests/formats/x.y.z/` (after `just samples`; `packaging/formats.sh <klad> x.y.z <folder>` takes them from another folder, laid out as `<name>/<name>.klad`). Commit.
+2. On a Mac: `just app` builds the app (Apple silicon and Intel in one) and its disk image, signed and notarised with the keychain profile (`KLAD_SIGN=0` for an unsigned build for yourself).
+3. Tag `vx.y.z` and push the tag. The `release` workflow runs the checks, builds the Windows version and publishes that changelog section as the release notes, which the editor's update check reads.
+4. Until the workflow signs the builds and puts them in the bucket, the signed disk image goes into the bucket by hand.

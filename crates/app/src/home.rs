@@ -6,8 +6,9 @@ use crate::messages::Tone;
 use crate::picker;
 use crate::settings::{self, Settings};
 use crate::start::{self, Section, Start};
-use crate::theme;
+use crate::theme::{self, Hint};
 use crate::updates;
+use crate::welcome::{Outcome, Welcome};
 use anyhow::{Result, anyhow};
 use egui::RichText;
 use egui_wgpu::wgpu;
@@ -22,16 +23,39 @@ pub fn run(path: Option<PathBuf>) -> Result<()> {
         crate::report::log(&format!("the editor stopped: {}", crate::report::panic_text(info)));
         previous(info);
     }));
+    let viewport = egui::ViewportBuilder::default()
+        .with_title(start::title(path.as_deref()))
+        .with_inner_size([1600.0, 1000.0]);
+    #[cfg(not(target_os = "macos"))]
+    let viewport = match window_icon() {
+        Some(icon) => viewport.with_icon(icon),
+        None => viewport,
+    };
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title(start::title(path.as_deref()))
-            .with_inner_size([1600.0, 1000.0]),
+        viewport,
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: egui_wgpu::WgpuConfiguration {
             surface: egui_wgpu::SurfaceConfig {
                 present_mode: wgpu::PresentMode::AutoVsync,
                 desired_maximum_frame_latency: Some(1),
             },
+            wgpu_setup: egui_wgpu::WgpuSetup::CreateNew(egui_wgpu::WgpuSetupCreateNew {
+                device_descriptor: std::sync::Arc::new(|adapter: &wgpu::Adapter| {
+                    let base = match adapter.get_info().backend == wgpu::Backend::Gl {
+                        true => wgpu::Limits::downlevel_webgl2_defaults(),
+                        false => wgpu::Limits::default(),
+                    };
+                    wgpu::DeviceDescriptor {
+                        label: Some("klad wgpu device"),
+                        required_limits: wgpu::Limits {
+                            max_texture_dimension_2d: adapter.limits().max_texture_dimension_2d.max(8192),
+                            ..base
+                        },
+                        ..Default::default()
+                    }
+                }),
+                ..egui_wgpu::WgpuSetupCreateNew::without_display_handle()
+            }),
             ..Default::default()
         },
         ..Default::default()
@@ -46,6 +70,8 @@ pub fn run(path: Option<PathBuf>) -> Result<()> {
 
 pub(crate) struct Home {
     pub(crate) editor: Option<Box<Editor>>,
+    pub(crate) parked: Vec<Box<Editor>>,
+    pub(crate) at: usize,
     pub(crate) start: Option<Start>,
     pub(crate) settings: Settings,
     pub(crate) settings_path: Option<PathBuf>,
@@ -56,6 +82,12 @@ pub(crate) struct Home {
     native_menus: bool,
     menus_built: Option<u64>,
     menus_shown: Option<std::time::Instant>,
+    cycling: i32,
+    ran_out: Option<String>,
+    cursor: crate::cursor::Settle,
+    pub(crate) welcome: Option<Welcome>,
+    tour: bool,
+    shown_from: Option<f64>,
 }
 
 fn used_twice(e: &anyhow::Error) -> bool {
@@ -64,6 +96,7 @@ fn used_twice(e: &anyhow::Error) -> bool {
 
 impl Home {
     fn new(cc: &eframe::CreationContext, path: Option<&Path>) -> Result<Self> {
+        crate::pen::attach(cc);
         let gpu = cc
             .wgpu_render_state
             .clone()
@@ -72,6 +105,7 @@ impl Home {
         let settings = settings_path.as_deref().map(Settings::load).unwrap_or_default();
         let mut home = Self::with(settings, settings_path, Some(gpu));
         home.native_menus = true;
+        home.ran_out = klad_core::memory::last_time();
         if updates::due(
             home.settings.check_updates,
             home.settings.updates_checked,
@@ -80,6 +114,9 @@ impl Home {
             home.checking = Some(updates::spawn(updates::feed()));
         }
         home.begin(&cc.egui_ctx, path);
+        if let (Some(start), Some(words)) = (home.start.as_mut(), home.ran_out.take()) {
+            start.error = Some(format!("the last time, {words}"));
+        }
         Ok(home)
     }
 
@@ -90,6 +127,8 @@ impl Home {
     ) -> Self {
         Self {
             editor: None,
+            parked: Vec::new(),
+            at: 0,
             start: None,
             settings,
             settings_path,
@@ -100,12 +139,21 @@ impl Home {
             native_menus: false,
             menus_built: None,
             menus_shown: None,
+            cycling: 0,
+            ran_out: None,
+            cursor: crate::cursor::Settle::default(),
+            welcome: None,
+            tour: false,
+            shown_from: None,
         }
     }
 
     pub(crate) fn begin(&mut self, ctx: &egui::Context, path: Option<&Path>) {
         let Some(path) = path else {
             self.start = Some(Start::new(&self.settings, Section::New));
+            if !self.settings.welcomed {
+                self.welcome = Some(Welcome::new(crate::connect::Connect::here()));
+            }
             return;
         };
         if let Err(e) = self.open(ctx, path) {
@@ -120,16 +168,46 @@ impl Home {
     pub(crate) fn open(&mut self, ctx: &egui::Context, path: &Path) -> Result<()> {
         let (made, told) = start::brought_in(path)?;
         let path = made.as_path();
+        let same = |e: &Editor| crate::start::same_drawing(&e.scene.bundle.root, path);
+        let open_already = match self.parked.iter().position(|e| same(e)) {
+            Some(found) => {
+                let slot = if found < self.at { found } else { found + 1 };
+                self.show_slot(ctx, slot);
+                true
+            }
+            None => self.editor.as_deref().is_some_and(same),
+        };
+        if open_already {
+            if let (Some(words), Some(editor)) = (told, self.editor.as_mut()) {
+                editor.say(Tone::Done, words);
+            }
+            self.start = None;
+            return Ok(());
+        }
         let mut settings = self
             .editor
             .as_ref()
             .map_or_else(|| self.settings.clone(), |e| e.settings.clone());
+        let doc_size = klad_core::bundle::Bundle::open(path).map(|b| (b.doc.canvas.width, b.doc.canvas.height));
+        if let (Ok((w, h)), Some(gpu)) = (doc_size, self.gpu.as_ref()) {
+            let most = gpu.device.limits().max_texture_dimension_2d;
+            if let Some(words) = too_wide(w, h, most) {
+                anyhow::bail!(words);
+            }
+        }
         let mut editor = Editor::open(ctx.clone(), path)?;
         if let Some(words) = self.start.as_mut().and_then(|s| s.repaired.take()) {
             editor.say(Tone::Done, words);
         }
         if let Some(words) = told {
             editor.say(Tone::Done, words);
+        }
+        if let Some(words) = self.ran_out.take() {
+            editor.say(Tone::Error, format!("the last time, {words}"));
+        }
+        let (w, h) = editor.scene.size();
+        if let Some(words) = klad_core::memory::fit(w, h).words(w, h) {
+            editor.say(Tone::Info, words);
         }
         settings.opened(path);
         settings.offer_real_size(editor.scene.bundle.doc.pixel_art());
@@ -145,9 +223,118 @@ impl Home {
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(start::title(Some(path))));
         self.settings = settings;
-        self.editor = Some(Box::new(editor));
+        let mut editor = Box::new(editor);
+        if let Some(old) = self.editor.take() {
+            old.hand_over(&mut editor);
+            self.parked.insert(self.at.min(self.parked.len()), old);
+            self.at = (self.at + 1).min(self.parked.len());
+        }
+        self.editor = Some(editor);
         self.start = None;
         Ok(())
+    }
+
+    pub(crate) fn drawings(&self) -> Vec<PathBuf> {
+        let mut all: Vec<PathBuf> = self.parked.iter().map(|e| e.scene.bundle.root.clone()).collect();
+        if let Some(editor) = &self.editor {
+            all.insert(self.at.min(all.len()), editor.scene.bundle.root.clone());
+        }
+        all
+    }
+
+    pub(crate) fn show_slot(&mut self, ctx: &egui::Context, slot: usize) {
+        let count = self.parked.len() + usize::from(self.editor.is_some());
+        if slot == self.at || slot >= count || self.editor.is_none() {
+            return;
+        }
+        let index = if slot < self.at { slot } else { slot - 1 };
+        let mut next = self.parked.remove(index);
+        if let Some(old) = self.editor.take() {
+            old.hand_over(&mut next);
+            old.hand_settings(&mut next);
+            let back = if slot < self.at { self.at - 1 } else { self.at };
+            self.parked.insert(back.min(self.parked.len()), old);
+        }
+        self.at = slot;
+        self.reshow(ctx, next);
+    }
+
+    fn reshow(&mut self, ctx: &egui::Context, mut editor: Box<Editor>) {
+        if let Some(gpu) = &self.gpu {
+            gpu.renderer.write().callback_resources.insert(CanvasGpu::new(
+                &gpu.device,
+                gpu.target_format,
+                editor.scene.size(),
+            ));
+        }
+        editor.reshown();
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(start::title(Some(
+            &editor.scene.bundle.root,
+        ))));
+        self.settings = editor.settings.clone();
+        self.editor = Some(editor);
+    }
+
+    fn cycle(&mut self, ctx: &egui::Context, by: i32) {
+        let count = self.parked.len() + usize::from(self.editor.is_some());
+        if count < 2 {
+            return;
+        }
+        let slot = (self.at as i64 + by as i64).rem_euclid(count as i64) as usize;
+        self.show_slot(ctx, slot);
+    }
+
+    fn drawing_tabs(&mut self, ui: &mut egui::Ui) -> Option<(usize, bool)> {
+        if self.parked.is_empty() || self.editor.is_none() {
+            return None;
+        }
+        let drawings = self.drawings();
+        let mut picked = None;
+        egui::Panel::top("drawings").resizable(false).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                drawings.iter().enumerate().for_each(|(slot, path)| {
+                    let name = path
+                        .file_stem()
+                        .map_or_else(|| path.display().to_string(), |s| s.to_string_lossy().to_string());
+                    let shown = slot == self.at;
+                    if ui
+                        .add(egui::Button::selectable(shown, name).min_size(egui::vec2(0.0, theme::CONTROL)))
+                        .on_hover_text(format!("{} (ctrl Tab goes to the next drawing)", path.display()))
+                        .clicked()
+                    {
+                        picked = Some((slot, false));
+                    }
+                    if ui
+                        .add(egui::Button::new(theme::icon::CLOSE).min_size(egui::vec2(theme::CONTROL, theme::CONTROL)))
+                        .on_hover_text("close this drawing (it stays saved)")
+                        .clicked()
+                    {
+                        picked = Some((slot, true));
+                    }
+                    ui.separator();
+                });
+            });
+        });
+        picked
+    }
+
+    fn close_slot(&mut self, ctx: &egui::Context, slot: usize) {
+        if slot == self.at {
+            self.close(ctx);
+            return;
+        }
+        let index = if slot < self.at { slot } else { slot - 1 };
+        if index < self.parked.len() {
+            let parked = self.parked.remove(index);
+            crate::finder::refresh(vec![parked.scene.bundle.root.clone()]);
+            self.settings = self
+                .editor
+                .as_ref()
+                .map_or_else(|| parked.settings.clone(), |e| e.settings.clone());
+            if slot < self.at {
+                self.at -= 1;
+            }
+        }
     }
 
     fn checked(&mut self) {
@@ -209,6 +396,16 @@ impl Home {
             .into_iter()
             .fold(None, |path, picked| match (picked, self.editor.as_mut()) {
                 (Picked::Open(p), _) => Some(p),
+                (Picked::Run(Cmd::Welcome), _) => {
+                    self.welcome = Some(Welcome::new(crate::connect::Connect::here()));
+                    path
+                }
+                (Picked::Run(Cmd::ConnectAgent), None) => {
+                    self.start
+                        .get_or_insert_with(|| Start::new(&self.settings, Section::New))
+                        .connecting = true;
+                    path
+                }
                 (Picked::Run(cmd), Some(editor)) => {
                     editor.run_later(cmd);
                     path
@@ -241,7 +438,23 @@ impl Home {
         let Some(editor) = self.editor.take() else {
             return;
         };
+        crate::finder::refresh(vec![editor.scene.bundle.root.clone()]);
         self.settings = editor.settings.clone();
+        if !self.parked.is_empty() {
+            let index = self.at.min(self.parked.len() - 1);
+            let mut next = self.parked.remove(index);
+            editor.hand_over(&mut next);
+            editor.hand_settings(&mut next);
+            self.at = index;
+            self.reshow(ctx, next);
+            if let Some(path) = &self.settings_path
+                && let Err(e) = self.settings.save(path)
+                && let Some(shown) = self.editor.as_mut()
+            {
+                shown.error(format!("saving your settings: {e:#}"));
+            }
+            return;
+        }
         if let Some(path) = &self.settings_path
             && let Err(e) = self.settings.save(path)
         {
@@ -270,10 +483,31 @@ impl Home {
         let mut chosen = None;
         let mut closing = false;
         let mut gone = None;
-        match self.editor.as_mut() {
+        let mut cycle = std::mem::take(&mut self.cycling);
+        if !self.parked.is_empty() {
+            cycle += ui.input_mut(|i| {
+                let back = i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Tab);
+                let on = i.consume_key(egui::Modifiers::CTRL, egui::Key::Tab);
+                i32::from(on) - i32::from(back)
+            });
+        }
+        let welcomed = self.welcome_frame(ui, &ctx);
+        if let Some(path) = welcomed.clone().flatten() {
+            chosen = Some(path);
+        }
+        if welcomed.is_none()
+            && let Some((slot, close)) = self.drawing_tabs(ui)
+        {
+            match close {
+                true => self.close_slot(&ctx, slot),
+                false => self.show_slot(&ctx, slot),
+            }
+        }
+        match self.editor.as_mut().filter(|_| welcomed.is_none()) {
             Some(editor) => {
                 editor.frame(ui);
                 match editor.wants.take() {
+                    Some(Want::Cycle(by)) => cycle += by,
                     Some(Want::Close) => closing = true,
                     Some(Want::Gone) => gone = Some(editor.scene.bundle.root.clone()),
                     Some(Want::Path(path)) => chosen = Some(path),
@@ -289,9 +523,11 @@ impl Home {
                         });
                     }
                     Some(Want::Open) => self.start = Some(Start::new(&editor.settings, Section::Open)),
+                    Some(Want::Welcome) => self.welcome = Some(Welcome::new(crate::connect::Connect::here())),
                     None => {}
                 }
                 if let Some(start) = self.start.as_mut() {
+                    start.open = Some(editor.scene.bundle.root.clone());
                     let height = (ctx.content_rect().height() - 120.0).clamp(320.0, 760.0);
                     let modal = egui::Modal::new(egui::Id::unique("start window")).show(&ctx, |ui| {
                         ui.set_width(WIDTH);
@@ -315,6 +551,7 @@ impl Home {
                     }
                 }
             }
+            None if welcomed.is_some() => {}
             None => {
                 if !self.themed {
                     theme::install(&ctx);
@@ -323,21 +560,40 @@ impl Home {
                 if (ctx.zoom_factor() - self.settings.ui_scale).abs() > 1e-3 {
                     ctx.set_zoom_factor(self.settings.ui_scale);
                 }
+                theme::clear_hints(&ctx);
                 let start = self
                     .start
                     .get_or_insert_with(|| Start::new(&self.settings, Section::New));
-                egui::CentralPanel::default().show(ui, |ui| {
-                    let margin = ((ui.available_width() - WIDTH) / 2.0).max(16.0);
-                    ui.add_space(32.0);
+                let since = self.shown_from.map_or(f64::INFINITY, |at| ctx.input(|i| i.time) - at);
+                if since < crate::welcome::SHOWN {
+                    ctx.request_repaint();
+                }
+                let page = egui::Frame::central_panel(ui.style()).fill(theme::BG);
+                egui::CentralPanel::default().frame(page).show(ui, |ui| {
+                    ui.multiply_opacity(crate::welcome::ease(since / crate::welcome::SHOWN));
+                    let margin = ((ui.available_width() - WIDTH) / 2.0).max(theme::space::LG);
+                    ui.add_space(theme::space::XXL);
                     ui.horizontal_top(|ui| {
                         ui.add_space(margin);
                         ui.vertical(|ui| {
                             ui.set_max_width(WIDTH);
+                            let icon = crate::widgets::app_icon(ui.ctx());
                             ui.horizontal(|ui| {
-                                ui.heading(RichText::new("klad").size(26.0));
-                                ui.label(
-                                    RichText::new(format!("version {}", crate::VERSION)).color(crate::theme::WEAK),
+                                ui.spacing_mut().item_spacing.x = theme::space::SM;
+                                if let Some(icon) = icon {
+                                    ui.add(
+                                        egui::Image::new(&icon)
+                                            .fit_to_exact_size(egui::Vec2::splat(theme::DISPLAY + theme::space::XS))
+                                            .corner_radius(theme::radius::CARD),
+                                    );
+                                }
+                                ui.heading(
+                                    RichText::new("klad")
+                                        .font(theme::wordmark(theme::DISPLAY))
+                                        .color(theme::TEXT),
                                 );
+                                ui.label(RichText::new(env!("CARGO_PKG_VERSION")).color(theme::WEAK))
+                                    .hint(format!("version {}", crate::VERSION));
                             });
                             if let Some(release) = &self.update {
                                 ui.horizontal(|ui| {
@@ -345,7 +601,7 @@ impl Home {
                                     ui.hyperlink_to("what changed", &release.url);
                                 });
                             }
-                            ui.add_space(12.0);
+                            ui.add_space(theme::space::XL);
                             chosen = start.ui(ui, &mut self.settings);
                         });
                     });
@@ -372,7 +628,10 @@ impl Home {
         if closing {
             self.close(&ctx);
         }
-        let tour = self.start.as_ref().is_some_and(|s| s.tour);
+        if cycle != 0 {
+            self.cycle(&ctx, cycle);
+        }
+        let tour = self.start.as_ref().is_some_and(|s| s.tour) || std::mem::take(&mut self.tour);
         if let Some(path) = chosen
             .or(from_menu)
             .or_else(|| dropped(&ctx))
@@ -394,6 +653,68 @@ impl Home {
             }
         }
         self.open_links(&ctx);
+        self.cursor.frame(&ctx);
+    }
+
+    fn welcome_frame(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) -> Option<Option<PathBuf>> {
+        let welcome = self.welcome.as_mut()?;
+        if !self.themed {
+            theme::install(ctx);
+            self.themed = true;
+        }
+        if self.editor.is_none() && (ctx.zoom_factor() - self.settings.ui_scale).abs() > 1e-3 {
+            ctx.set_zoom_factor(self.settings.ui_scale);
+        }
+        theme::clear_hints(ctx);
+        let outcome = egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(crate::welcome::STAGE))
+            .show(ui, |ui| welcome.ui(ui))
+            .inner;
+        Some(outcome.and_then(|o| self.welcomed(o, ctx.input(|i| i.time))))
+    }
+
+    fn welcomed(&mut self, outcome: Outcome, now: f64) -> Option<PathBuf> {
+        self.welcome = None;
+        self.shown_from = Some(now);
+        let settings = match self.editor.as_mut() {
+            Some(editor) => {
+                editor.settings.welcomed = true;
+                editor.settings_dirty = true;
+                editor.settings.clone()
+            }
+            None => {
+                self.settings.welcomed = true;
+                if let Some(path) = &self.settings_path
+                    && let Err(e) = self.settings.save(path)
+                {
+                    self.start
+                        .get_or_insert_with(|| Start::new(&self.settings, Section::New))
+                        .error = Some(format!("saving your settings: {e:#}"));
+                }
+                self.settings.clone()
+            }
+        };
+        if outcome == Outcome::Done {
+            return None;
+        }
+        match start::first_steps(&settings) {
+            Ok(path) => {
+                self.tour = true;
+                Some(path)
+            }
+            Err(e) => {
+                let message = format!("making the first steps drawing: {e:#}");
+                match self.editor.as_mut() {
+                    Some(editor) => editor.error(message),
+                    None => {
+                        self.start
+                            .get_or_insert_with(|| Start::new(&self.settings, Section::New))
+                            .error = Some(message);
+                    }
+                }
+                None
+            }
+        }
     }
 
     fn open_links(&mut self, ctx: &egui::Context) {
@@ -438,6 +759,16 @@ impl eframe::App for Home {
         self.frame(ui);
     }
 
+    fn on_exit(&mut self) {
+        crate::finder::refresh(
+            self.editor
+                .iter()
+                .chain(&self.parked)
+                .map(|editor| editor.scene.bundle.root.clone())
+                .collect(),
+        );
+    }
+
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         self.editor
             .as_ref()
@@ -445,10 +776,42 @@ impl eframe::App for Home {
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.cycling += crate::layout::take_ctrl_tabs(raw_input);
         if let Some(editor) = self.editor.as_mut() {
             editor.take_tabs(ctx, raw_input);
         }
     }
+}
+
+pub(crate) fn window_icon() -> Option<egui::IconData> {
+    let ico: &[u8] = include_bytes!("../../../packaging/icon/klad.ico");
+    let long = |at: usize| {
+        ico.get(at..at + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    };
+    let count = usize::from(u16::from_le_bytes([*ico.get(4)?, *ico.get(5)?]));
+    let (offset, size) = (0..count)
+        .map(|i| 6 + 16 * i)
+        .find(|&at| ico.get(at) == Some(&0))
+        .and_then(|at| Some((long(at + 12)?, long(at + 8)?)))?;
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(ico.get(offset..offset + size)?));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder.read_info().ok()?;
+    let mut buffer = vec![0; reader.output_buffer_size()?];
+    let info = reader.next_frame(&mut buffer).ok()?;
+    (info.color_type == png::ColorType::Rgba).then(|| egui::IconData {
+        rgba: buffer[..info.buffer_size()].to_vec(),
+        width: info.width,
+        height: info.height,
+    })
+}
+
+pub(crate) fn too_wide(width: u32, height: u32, most: u32) -> Option<String> {
+    (width.max(height) > most).then(|| {
+        format!(
+            "this {width}x{height} drawing is wider than this machine's graphics can show ({most} px a side): make it smaller with klad canvas --resize, or open it on a machine with a newer graphics chip"
+        )
+    })
 }
 
 fn open_words(path: &Path, e: &anyhow::Error) -> String {
@@ -486,6 +849,7 @@ mod tests {
         let settings = Settings {
             drawings: Some(dir.display().to_string()),
             documents: documents.iter().map(|p| p.display().to_string()).collect(),
+            welcomed: true,
             ..Settings::default()
         };
         Home::with(settings, None, None)
@@ -796,24 +1160,102 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    fn first_start(dir: &Path) -> Home {
+        let mut first = home(dir, &[]);
+        first.settings.welcomed = false;
+        first.begin(&egui::Context::default(), None);
+        first
+    }
+
+    fn settle(h: &mut Harness<'static, Home>) {
+        h.run_steps(12);
+    }
+
     #[test]
-    fn a_first_start_welcomes_offers_first_steps_and_opens_samples_as_copies() {
+    fn a_first_start_welcomes_with_three_screens_and_opens_the_first_steps() {
         let dir = folder("welcome");
+        let mut h = harness(first_start(&dir));
+        settle(&mut h);
+        assert!(
+            h.query_by_label("klad").is_some()
+                && h.query_by_label(crate::welcome::LINE).is_some()
+                && h.query_by_label("Get started").is_some(),
+            "a first start opens on klad's name, its line and one button"
+        );
+        assert!(
+            h.query_by_label_contains("New drawing").is_none(),
+            "the welcome fills the window"
+        );
+        h.get_by_label("Get started").click();
+        settle(&mut h);
+        assert!(h.query_by_label_contains("Connect your agent app").is_some());
+        assert!(h.query_by_label("Get started").is_none(), "one screen at a time");
+        h.get_by_label("Skip").click();
+        settle(&mut h);
+        assert!(h.query_by_label_contains("Take the first steps").is_some());
+        assert!(
+            [
+                "Paint and erase",
+                "Fill a shape",
+                "Reshape a stroke",
+                "Your agent changes it"
+            ]
+            .iter()
+            .all(|chip| h.query_by_label(chip).is_some())
+        );
+        h.get_by_label("Back").click();
+        settle(&mut h);
+        assert!(
+            h.query_by_label_contains("Connect your agent app").is_some(),
+            "Back goes to the screen before"
+        );
+        h.key_press(egui::Key::Enter);
+        settle(&mut h);
+        assert!(
+            h.query_by_label_contains("Take the first steps").is_some(),
+            "Enter goes on"
+        );
+        assert!(!h.state().settings.welcomed, "the welcome stays until it is finished");
+        h.get_by_label("Start first steps").click();
+        settle(&mut h);
+        assert_eq!(opened(&h), dir.join("first steps.klad"));
+        assert!(h.state().settings.welcomed);
+        assert!(h.state().welcome.is_none());
+        assert!(
+            h.query_by_label_contains("Paint a closed shape with the brush")
+                .is_some(),
+            "first steps open on the new drawing"
+        );
+        let mut later = home(&dir, &[]);
+        later.begin(&egui::Context::default(), None);
+        let h = harness(later);
+        assert!(h.query_by_label("Get started").is_none(), "only on a first start");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn escape_leaves_the_welcome_for_the_start_window_and_samples_open_as_copies() {
+        let dir = folder("welcome-escape");
         let shipped = dir.join("shipped/rock/rock.klad");
         Bundle::blank(&shipped, &small(), "cli").unwrap();
-        let mut first = home(&dir, &[]);
-        first.begin(&egui::Context::default(), None);
+        let mut first = first_start(&dir);
         first.start.as_mut().unwrap().samples = vec![klad_core::samples::Sample {
             name: "rock".into(),
             about: "a rock on its own".into(),
             path: shipped.clone(),
         }];
-        let mut h = harness(first);
+        let mut h = Harness::builder()
+            .with_size(vec2(1280.0, 1100.0))
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first);
+        settle(&mut h);
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+        assert!(h.state().settings.welcomed, "Esc finishes the welcome");
+        assert!(h.query_by_label_contains("New drawing").is_some());
         assert!(
-            h.query_by_label("Welcome to klad").is_some(),
-            "a first start says hello"
+            h.query_by_label_contains("Connect an agent app").is_none(),
+            "the start window has no agent section"
         );
-        assert!(h.query_by_label("Guides").is_some(), "and links the guides");
         assert!(
             h.query_by_label("a rock on its own").is_some(),
             "the samples show with what they are"
@@ -826,24 +1268,308 @@ mod tests {
             "a sample opens as a copy in the drawings folder"
         );
         assert!(shipped.join("doc.json").is_file());
-        assert!(h.state().settings.welcomed, "opening anything counts as welcomed");
-        let mut again = home(&dir, &[]);
-        again.begin(&egui::Context::default(), None);
-        let mut h = harness(again);
-        h.get_by_label("First steps").click();
-        h.run_steps(3);
-        assert_eq!(opened(&h), dir.join("first steps.klad"));
-        assert!(
-            h.query_by_label_contains("Draw a closed shape with the brush")
-                .is_some(),
-            "first steps open on the new drawing"
-        );
-        let mut later = home(&dir, &[]);
-        later.settings.welcomed = true;
-        later.begin(&egui::Context::default(), None);
-        let h = harness(later);
-        assert!(h.query_by_label("Welcome to klad").is_none());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn with_claude_desktop(h: &mut Harness<'static, Home>, dir: &Path) -> PathBuf {
+        let apps = dir.join("apps");
+        let claude = apps.join("Library/Application Support/Claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        let program = apps.join("klad");
+        std::fs::write(&program, "").unwrap();
+        let places = klad_mcp::Places {
+            home: apps.clone(),
+            os: klad_mcp::Os::Mac,
+        };
+        let state = h.state_mut();
+        let connect = match (state.welcome.as_mut(), state.start.as_mut()) {
+            (Some(welcome), _) => &mut welcome.connect,
+            (None, Some(start)) => &mut start.connect,
+            (None, None) => panic!("nothing to connect from"),
+        };
+        connect.places = Some(places);
+        connect.program = program;
+        h.run_steps(2);
+        claude.join("claude_desktop_config.json")
+    }
+
+    #[test]
+    fn the_welcome_connects_an_agent_app_and_then_offers_to_continue() {
+        let dir = folder("welcome-agent");
+        let mut h = harness(first_start(&dir));
+        let config = with_claude_desktop(&mut h, &dir);
+        h.get_by_label("Get started").click();
+        settle(&mut h);
+        assert!(
+            h.query_by_label("Claude Desktop").is_some(),
+            "the agent apps on this computer get a card"
+        );
+        assert!(
+            h.query_by_label_contains("Also works with Codex").is_some(),
+            "the others share one line"
+        );
+        assert!(
+            h.query_by_label("Skip").is_some() && h.query_by_label("Continue").is_none(),
+            "nothing connected yet, so the way on is Skip"
+        );
+        assert!(
+            h.query_by_label_contains("Where your agent may work").is_none(),
+            "the folders stay in File > Connect an agent app"
+        );
+        h.get_by_label("Connect").click();
+        settle(&mut h);
+        let written = std::fs::read_to_string(&config).unwrap();
+        assert!(written.contains("\"klad\""), "{written}");
+        assert!(
+            h.query_by_label_contains("Connected. Quit Claude Desktop (cmd Q) and open it again")
+                .is_some(),
+            "the row says it is connected and what finishes it"
+        );
+        let places = klad_mcp::Places {
+            home: dir.join("apps"),
+            os: klad_mcp::Os::Mac,
+        };
+        assert!(klad_mcp::App::ClaudeDesktop.waiting(&places));
+        klad_mcp::App::ClaudeDesktop.started(&places);
+        settle(&mut h);
+        assert!(
+            h.query_by_label_contains("Quit Claude Desktop").is_none()
+                && h.query_by_label(&format!("{} Connected", theme::icon::CHECK)).is_some(),
+            "once Claude Desktop has started klad, its row just says Connected"
+        );
+        assert!(
+            h.query_by_label_contains("Then ask Claude Desktop for a drawing")
+                .is_some()
+                && h.query_by_label_contains("Paint a red apple").is_some(),
+            "the example request shows under the rows"
+        );
+        assert!(h.query_by_label("Continue").is_some() && h.query_by_label("Skip").is_none());
+        h.get_by_label("Back").click();
+        settle(&mut h);
+        assert!(h.query_by_label("Get started").is_some());
+        h.get_by_label("Get started").click();
+        settle(&mut h);
+        h.get_by_label("Continue").click();
+        settle(&mut h);
+        h.get_by_label("Skip").click();
+        settle(&mut h);
+        assert!(h.state().settings.welcomed && h.state().welcome.is_none());
+        assert!(h.state().editor.is_none(), "skipping the first steps opens nothing");
+        assert!(h.query_by_label_contains("New drawing").is_some());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn with_every_agent_app_found_the_next_steps_show_inside_the_frame() {
+        let dir = folder("welcome-every-app");
+        [(860.0, true), (560.0, false)].into_iter().for_each(|(tall, fits)| {
+            let mut h = Harness::builder()
+                .with_size(vec2(1280.0, tall))
+                .build_ui_state(|ui, home: &mut Home| home.frame(ui), first_start(&dir));
+            h.run_steps(3);
+            let apps = dir.join("apps");
+            [".codex", ".claude", ".cursor", "Library/Application Support/Code"]
+                .iter()
+                .for_each(|sign| std::fs::create_dir_all(apps.join(sign)).unwrap());
+            let config = with_claude_desktop(&mut h, &dir);
+            h.get_by_label("Get started").click();
+            h.run_steps(40);
+            assert_eq!(h.get_all_by_label("Connect").count(), 5, "every app has a row");
+            assert!(h.query_by_label_contains("Also works with").is_none());
+            let skip = h.get_by_label("Skip").rect();
+            h.get_all_by_label("Connect").next().unwrap().click();
+            h.run_steps(60);
+            let then = h.get_by_label_contains("Then ask Claude Desktop").rect();
+            let last = h.get_by_label_contains("The first time, Claude Desktop asks").rect();
+            let first = h.get_by_label("Claude Desktop").rect();
+            let foot = h.get_by_label("Continue").rect().bottom();
+            assert!(
+                (foot - skip.bottom()).abs() < 0.5,
+                "{tall}: the buttons keep their place at the frame's foot"
+            );
+            assert!(
+                last.bottom() <= foot + 0.5 && then.top() < last.top(),
+                "{tall}: the next steps end inside the frame ({then:?}, {last:?}, foot {foot})"
+            );
+            match fits {
+                true => assert!(
+                    first.top() >= foot - 540.0,
+                    "{tall}: the rows and the next steps fit the frame without scrolling ({first:?})"
+                ),
+                false => assert!(
+                    first.top() < foot - (tall - 96.0) && then.top() >= foot - (tall - 96.0),
+                    "{tall}: a window too short scrolls the next steps into sight ({first:?}, {then:?})"
+                ),
+            }
+            std::fs::remove_file(config).unwrap();
+        });
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn help_welcome_and_file_connect_work_from_the_start_window_and_a_drawing() {
+        let dir = folder("welcome-again");
+        let made = dir.join("ledge.klad");
+        Bundle::blank(&made, &small(), "cli").unwrap();
+        let mut first = home(&dir, &[]);
+        first.begin(&egui::Context::default(), None);
+        let mut h = harness(first);
+        assert!(h.query_by_label("Get started").is_none());
+        assert!(
+            crate::menus::OUTSIDE_A_DRAWING.contains(&Cmd::Welcome)
+                && crate::menus::OUTSIDE_A_DRAWING.contains(&Cmd::ConnectAgent)
+        );
+        menus::push(Picked::Run(Cmd::ConnectAgent));
+        settle(&mut h);
+        assert!(
+            h.query_by_label_contains("Where your agent may work").is_some(),
+            "File > Connect an agent app opens the whole panel over the start window"
+        );
+        menus::push(Picked::Run(Cmd::Welcome));
+        settle(&mut h);
+        assert!(
+            h.query_by_label("Get started").is_some(),
+            "Help > Welcome to klad shows it again"
+        );
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+        menus::push(Picked::Open(made.clone()));
+        h.run_steps(3);
+        assert_eq!(opened(&h), made);
+        h.state_mut().editor.as_mut().unwrap().run_later(Cmd::Welcome);
+        settle(&mut h);
+        assert!(h.query_by_label("Get started").is_some(), "and from a drawing");
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+        assert!(h.state().welcome.is_none());
+        assert_eq!(opened(&h), made, "the drawing is still there behind it");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_window_carries_klads_icon_at_256_pixels() {
+        let icon = super::window_icon().expect("the 256 px picture in klad.ico");
+        assert_eq!((icon.width, icon.height), (256, 256));
+        assert_eq!(icon.rgba.len(), 256 * 256 * 4);
+        assert!(icon.rgba.chunks(4).any(|p| p[3] == 255) && icon.rgba.chunks(4).any(|p| p[3] == 0));
+    }
+
+    #[test]
+    #[ignore = "writes the three onboarding steps at the handoff's 1200 x 780 to scratch/ui/onboarding-port"]
+    fn onboarding_port_pictures() {
+        let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scratch/ui/onboarding-port");
+        std::fs::create_dir_all(&out).unwrap();
+        let only: Option<usize> = std::env::var("ONBOARDING_STEP").ok().and_then(|s| s.parse().ok());
+        let scale: f32 = std::env::var("ONBOARDING_SCALE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1.0);
+        let size = std::env::var("ONBOARDING_SIZE")
+            .ok()
+            .and_then(|s| {
+                s.split_once('x')
+                    .and_then(|(w, h)| Some(vec2(w.parse().ok()?, h.parse().ok()?)))
+            })
+            .unwrap_or(vec2(1200.0, 780.0));
+        let dir = folder("onboarding-port");
+        let apps = dir.join("apps");
+        [".codex", ".claude", ".cursor", "Library/Application Support/Code"]
+            .iter()
+            .for_each(|sign| std::fs::create_dir_all(apps.join(sign)).unwrap());
+        let mut h = Harness::builder()
+            .with_size(size)
+            .with_pixels_per_point(scale)
+            .with_step_dt(1.0 / 30.0)
+            .wgpu()
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first_start(&dir));
+        with_claude_desktop(&mut h, &dir);
+        let places = klad_mcp::Places {
+            home: apps.clone(),
+            os: klad_mcp::Os::Mac,
+        };
+        klad_mcp::App::ClaudeCode
+            .connect(&places, &klad_mcp::Entry::serving(&apps.join("klad")))
+            .unwrap();
+        klad_mcp::App::ClaudeCode.started(&places);
+        let shot = |h: &mut Harness<'static, Home>, step: usize| {
+            if only.is_none_or(|n| n == step) {
+                h.render().unwrap().save(out.join(format!("step-{step}.png"))).unwrap();
+            }
+        };
+        h.run_steps(110);
+        shot(&mut h, 1);
+        h.get_by_label("Get started").click();
+        h.run_steps(30);
+        h.get_all_by_label("Connect").next().unwrap().click();
+        h.run_steps(40);
+        shot(&mut h, 2);
+        h.get_by_label("Continue").click();
+        h.run_steps(40);
+        shot(&mut h, 3);
+        h.get_by_label("Skip").click();
+        h.run_steps(30);
+        with_claude_desktop(&mut h, &dir);
+        menus::push(Picked::Run(Cmd::ConnectAgent));
+        h.run_steps(20);
+        shot(&mut h, 4);
+        drop(h);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[ignore = "writes pictures and frames of the onboarding to scratch/ui"]
+    fn onboarding_pictures() {
+        let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scratch/ui");
+        let frames = out.join("onboarding-frames");
+        std::fs::create_dir_all(&frames).unwrap();
+        let dir = folder("onboarding-pictures");
+        std::fs::create_dir_all(dir.join("apps/.codex")).unwrap();
+        let mut h = Harness::builder()
+            .with_size(vec2(1280.0, 800.0))
+            .with_step_dt(1.0 / 30.0)
+            .wgpu()
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first_start(&dir));
+        with_claude_desktop(&mut h, &dir);
+        let mut frame = 0;
+        let mut film = |h: &mut Harness<'static, Home>, steps: usize, still: Option<&str>| {
+            (0..steps).for_each(|_| {
+                h.run_steps(1);
+                h.render()
+                    .unwrap()
+                    .save(frames.join(format!("{frame:04}.png")))
+                    .unwrap();
+                frame += 1;
+            });
+            if let Some(name) = still {
+                h.render()
+                    .unwrap()
+                    .save(out.join(format!("onboarding-{name}.png")))
+                    .unwrap();
+            }
+        };
+        film(&mut h, 110, Some("1-hello"));
+        h.get_by_label("Get started").click();
+        film(&mut h, 30, Some("2-agent"));
+        h.get_all_by_label("Connect").next().unwrap().click();
+        film(&mut h, 40, Some("3-connected"));
+        h.get_by_label("Continue").click();
+        film(&mut h, 36, Some("4-first-steps"));
+        h.get_by_label("Skip").click();
+        film(&mut h, 24, Some("5-start-window"));
+        menus::push(Picked::Run(Cmd::Welcome));
+        h.run_steps(60);
+        (0..2).for_each(|_| {
+            h.key_press(egui::Key::Enter);
+            h.run_steps(36);
+        });
+        h.get_by_label("Start first steps").click();
+        h.run_steps(30);
+        h.render()
+            .unwrap()
+            .save(out.join("onboarding-6-first-steps-drawing.png"))
+            .unwrap();
+        drop(h);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -855,7 +1581,13 @@ mod tests {
             r#"{"tag_name":"v9.0.0","html_url":"https://github.com/klad-app/klad/releases/tag/v9.0.0","body":"- Paint over"}"#,
         );
         let h = harness(first);
-        assert!(h.query_by_label(&format!("version {}", crate::VERSION)).is_some());
+        assert!(h.query_by_label(env!("CARGO_PKG_VERSION")).is_some());
+        assert!(
+            theme::hints(&h.ctx)
+                .iter()
+                .any(|(_, words)| *words == format!("version {}", crate::VERSION)),
+            "the whole build string is the version's hover text"
+        );
         assert!(h.query_by_label("klad 9.0.0 is out: Paint over").is_some());
         assert!(h.query_by_label("what changed").is_some());
         std::fs::remove_dir_all(&dir).unwrap();
@@ -1120,7 +1852,7 @@ mod tests {
             .click();
         h.run_steps(3);
         assert!(
-            h.query_by_label_contains("Source-available licence, copyright Indicode BV")
+            h.query_by_label_contains("Source-available licence, copyright Indicode")
                 .is_some()
         );
         assert!(h.query_by_label("# Third-party notices").is_some());
@@ -1173,5 +1905,313 @@ mod tests {
         });
         h.render().unwrap().save(out.join("editor-lantern.png")).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn pass_editor(root: &Path, dir: &Path, open: &[crate::layout::Pane]) -> Harness<'static, Home> {
+        let path = dir.join("lemons.klad");
+        if !path.exists() {
+            let source =
+                std::fs::canonicalize(root.join("samples/lemons/lemons.klad")).expect("run just samples first");
+            let copied = std::process::Command::new("cp")
+                .arg("-R")
+                .arg(&source)
+                .arg(&path)
+                .status()
+                .unwrap();
+            assert!(copied.success());
+        }
+        let gpu = egui_kittest::wgpu::create_render_state(
+            egui_kittest::wgpu::default_wgpu_setup(),
+            egui_wgpu::RendererOptions::PREDICTABLE,
+        );
+        let mut settings = Settings {
+            welcomed: true,
+            rulers: true,
+            ..Settings::default()
+        };
+        settings
+            .layout
+            .panes
+            .iter_mut()
+            .for_each(|p| p.collapsed = !open.contains(&p.pane));
+        let mut first = Home::with(settings, None, Some(gpu.clone()));
+        first.open(&egui::Context::default(), &path).unwrap();
+        let mut h = Harness::builder()
+            .with_size(vec2(1600.0, 1000.0))
+            .with_pixels_per_point(2.0)
+            .renderer(egui_kittest::wgpu::WgpuTestRenderer::from_render_state(gpu))
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first);
+        let started = std::time::Instant::now();
+        while !h.state().editor.as_ref().unwrap().canvas_current() && started.elapsed().as_secs() < 60 {
+            h.step();
+            h.render().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        h.key_press(Key::B);
+        h.state_mut().editor.as_mut().unwrap().redraw_canvas();
+        (0..6).for_each(|_| {
+            h.step();
+            h.render().unwrap();
+        });
+        h
+    }
+
+    #[test]
+    #[ignore = "writes the six screens of the UI pass to scratch/ui/pass/$UI_PASS"]
+    fn ui_pass_pictures() {
+        use crate::layout::Pane;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let out = root
+            .join("scratch/ui/pass")
+            .join(std::env::var("UI_PASS").unwrap_or_else(|_| "now".into()));
+        std::fs::create_dir_all(&out).unwrap();
+        let shot = |h: &mut Harness<'static, Home>, name: &str| {
+            h.render().unwrap().save(out.join(format!("{name}.png"))).unwrap();
+        };
+        let dir = folder("ui-pass-drawings-in-a-folder-with-a-long-name");
+        std::fs::create_dir_all(dir.join("apps/.codex")).unwrap();
+        let mut h = Harness::builder()
+            .with_size(vec2(1600.0, 1000.0))
+            .with_pixels_per_point(2.0)
+            .with_step_dt(1.0 / 30.0)
+            .wgpu()
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first_start(&dir));
+        with_claude_desktop(&mut h, &dir);
+        h.run_steps(90);
+        shot(&mut h, "4-onboarding-hello");
+        h.get_by_label("Get started").click();
+        h.run_steps(30);
+        h.get_all_by_label("Connect").next().unwrap().click();
+        h.run_steps(40);
+        shot(&mut h, "5-onboarding-agent");
+        h.get_by_label("Continue").click();
+        h.run_steps(40);
+        shot(&mut h, "6-onboarding-steps");
+        drop(h);
+
+        let apps = dir.join("apps");
+        [".claude", ".cursor", "Library/Application Support/Code"]
+            .iter()
+            .for_each(|sign| std::fs::create_dir_all(apps.join(sign)).unwrap());
+        [(1000.0, "7-onboarding-every-app"), (560.0, "8-onboarding-short-window")]
+            .into_iter()
+            .for_each(|(tall, name)| {
+                let mut h = Harness::builder()
+                    .with_size(vec2(1600.0, tall))
+                    .with_pixels_per_point(2.0)
+                    .with_step_dt(1.0 / 30.0)
+                    .wgpu()
+                    .build_ui_state(|ui, home: &mut Home| home.frame(ui), first_start(&dir));
+                let config = with_claude_desktop(&mut h, &dir);
+                std::fs::remove_file(&config).ok();
+                h.run_steps(90);
+                h.get_by_label("Get started").click();
+                h.run_steps(30);
+                h.get_all_by_label("Connect").next().unwrap().click();
+                h.run_steps(40);
+                shot(&mut h, name);
+            });
+
+        let shown: Vec<PathBuf> = [
+            "samples/lemons/lemons.klad",
+            "samples/creature/creature.klad",
+            "samples/bounce/bounce.klad",
+            "samples/solids/solids.klad",
+            "samples/sprout/sprout.klad",
+        ]
+        .iter()
+        .map(|p| std::fs::canonicalize(root.join(p)).expect("run just samples first"))
+        .collect();
+        let settings = Settings {
+            welcomed: true,
+            drawings: Some(dir.display().to_string()),
+            documents: shown.iter().map(|p| p.display().to_string()).collect(),
+            ..Settings::default()
+        };
+        let mut first = Home::with(settings, None, None);
+        first.begin(&egui::Context::default(), None);
+        let mut h = Harness::builder()
+            .with_size(vec2(1600.0, 1000.0))
+            .with_pixels_per_point(2.0)
+            .wgpu()
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), first);
+        let started = std::time::Instant::now();
+        while started.elapsed() < std::time::Duration::from_secs(60) {
+            h.run_steps(2);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            if shown.iter().all(|p| p.join(".cache/thumb.png").exists()) && started.elapsed().as_secs() > 2 {
+                break;
+            }
+        }
+        h.run_steps(6);
+        shot(&mut h, "1-start");
+        drop(h);
+
+        let mut h = pass_editor(&root, &dir, &[Pane::Layers]);
+        shot(&mut h, "2-editor-folded");
+        drop(h);
+        let mut h = pass_editor(&root, &dir, &[Pane::Tool, Pane::Brush, Pane::Layers]);
+        shot(&mut h, "3-editor-colour-brush");
+        drop(h);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod open_drawings {
+    use super::*;
+    use egui::vec2;
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    use klad_core::bundle::{Blank, Bundle};
+
+    fn folder(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("draw-open-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::canonicalize(&dir).unwrap()
+    }
+
+    fn blank(path: &Path) {
+        Bundle::blank(
+            path,
+            &Blank {
+                width: 320,
+                height: 200,
+                ..Blank::default()
+            },
+            "cli",
+        )
+        .unwrap();
+    }
+
+    fn shown(h: &Harness<'static, Home>) -> PathBuf {
+        h.state().editor.as_ref().unwrap().scene.bundle.root.clone()
+    }
+
+    #[test]
+    fn several_drawings_stay_open_side_by_side_switch_with_tabs_and_ctrl_tab_and_close_one_by_one() {
+        let dir = folder("tabs");
+        let (one, two, three) = (dir.join("one.klad"), dir.join("two.klad"), dir.join("three.klad"));
+        [&one, &two, &three].iter().for_each(|p| blank(p));
+        let settings = Settings {
+            drawings: Some(dir.display().to_string()),
+            ..Settings::default()
+        };
+        let mut home = Home::with(settings, None, None);
+        let ctx = egui::Context::default();
+        home.begin(&ctx, Some(&one));
+        let mut h = Harness::builder()
+            .with_size(vec2(1440.0, 900.0))
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), home);
+        h.run_steps(3);
+        h.state_mut().open(&ctx, &two).unwrap();
+        h.state_mut().open(&ctx, &three).unwrap();
+        h.run_steps(3);
+        assert_eq!(shown(&h), three);
+        assert_eq!(
+            h.state().drawings(),
+            [one.clone(), two.clone(), three.clone()],
+            "every drawing stays open, in the order opened"
+        );
+        assert!(
+            h.query_by_label("one").is_some() && h.query_by_label("two").is_some(),
+            "a tab for each drawing"
+        );
+        h.get_by_label("one").click();
+        h.run_steps(3);
+        assert_eq!(shown(&h), one, "a tab shows its drawing");
+        assert_eq!(
+            h.state().drawings(),
+            [one.clone(), two.clone(), three.clone()],
+            "and the tabs keep their order"
+        );
+        h.event(egui::Event::Key {
+            key: egui::Key::Tab,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::CTRL,
+        });
+        h.run_steps(3);
+        assert_eq!(shown(&h), two, "ctrl Tab goes to the next drawing");
+        h.state_mut().open(&ctx, &one).unwrap();
+        h.run_steps(2);
+        assert_eq!(shown(&h), one, "opening a drawing that is open shows its tab");
+        assert_eq!(h.state().drawings().len(), 3, "and does not open it twice");
+        h.state_mut().editor.as_mut().unwrap().wants = Some(Want::Close);
+        h.run_steps(4);
+        assert_eq!(h.state().drawings(), [two.clone(), three.clone()]);
+        assert!(h.state().editor.is_some(), "closing one drawing shows another");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_start_window_duplicates_a_drawing_and_moves_one_to_the_trash() {
+        use egui_kittest::kittest::NodeT;
+        let dir = folder("cards");
+        let (one, two) = (dir.join("one.klad"), dir.join("two.klad"));
+        blank(&one);
+        blank(&two);
+        let settings = Settings {
+            drawings: Some(dir.display().to_string()),
+            documents: vec![one.display().to_string(), two.display().to_string()],
+            ..Settings::default()
+        };
+        let mut home = Home::with(settings, None, None);
+        home.start = Some(Start::new(&home.settings, Section::Recent));
+        home.start.as_mut().unwrap().trash_to = Some(dir.join("trash"));
+        let mut h = Harness::builder()
+            .with_size(vec2(1280.0, 860.0))
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), home);
+        h.run_steps(3);
+        let card = |h: &Harness<'static, Home>, name: &str| {
+            h.query_all_by_label(name)
+                .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+                .map(|n| n.rect().center())
+        };
+        h.query_all_by_label("one")
+            .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+            .unwrap()
+            .click_secondary();
+        h.run_steps(3);
+        h.get_by_label_contains("Duplicate").click();
+        h.run_steps(3);
+        assert!(
+            dir.join("one copy.klad/doc.json").is_file(),
+            "the card's menu duplicates the drawing"
+        );
+        assert!(
+            h.state()
+                .settings
+                .documents
+                .iter()
+                .any(|d| d.ends_with("one copy.klad")),
+            "and lists the copy"
+        );
+        assert!(card(&h, "two").is_some());
+        h.query_all_by_label("two")
+            .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+            .unwrap()
+            .click_secondary();
+        h.run_steps(3);
+        h.get_by_label_contains("Move to the Trash").click();
+        h.run_steps(3);
+        assert!(
+            !two.exists() && dir.join("trash/two.klad/doc.json").is_file(),
+            "it goes to the Trash, not away for good"
+        );
+        assert!(!h.state().settings.documents.iter().any(|d| d.ends_with("two.klad")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_drawing_wider_than_the_graphics_can_show_is_refused_with_why() {
+        assert_eq!(too_wide(8192, 4000, 8192), None);
+        let said = too_wide(16384, 9000, 8192).unwrap();
+        assert!(
+            said.contains("8192 px a side") && said.contains("klad canvas --resize"),
+            "{said}"
+        );
     }
 }

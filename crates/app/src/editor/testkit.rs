@@ -97,6 +97,14 @@ impl Journey {
     }
 
     pub(super) fn begin_scaled(name: &str, size: Vec2, open: Option<&str>, scale: f32) -> Self {
+        Self::start(name, size, open, scale, true)
+    }
+
+    pub(super) fn first_launch(name: &str, size: Vec2) -> Self {
+        Self::start(name, size, None, 1.0, false)
+    }
+
+    fn start(name: &str, size: Vec2, open: Option<&str>, scale: f32, welcomed: bool) -> Self {
         let folder = scratch(name);
         let out = std::env::var_os("KLAD_JOURNEY_OUT")
             .filter(|dir| !dir.is_empty())
@@ -115,6 +123,7 @@ impl Journey {
             drawings: Some(folder.display().to_string()),
             check_updates: false,
             ui_scale: scale,
+            welcomed,
             ..Settings::default()
         };
         let mut home = Home::with(settings, None, gpu.clone());
@@ -439,7 +448,7 @@ impl Journey {
             Some((body, floor)) => {
                 at.y < canvas.bottom()
                     && ((at.y < body && at.y >= body - crate::layout::TITLE)
-                        || (r.top() >= body - 1.0 && r.bottom() <= floor + 1.0))
+                        || (r.top() >= body - 4.0 && r.bottom() <= floor + 1.0))
             }
             None => {
                 at.y < canvas.bottom()
@@ -452,6 +461,7 @@ impl Journey {
     }
 
     pub(super) fn scroll_to(&mut self, label: &str) -> bool {
+        let label = &crate::commands::local_keys(label);
         let mut turns = 0;
         while turns < 24 && !self.in_sight(label) {
             let Some((r, body, floor)) = self
@@ -490,6 +500,7 @@ impl Journey {
     }
 
     pub(super) fn scroll_to_hinted(&mut self, hint: &str) -> bool {
+        let hint = &crate::commands::local_keys(hint);
         let mut turns = 0;
         while turns < 24 && !self.hint_in_sight(hint) {
             let Some((r, body, floor)) = crate::theme::hints(&self.h.ctx)
@@ -512,6 +523,7 @@ impl Journey {
     }
 
     fn hinted(&self, hint: &str) -> Option<(egui::Rect, String, bool)> {
+        let hint = &crate::commands::local_keys(hint);
         let found: Vec<(egui::Rect, String)> = crate::theme::hints(&self.h.ctx)
             .into_iter()
             .filter(|(_, text)| text.starts_with(hint))
@@ -524,6 +536,7 @@ impl Journey {
     }
 
     pub(super) fn press_hinted(&mut self, hint: &str) -> bool {
+        let hint = &crate::commands::local_keys(hint);
         let found = self.hinted(hint);
         self.note(match &found {
             Some((_, _, false)) => format!("looked for the button \"{hint}\": it is out of sight"),
@@ -624,6 +637,7 @@ impl Journey {
     }
 
     pub(super) fn hint_in_sight(&self, hint: &str) -> bool {
+        let hint = &crate::commands::local_keys(hint);
         self.hinted(hint).is_some_and(|(_, _, seen)| seen)
     }
 
@@ -714,6 +728,7 @@ impl Journey {
     }
 
     pub(super) fn shown(&self, label: &str) -> bool {
+        let label = &crate::commands::local_keys(label);
         self.h.query_all_by_label_contains(label).next().is_some()
     }
 
@@ -756,6 +771,7 @@ impl Journey {
     }
 
     pub(super) fn click(&mut self, label: &str) -> bool {
+        let label = &crate::commands::local_keys(label);
         let chosen = self.choose(label, |_| true);
         let at = chosen
             .ok()
@@ -835,6 +851,7 @@ impl Journey {
     }
 
     pub(super) fn click_containing(&mut self, label: &str) -> bool {
+        let label = &crate::commands::local_keys(label);
         let at = self
             .h
             .query_all_by_label_contains(label)
@@ -855,6 +872,7 @@ impl Journey {
     }
 
     pub(super) fn menu(&mut self, menu: &str, sub: &str, item: &str) -> bool {
+        let item = &crate::commands::local_keys(item);
         let bar = self.h.query_all_by_label(menu).next().map(|n| n.rect().center());
         if let Some(at) = bar {
             self.poke(at);
@@ -891,6 +909,7 @@ impl Journey {
     }
 
     pub(super) fn double_click(&mut self, label: &str) -> bool {
+        let label = &crate::commands::local_keys(label);
         let chosen = self.choose(label, |_| true);
         let at = chosen
             .ok()
@@ -1025,6 +1044,7 @@ impl Journey {
     }
 
     pub(super) fn click_inside(&mut self, label: &str, across: f32, down: f32) -> bool {
+        let label = &crate::commands::local_keys(label);
         let rect = self.h.query_all_by_label(label).next().map(|n| n.rect());
         self.note(match rect {
             Some(_) => format!(

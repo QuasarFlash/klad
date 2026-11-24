@@ -1,5 +1,5 @@
 klad
-Copyright 2026 Indicode BV
+Copyright 2026 Indicode
 
 The klad software is licensed under the PolyForm Internal Use License 1.0.0
 below, with the additional permissions and the limit that follow.
@@ -10,9 +10,10 @@ Additional permissions:
   permitted purpose. This includes building the software from its source
   code for that use, free of charge.
 - You may distribute changes and new works based on the software to
-  Indicode BV, for example as a pull request, to propose them as a
+  Indicode, for example as a pull request, to propose them as a
   contribution to the software.
-- Drawings you make with the software are yours. You may share them,
+- Drawings you make with the software are yours. You may share and sell
+  them and use them in your own and your clients' commercial work,
   including the brush settings and brush pictures the software copies into
   them; fonts copied into them keep their own licences.
 
@@ -22,13 +23,15 @@ Limit for larger companies:
   is use for a permitted purpose only if your company had less than
   500,000 euros (or the same amount in another currency) in total revenue
   in its prior tax year. If your company had more, each individual who uses
-  the software for your company needs a licence for the software bought
-  from Indicode BV or from a store that sells the software for it. Use by
-  an individual with such a bought licence is use for a permitted purpose.
+  the software for your company needs a company seat bought on klad.studio,
+  the only place company seats are sold. Use by an individual with such a
+  seat is use for a permitted purpose. A company seat is a yearly
+  subscription: it lasts while the subscription runs and, once it is
+  cancelled or not renewed, ends at the end of the last period paid for.
 
-Buying a build of the software, from Indicode BV or from a store such as
-itch.io or Steam, gets you such a licence, and the build is licensed under
-these same terms.
+Buying a build of the software, from Indicode or from a store such as
+itch.io or Steam, is a personal licence: you get the build, licensed under
+these same terms, for the permitted purposes above. It is not a company seat.
 
 Third-party parts keep their own licences: see THIRD-PARTY-NOTICES.md.
 

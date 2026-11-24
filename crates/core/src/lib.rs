@@ -1,3 +1,4 @@
+pub mod assist;
 pub mod attach;
 pub mod brushes;
 pub mod bundle;
@@ -5,14 +6,18 @@ pub mod color;
 pub mod contact;
 pub mod cut;
 pub mod doc;
+pub mod drawings;
 pub mod fill;
 pub mod generators;
+pub mod guides;
 pub mod here;
 pub mod history;
 pub mod keys;
 pub mod look;
 pub mod maps;
 pub mod markedit;
+pub mod memory;
+pub mod merge;
 pub mod migrate;
 pub mod notes;
 pub mod ops;
@@ -22,6 +27,8 @@ pub mod path;
 pub mod pathedit;
 pub mod pixel;
 pub mod pixelcheck;
+pub mod preview;
+pub mod region;
 pub mod repair;
 pub mod retime;
 pub mod rig;
@@ -43,8 +50,16 @@ pub mod notices {
 
         #[test]
         fn the_licence_and_the_notices_ship_with_the_code() {
-            assert!(LICENSE.contains("PolyForm Internal Use License 1.0.0") && LICENSE.contains("Indicode BV"));
+            assert!(LICENSE.contains("PolyForm Internal Use License 1.0.0") && LICENSE.contains("Indicode"));
             assert!(LICENSE.contains("500,000 euros"), "larger companies buy a licence");
+            assert!(
+                LICENSE.contains("the last period paid for"),
+                "a yearly seat ends with its subscription"
+            );
+            assert!(
+                LICENSE.contains("It is not a company seat."),
+                "a bought build is a personal licence"
+            );
             [
                 "skia-safe",
                 "eframe",

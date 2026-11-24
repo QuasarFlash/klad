@@ -1,7 +1,7 @@
 use super::{Editor, Tool};
 use crate::jobs::{Spec, Tag};
 use crate::messages::Tone;
-use crate::theme::{self, Hint};
+use crate::theme::{self, Hint, icon};
 use anyhow::{Context, Result};
 use egui::{Color32, Key, Modifiers, Pos2, RichText, Vec2};
 use klad_core::doc::Kind;
@@ -80,6 +80,15 @@ pub(super) struct BoneTool {
     pub dabs: Vec<[f32; 4]>,
     pub radius: f32,
     pub strength: f32,
+    pub wmode: klad_core::rig::Mode,
+    pub flow: f32,
+    pub hardness: f32,
+    pub pressure: bool,
+    pub pens: Vec<f32>,
+    pub pen: f32,
+    pub stroke_mode: klad_core::rig::Mode,
+    pub all: bool,
+    pub read: Option<(u64, Weights)>,
     pub pose: BTreeMap<String, f32>,
     pub root: [f32; 2],
     pub reach: BTreeMap<String, Reach>,
@@ -102,6 +111,15 @@ impl Default for BoneTool {
             dabs: Vec::new(),
             radius: 24.0,
             strength: 1.0,
+            wmode: klad_core::rig::Mode::Paint,
+            flow: 1.0,
+            hardness: 0.0,
+            pressure: true,
+            pens: Vec::new(),
+            pen: 1.0,
+            stroke_mode: klad_core::rig::Mode::Paint,
+            all: false,
+            read: None,
             pose: BTreeMap::new(),
             root: [0.0, 0.0],
             reach: BTreeMap::new(),
@@ -114,6 +132,53 @@ impl Default for BoneTool {
             heat: None,
         }
     }
+}
+
+fn heat(v: f32) -> Color32 {
+    Color32::from_rgba_unmultiplied(240, (60.0 + 160.0 * v) as u8, 40, (v * 150.0) as u8)
+}
+
+fn bone_colour(k: usize) -> [f32; 3] {
+    const COLOURS: [[f32; 3]; 8] = [
+        [230.0, 80.0, 70.0],
+        [70.0, 150.0, 230.0],
+        [90.0, 200.0, 110.0],
+        [240.0, 190.0, 60.0],
+        [180.0, 100.0, 220.0],
+        [60.0, 200.0, 200.0],
+        [240.0, 130.0, 50.0],
+        [200.0, 200.0, 200.0],
+    ];
+    COLOURS[k % COLOURS.len()]
+}
+
+fn weight_legend(ui: &mut egui::Ui) {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(64.0, theme::CONTROL), egui::Sense::hover());
+    let bar = egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 4.0), egui::vec2(64.0, 8.0));
+    (0..16).for_each(|i| {
+        let x0 = bar.min.x + bar.width() * i as f32 / 16.0;
+        let cell = egui::Rect::from_min_size(
+            egui::pos2(x0, bar.min.y),
+            egui::vec2(bar.width() / 16.0 + 0.5, bar.height()),
+        );
+        ui.painter().rect_filled(cell, 0.0, heat(i as f32 / 15.0));
+    });
+    let font = theme::regular(theme::SMALL);
+    ui.painter().text(
+        egui::pos2(bar.min.x, bar.max.y + 1.0),
+        egui::Align2::LEFT_TOP,
+        "0",
+        font.clone(),
+        theme::WEAK,
+    );
+    ui.painter().text(
+        egui::pos2(bar.max.x, bar.max.y + 1.0),
+        egui::Align2::RIGHT_TOP,
+        "1",
+        font,
+        theme::WEAK,
+    );
+    response.hint("the overlay's colours: no weight to all of it; it shows the weight used, after every bone's share");
 }
 
 const NEAR: f32 = 10.0;
@@ -809,8 +874,24 @@ impl Editor {
         };
     }
 
+    pub(super) fn weight_mode_now(&self) -> klad_core::rig::Mode {
+        use klad_core::rig::Mode as W;
+        match (self.bones.wmode, self.modifiers.alt) {
+            (W::Add, true) => W::Remove,
+            (W::Remove, true) => W::Add,
+            (mode, _) => mode,
+        }
+    }
+
     fn bone_dab(&mut self, c: Vec2) {
-        let value = if self.modifiers.alt { 0.0 } else { self.bones.strength };
+        if self.bones.dabs.is_empty() {
+            self.bones.stroke_mode = self.weight_mode_now();
+            self.bones.pens.clear();
+        }
+        let value = match (self.bones.stroke_mode, self.modifiers.alt) {
+            (klad_core::rig::Mode::Paint, true) => 0.0,
+            _ => self.bones.strength,
+        };
         if self
             .bones
             .dabs
@@ -818,6 +899,70 @@ impl Editor {
             .is_none_or(|d| (Vec2::new(d[0], d[1]) - c).length() > self.bones.radius * 0.25)
         {
             self.bones.dabs.push([c.x, c.y, self.bones.radius, value]);
+            self.bones.pens.push(self.bones.pen);
+        }
+    }
+
+    pub(super) fn weights_read(&mut self) -> Option<Weights> {
+        let rev = self.scene.bundle.doc.rev;
+        if let Some((r, w)) = &self.bones.read
+            && *r == rev
+        {
+            return Some(w.clone());
+        }
+        let owner = self.rig_owner()?;
+        let weights: Weights = self.scene.bundle.read_weights(&owner).ok()?;
+        self.bones.read = Some((rev, weights.clone()));
+        Some(weights)
+    }
+
+    pub(super) fn weight_under(&mut self, p: Vec2) -> Option<(f32, f32)> {
+        let bone = self.bones.selected.clone()?;
+        let bones = self.rig_bones();
+        let i = bones.iter().position(|b| b.name == bone)?;
+        let weights = self.weights_read()?;
+        Some((weights.value_at(&bone, [p.x, p.y]), weights.at(&bones, [p.x, p.y])[i]))
+    }
+
+    pub(super) fn pointer_canvas(&self) -> Option<Vec2> {
+        let (view, p) = (self.view?, self.pointer?);
+        let rect = self.canvas_rect;
+        rect.contains(p).then(|| view.to_canvas(p - rect.min, rect.size()))
+    }
+
+    pub(super) fn weight_mode(&mut self, mode: klad_core::rig::Mode) {
+        self.bones.wmode = mode;
+        self.say(
+            crate::messages::Tone::Info,
+            format!(
+                "the weight brush will {}",
+                match mode {
+                    klad_core::rig::Mode::Paint => "paint toward the weight",
+                    klad_core::rig::Mode::Add => "add weight (alt takes it away)",
+                    klad_core::rig::Mode::Remove => "take weight away (alt adds it)",
+                    klad_core::rig::Mode::Smooth => "smooth the weights under it",
+                }
+            ),
+        );
+    }
+
+    pub(super) fn pick_weight(&mut self) {
+        let Some(p) = self.pointer_canvas() else {
+            self.say(
+                crate::messages::Tone::Info,
+                "point at the canvas to pick up the weight there",
+            );
+            return;
+        };
+        match self.weight_under(p) {
+            Some((painted, _)) => {
+                self.bones.strength = (painted * 100.0).round() / 100.0;
+                self.say(
+                    crate::messages::Tone::Done,
+                    format!("the weight is {:.2} now, as under the pointer", self.bones.strength),
+                );
+            }
+            None => self.say(crate::messages::Tone::Info, "pick a bone first (cmd click it)"),
         }
     }
 
@@ -929,16 +1074,17 @@ impl Editor {
                     .selected
                     .clone()
                     .context("pick a bone to paint its weights: cmd click it, or pick it in the skeleton list")?;
+                let pens = std::mem::take(&mut self.bones.pens);
                 self.paint_weights(WeightsSpec {
                     layer: self.rig_owner().context("no skeleton here")?,
                     frame: self.scene.frame,
-                    auto: false,
                     bone: Some(bone),
                     set: dabs,
-                    part: None,
-                    value: 1.0,
-                    smooth: false,
-                    resolved: None,
+                    mode: self.bones.stroke_mode,
+                    strength: self.bones.flow,
+                    hardness: self.bones.hardness,
+                    pressures: if self.bones.pressure { pens } else { Vec::new() },
+                    ..WeightsSpec::default()
                 })?;
             }
             Mode::Pose => self.bones.posing = None,
@@ -1278,57 +1424,117 @@ impl Editor {
                     .hint("weights are for a layer drawn in one piece across a joint; detach one (draw mode, the picked bone's layers menu, or the bone in its layers row) to paint its weights");
             }
             Mode::Weights => {
-                ui.spacing_mut().slider_width = 56.0;
+                use klad_core::rig::Mode as W;
+                [
+                    (
+                        W::Paint,
+                        icon::BRUSH,
+                        "paint toward the weight (shift 1)",
+                        crate::commands::Cmd::WeightPaint,
+                    ),
+                    (
+                        W::Add,
+                        icon::PLUS,
+                        "add weight; alt takes it away (shift 2)",
+                        crate::commands::Cmd::WeightAdd,
+                    ),
+                    (
+                        W::Remove,
+                        icon::MINUS,
+                        "take weight away; alt adds it (shift 3)",
+                        crate::commands::Cmd::WeightRemove,
+                    ),
+                    (
+                        W::Smooth,
+                        icon::DROP,
+                        "smooth the weights under the brush (shift 4)",
+                        crate::commands::Cmd::WeightSmooth,
+                    ),
+                ]
+                .into_iter()
+                .for_each(|(mode, glyph, hint, cmd)| {
+                    let button = egui::Button::selectable(self.bones.wmode == mode, glyph)
+                        .min_size(egui::vec2(theme::CONTROL, theme::CONTROL));
+                    if ui.add(button).hint(format!("{}: {hint}", mode.name())).clicked() {
+                        self.queued.push(cmd);
+                    }
+                });
+                ui.spacing_mut().slider_width = 48.0;
                 super::options::whole(ui, "weights size", |ui| {
-                    ui.add(
-                        egui::Slider::new(&mut self.bones.radius, 4.0..=200.0)
-                            .logarithmic(true)
-                            .text("size"),
+                    crate::widgets::labelled_slider(
+                        ui,
+                        "size",
+                        egui::Slider::new(&mut self.bones.radius, 4.0..=200.0).logarithmic(true),
                     )
                 })
                 .hint("the weight brush's radius in px");
                 super::options::whole(ui, "weights weight", |ui| {
-                    ui.add(
-                        egui::Slider::new(&mut self.bones.strength, 0.0..=1.0)
-                            .fixed_decimals(2)
-                            .text("weight"),
+                    crate::widgets::labelled_slider(
+                        ui,
+                        "weight",
+                        egui::Slider::new(&mut self.bones.strength, 0.0..=1.0).fixed_decimals(2),
                     )
                 })
-                .hint("the weight a dab paints; alt paints 0");
-                if ui
-                    .button("automatic")
-                    .hint("automatic weights: start again from the bones, by distance")
-                    .clicked()
-                {
-                    run = Some(Box::new(|e| {
-                        e.paint_weights(WeightsSpec {
-                            layer: e.rig_owner().context("no skeleton here")?,
-                            frame: e.scene.frame,
-                            auto: true,
-                            bone: None,
-                            set: Vec::new(),
-                            part: None,
-                            value: 1.0,
-                            smooth: false,
-                            resolved: None,
-                        })
-                    }));
-                }
-                if ui.button("smooth").hint("blur every bone's weights a little").clicked() {
-                    run = Some(Box::new(|e| {
-                        e.paint_weights(WeightsSpec {
-                            layer: e.rig_owner().context("no skeleton here")?,
-                            frame: e.scene.frame,
-                            auto: false,
-                            bone: None,
-                            set: Vec::new(),
-                            part: None,
-                            value: 1.0,
-                            smooth: true,
-                            resolved: None,
-                        })
-                    }));
-                }
+                .hint(
+                    "the weight a dab paints toward, or adds and takes away (alt I picks it up from under the pointer)",
+                );
+                theme::held_menu(ui, icon::MORE, |ui| {
+                    crate::widgets::labelled_slider(
+                        ui,
+                        "strength",
+                        egui::Slider::new(&mut self.bones.flow, 0.0..=1.0).fixed_decimals(2),
+                    )
+                    .hint("how far one dab goes toward its weight: 0.1 builds it up over strokes, 1 sets it at once; the pen's pressure scales it");
+                    crate::widgets::labelled_slider(
+                        ui,
+                        "hardness",
+                        egui::Slider::new(&mut self.bones.hardness, 0.0..=1.0).fixed_decimals(2),
+                    )
+                    .hint("0: a soft edge all the way in; 1: full strength to the edge");
+                    ui.checkbox(&mut self.bones.pressure, "pressure sets the strength")
+                        .hint("off: every dab at full strength, whatever the pen");
+                    weight_legend(ui);
+                    if ui
+                        .checkbox(&mut self.bones.all, "show every bone's weight")
+                        .hint("each bone in its own colour; off shows the picked bone's alone")
+                        .changed()
+                    {
+                        self.bones.heat = None;
+                    }
+                    ui.separator();
+                    if ui
+                        .button("automatic")
+                        .hint("automatic weights: start again from the bones, by distance")
+                        .clicked()
+                    {
+                        run = Some(Box::new(|e| {
+                            e.paint_weights(WeightsSpec {
+                                layer: e.rig_owner().context("no skeleton here")?,
+                                frame: e.scene.frame,
+                                auto: true,
+                                ..WeightsSpec::default()
+                            })
+                        }));
+                        ui.close();
+                    }
+                    if ui
+                        .button("smooth all")
+                        .hint("blur every bone's whole weight map a little")
+                        .clicked()
+                    {
+                        run = Some(Box::new(|e| {
+                            e.paint_weights(WeightsSpec {
+                                layer: e.rig_owner().context("no skeleton here")?,
+                                frame: e.scene.frame,
+                                smooth: true,
+                                ..WeightsSpec::default()
+                            })
+                        }));
+                        ui.close();
+                    }
+                })
+                .response
+                .hint("more: strength, hardness, pressure, the legend, every bone's colours, automatic weights and smooth all");
                 if self.bones.selected.is_none() {
                     ui.label(RichText::new("pick a bone: cmd click it, or pick it in the list").color(theme::WEAK));
                 }
@@ -1377,7 +1583,7 @@ impl Editor {
                         }
                         if let Some(r) = self.bones.reach.get_mut(&end) {
                             ui.spacing_mut().slider_width = 56.0;
-                            ui.add(egui::Slider::new(&mut r.mix, 0.0..=1.0).text("mix"))
+                            crate::widgets::labelled_slider(ui, "mix", egui::Slider::new(&mut r.mix, 0.0..=1.0))
                                 .hint("0: the limb's own turns; 1: it reaches the target");
                         }
                     }
@@ -1414,7 +1620,7 @@ impl Editor {
         };
         let on = layers.iter().filter(|l| mine(&l.2)).count();
         let mut chosen = None;
-        ui.menu_button(format!("layers: {on}"), |ui| {
+        theme::held_menu(ui, format!("layers: {on}"), |ui| {
             layers.iter().for_each(|(id, name, link)| {
                 let mut checked = mine(link);
                 let label = match link.as_ref().filter(|_| !checked) {
@@ -1552,30 +1758,43 @@ impl Editor {
 
     fn heat_texture(&mut self, bone: &str) -> Option<egui::TextureHandle> {
         let rev = self.scene.bundle.doc.rev;
+        let key = match self.bones.all {
+            true => "*".to_string(),
+            false => bone.to_string(),
+        };
         if let Some((b, r, t)) = &self.bones.heat
-            && b == bone
+            && *b == key
             && *r == rev
         {
             return Some(t.clone());
         }
-        let owner = self.rig_owner()?;
         let bones = self.rig_bones();
         let i = bones.iter().position(|b| b.name == bone)?;
-        let weights: Weights = self.scene.bundle.read_weights(&owner).ok()?;
+        let weights = self.weights_read()?;
         let (w, h) = (weights.width as usize, weights.height as usize);
+        let all = self.bones.all;
         let pixels: Vec<Color32> = (0..h)
             .flat_map(|y| (0..w).map(move |x| (x, y)))
             .map(|(x, y)| {
                 let p = [(x as f32 + 0.5) * CELL as f32, (y as f32 + 0.5) * CELL as f32];
-                let v = weights.at(&bones, p)[i];
-                Color32::from_rgba_unmultiplied(240, (60.0 + 160.0 * v) as u8, 40, (v * 150.0) as u8)
+                let used = weights.at(&bones, p);
+                match all {
+                    false => heat(used[i]),
+                    true => {
+                        let [r, g, b] = used.iter().enumerate().fold([0.0f32; 3], |acc, (k, v)| {
+                            let c = bone_colour(k);
+                            [acc[0] + c[0] * v, acc[1] + c[1] * v, acc[2] + c[2] * v]
+                        });
+                        Color32::from_rgba_unmultiplied(r as u8, g as u8, b as u8, 140)
+                    }
+                }
             })
             .collect();
         let image = egui::ColorImage::new([w, h], pixels);
         let texture = self
             .ctx
             .load_texture("bone weights", image, egui::TextureOptions::LINEAR);
-        self.bones.heat = Some((bone.to_string(), rev, texture.clone()));
+        self.bones.heat = Some((key, rev, texture.clone()));
         Some(texture)
     }
 
@@ -1601,6 +1820,21 @@ impl Editor {
                 Color32::WHITE,
             );
         }
+        if self.bones.mode == Mode::Weights
+            && let Some(p) = hover
+            && let Some((painted, used)) = self.weight_under(p)
+        {
+            let at = place(p) + egui::vec2(16.0, -18.0);
+            let text = match (painted - used).abs() < 0.005 {
+                true => format!("{used:.2}"),
+                false => format!("{used:.2} (painted {painted:.2})"),
+            };
+            let font = theme::regular(theme::BODY);
+            let galley = painter.layout_no_wrap(text, font, Color32::WHITE);
+            let back = egui::Rect::from_min_size(at, galley.size()).expand(3.0);
+            painter.rect_filled(back, 3.0, Color32::from_black_alpha(170));
+            painter.galley(at, galley, Color32::WHITE);
+        }
         let bones = self.drawn_bones();
         let ik = self.rig_ik();
         let pose = self.shown_pose();
@@ -1615,7 +1849,7 @@ impl Editor {
             let (a, z) = (place(at(*h)), place(at(*t)));
             let picked = self.bones.selected.as_ref() == Some(&b.name);
             let colour = if picked {
-                theme::ACCENT
+                theme::MARK
             } else {
                 Color32::from_rgb(120, 200, 240)
             };
@@ -1637,14 +1871,14 @@ impl Editor {
             if picked && editing {
                 [a, z].into_iter().for_each(|p| {
                     painter.circle_filled(p, 6.5, Color32::WHITE);
-                    painter.circle_stroke(p, 6.5, egui::Stroke::new(2.0, theme::ACCENT));
+                    painter.circle_stroke(p, 6.5, egui::Stroke::new(2.0, theme::MARK));
                 });
             }
             painter.text(
                 a + (z - a) * 0.5 + egui::vec2(6.0, -6.0),
                 egui::Align2::LEFT_BOTTOM,
                 &b.name,
-                egui::FontId::proportional(11.0),
+                theme::regular(theme::SMALL),
                 colour,
             );
         });
@@ -1654,17 +1888,17 @@ impl Editor {
             what: Dragging::New(_),
         }) = &self.bones.drag
         {
-            painter.line_segment([place(*from), place(*to)], egui::Stroke::new(2.0, theme::ACCENT));
+            painter.line_segment([place(*from), place(*to)], egui::Stroke::new(2.0, theme::MARK));
         }
         if editing && let Some(chain) = &self.bones.chain {
             let (a, z) = (place(at(chain.head)), place(chain.to));
             painter.extend(egui::Shape::dashed_line(
                 &[a, z],
-                egui::Stroke::new(2.0, theme::ACCENT),
+                egui::Stroke::new(2.0, theme::MARK),
                 6.0,
                 4.0,
             ));
-            painter.circle_stroke(a, 6.5, egui::Stroke::new(1.5, theme::ACCENT));
+            painter.circle_stroke(a, 6.5, egui::Stroke::new(1.5, theme::MARK));
         }
         if self.bones.mode == Mode::Pose {
             ik.iter().for_each(|k| {
@@ -1706,7 +1940,7 @@ impl Editor {
             && let Some(p) = hover
         {
             let r = self.bones.radius * self.view.map_or(1.0, |v| v.zoom);
-            painter.circle_stroke(place(p), r, egui::Stroke::new(1.0, theme::ACCENT));
+            painter.circle_stroke(place(p), r, egui::Stroke::new(1.0, theme::MARK));
         }
     }
 }

@@ -242,7 +242,10 @@ impl Bundle {
         if Folder::at(&self.root) == Some(folder) {
             return Whereabouts::Here;
         }
-        if let Some(to) = folder.beside(&self.root) {
+        if let Some(to) = folder
+            .beside(&self.root)
+            .or_else(|| crate::drawings::renamed(&self.root, &self.doc))
+        {
             return Whereabouts::Renamed(to);
         }
         let same = here::read(&self.root).is_some_and(|state| state.tag == self.doc.here.tag);
@@ -412,7 +415,7 @@ impl Bundle {
         let root = root.as_ref().to_path_buf();
         remember(&root);
         fs::create_dir_all(&root)?;
-        write_atomic(&root.join(".gitignore"), b".cache/\n")?;
+        write_atomic(&root.join(".gitignore"), b".cache/\nQuickLook/\nfolder.jpg\n")?;
         let mut doc = doc;
         doc.here = here::start().here();
         let folder = Folder::at(&root);
@@ -430,6 +433,10 @@ impl Bundle {
         let root = root.as_ref();
         if root.join("doc.json").exists() {
             bail!("{} already exists", root.display());
+        }
+        let fit = crate::memory::fit(blank.width, blank.height);
+        if let (crate::memory::Fit::TooBig { .. }, Some(words)) = (fit, fit.words(blank.width, blank.height)) {
+            bail!(words);
         }
         let mut doc = Document::new(blank.width, blank.height);
         doc.canvas.background = blank.background.clone();
@@ -982,6 +989,17 @@ pub fn summarize(ops: &[Op]) -> String {
             Op::Palette(_) => "palette".to_string(),
             Op::Transform { ids, .. } => format!("transform {}", ids.join(" ")),
             Op::Detach { ids } => format!("detach {}", ids.join(" ")),
+            Op::Style { from, ids } => format!("the look of {from} on {}", ids.join(" ")),
+            Op::Order { ids, to } => format!(
+                "order {} to the {}",
+                ids.join(" "),
+                match to {
+                    crate::markedit::Order::Front => "front",
+                    crate::markedit::Order::Back => "back",
+                    crate::markedit::Order::Forward => "next place up",
+                    crate::markedit::Order::Backward => "next place down",
+                }
+            ),
             Op::Shift(spec) => format!("transform {}", spec.layer),
             Op::Path { id, .. } => format!("path {id}"),
             Op::Copy(spec) => format!(
@@ -995,6 +1013,14 @@ pub fn summarize(ops: &[Op]) -> String {
             ),
             Op::Timeline { origin: Some(_), .. } => "timeline origin".to_string(),
             Op::Timeline { .. } => "timeline".to_string(),
+            Op::Canvas { size: Some([w, h]), .. } => format!("the canvas, {w} by {h} px"),
+            Op::Canvas {
+                background: Some(Some(hex)),
+                ..
+            } => format!("the paper, {hex}"),
+            Op::Canvas {
+                background: Some(None), ..
+            } => "a see-through paper".to_string(),
             Op::Canvas {
                 tile: Some(Some([w, h])),
                 ..
@@ -1002,6 +1028,9 @@ pub fn summarize(ops: &[Op]) -> String {
             Op::Canvas { tile: Some(None), .. } => "no tiles".to_string(),
             Op::Canvas { wrap: Some(true), .. } => "the canvas wraps".to_string(),
             Op::Canvas { .. } => "the canvas stops at its edges".to_string(),
+            Op::Grid(_) => "the grid".to_string(),
+            Op::Guides(_) => "the guides".to_string(),
+            Op::Assists(_) => "the drawing guides".to_string(),
             Op::Atmosphere(Some(_)) => "atmosphere".to_string(),
             Op::Atmosphere(None) => "atmosphere off".to_string(),
             Op::Maps(Some(_)) => "maps".to_string(),

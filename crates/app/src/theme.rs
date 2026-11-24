@@ -1,25 +1,119 @@
 use egui::{
-    Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Id, Margin, Rect, Response, Shadow, Stroke,
-    Style, TextStyle, WidgetText, vec2,
+    Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Frame, Id, Margin, Rect, Response, Shadow,
+    Stroke, Style, TextStyle, WidgetText,
+    class::HasClasses as _,
+    style::ScrollStyle,
+    theme::{DefaultStyle, StyleProvider},
+    vec2,
+    widget_style::{ButtonStyle, CheckboxStyle, SeparatorStyle, StyleArgs, TextEditStyle, WidgetState},
 };
 use std::sync::Arc;
 
-pub const TARGET: f32 = 24.0;
+pub const CONTROL: f32 = 28.0;
+pub const CONTROL_ROW: f32 = 36.0;
+pub const CONTROL_LARGE: f32 = 44.0;
+pub const MENU_ROW: f32 = 24.0;
+pub const ROW: f32 = CONTROL;
 pub const GRAB: f32 = 12.0;
-pub const ROW: f32 = 28.0;
-pub const SMALL: f32 = 11.0;
-pub const BODY: f32 = 13.0;
-pub const HEADING: f32 = 15.0;
-pub const ICON: f32 = 17.0;
 
-pub const ACCENT: Color32 = Color32::from_rgb(64, 196, 255);
-pub const DONE: Color32 = Color32::from_rgb(120, 200, 140);
-pub const REFUSED: Color32 = Color32::from_rgb(232, 190, 110);
-pub const ERROR: Color32 = Color32::from_rgb(240, 120, 120);
-pub const TEXT: Color32 = Color32::from_gray(214);
-pub const WEAK: Color32 = Color32::from_gray(150);
-pub const PANEL: Color32 = Color32::from_gray(34);
+pub const SMALL: f32 = 11.0;
+pub const LABEL: f32 = 12.0;
+pub const BODY: f32 = 13.0;
+pub const CALLOUT: f32 = 14.0;
+pub const HEADING: f32 = 15.0;
+pub const LEAD: f32 = 16.0;
+pub const INTRO: f32 = 17.0;
+pub const BRAND: f32 = 24.0;
+pub const DISPLAY: f32 = 28.0;
+pub const TITLE: f32 = 32.0;
+pub const HERO: f32 = 72.0;
+
+pub mod leading {
+    pub const BODY: f32 = 18.0;
+    pub const HEADING: f32 = 20.0;
+    pub const LIST: f32 = 22.0;
+    pub const LEAD: f32 = 26.0;
+    pub const INTRO: f32 = 28.0;
+    pub const TITLE: f32 = 38.0;
+}
+
+pub const ICON_TINY: f32 = 9.0;
+pub const ICON_SMALL: f32 = 14.0;
+pub const ICON: f32 = 16.0;
+pub const ICON_LARGE: f32 = 22.0;
+
+pub mod space {
+    pub const XS: f32 = 4.0;
+    pub const SM: f32 = 8.0;
+    pub const MD: f32 = 12.0;
+    pub const LG: f32 = 16.0;
+    pub const XL: f32 = 24.0;
+    pub const XXL: f32 = 32.0;
+}
+
+pub mod radius {
+    pub const CONTROL: u8 = 4;
+    pub const CARD: u8 = 8;
+    pub const PANEL: u8 = 12;
+}
+
+pub const HAIRLINE: f32 = 1.0;
+pub const EASE: f32 = 0.12;
+
+pub const BG: Color32 = Color32::from_gray(24);
+pub const PANEL: Color32 = Color32::from_gray(32);
+pub const CONTROL_FILL: Color32 = Color32::from_gray(43);
+pub const HOVER: Color32 = Color32::from_gray(53);
+pub const PRESSED: Color32 = Color32::from_gray(61);
+pub const BORDER: Color32 = Color32::from_gray(52);
+pub const BORDER_STRONG: Color32 = Color32::from_gray(62);
 pub const SURROUND: [u8; 3] = [58, 58, 58];
+pub const CANVAS_EDGE: Color32 = Color32::from_black_alpha(120);
+pub const RULER_TICK: Color32 = Color32::from_gray(76);
+pub const RULER_INK: Color32 = Color32::from_gray(138);
+
+pub const TEXT: Color32 = Color32::from_gray(230);
+pub const WEAK: Color32 = Color32::from_gray(168);
+pub const DISABLED: Color32 = Color32::from_gray(110);
+pub const ON_ACCENT: Color32 = Color32::WHITE;
+
+pub const ACCENT: Color32 = Color32::from_rgb(110, 168, 255);
+pub const ACCENT_FILL: Color32 = Color32::from_rgb(45, 111, 214);
+pub const ACCENT_HOVER: Color32 = Color32::from_rgb(52, 122, 228);
+pub const ACCENT_PRESSED: Color32 = Color32::from_rgb(37, 96, 190);
+pub const ACCENT_SUBTLE: Color32 = Color32::from_rgb(36, 56, 87);
+pub const ACCENT_SUBTLE_HOVER: Color32 = Color32::from_rgb(42, 66, 102);
+
+pub const DONE: Color32 = Color32::from_rgb(120, 200, 140);
+pub const DONE_SUBTLE: Color32 = Color32::from_rgb(29, 44, 33);
+pub const REFUSED: Color32 = Color32::from_rgb(232, 190, 110);
+pub const REFUSED_SUBTLE: Color32 = Color32::from_rgb(38, 35, 27);
+pub const ERROR: Color32 = Color32::from_rgb(240, 120, 120);
+
+pub const MARK: Color32 = Color32::from_rgb(64, 196, 255);
+pub const CHECK_LIGHT: Color32 = Color32::from_gray(240);
+pub const CHECK_DARK: Color32 = Color32::from_gray(205);
+pub const PLATE: Color32 = Color32::from_rgb(243, 234, 219);
+
+pub const MEDIUM: &str = "medium";
+pub const SEMIBOLD: &str = "semibold";
+pub const WORDMARK_FAMILY: &str = "wordmark";
+
+pub fn regular(size: f32) -> FontId {
+    FontId::proportional(size)
+}
+
+pub fn medium(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(MEDIUM.into()))
+}
+
+pub fn semibold(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(SEMIBOLD.into()))
+}
+
+pub fn wordmark(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(WORDMARK_FAMILY.into()))
+}
 
 pub mod icon {
     pub const BRUSH: &str = "\u{E6F0}";
@@ -49,12 +143,29 @@ pub mod icon {
     pub const DOWNLOAD: &str = "\u{E20C}";
     pub const FIT: &str = "\u{E1D0}";
     pub const TURN: &str = "\u{E036}";
+    pub const RESTART: &str = "\u{E036}";
     pub const BONE: &str = "\u{E7F2}";
     pub const UNDO: &str = "\u{E08A}";
     pub const REDO: &str = "\u{E08C}";
     pub const TRASH: &str = "\u{E4A6}";
     pub const CLOSE: &str = "\u{E4F6}";
     pub const COPY: &str = "\u{E1CA}";
+    pub const CUT: &str = "\u{EAE0}";
+    pub const TO_FRONT: &str = "\u{E066}";
+    pub const TO_BACK: &str = "\u{E05C}";
+    pub const UNITE: &str = "\u{E87E}";
+    pub const MERGE: &str = "\u{ED3E}";
+    pub const CROP: &str = "\u{E1D4}";
+    pub const MAGNET: &str = "\u{E680}";
+    pub const RULER: &str = "\u{E6B8}";
+    pub const PERSPECTIVE: &str = "\u{EBE6}";
+    pub const STAR: &str = "\u{E46A}";
+    pub const RENAME: &str = "\u{E7D8}";
+    pub const DUPLICATE: &str = "\u{EDF6}";
+    pub const DROP: &str = "\u{E210}";
+    pub const SUBTRACT: &str = "\u{EBD6}";
+    pub const INTERSECT: &str = "\u{E2D2}";
+    pub const EXCLUDE: &str = "\u{E882}";
     pub const PASTE: &str = "\u{E198}";
     pub const SELECT_ALL: &str = "\u{E746}";
     pub const LASSO: &str = "\u{EDC6}";
@@ -100,6 +211,7 @@ pub mod icon {
     pub const HISTORY: &str = "\u{E1A0}";
     pub const TIMELINE: &str = "\u{E792}";
     pub const NUMBERS: &str = "\u{E628}";
+    pub const TYPED: &str = "\u{E2A2}";
     pub const LOG: &str = "\u{E2F0}";
     pub const UP: &str = "\u{E08E}";
     pub const DOWN: &str = "\u{E03E}";
@@ -124,88 +236,131 @@ pub mod icon {
 
 pub fn install(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
-    fonts.font_data.insert(
-        "phosphor".into(),
-        Arc::new(FontData::from_static(include_bytes!("../assets/Phosphor.ttf"))),
-    );
-    [FontFamily::Proportional, FontFamily::Monospace]
-        .iter()
-        .for_each(|family| {
-            fonts
-                .families
-                .entry(family.clone())
-                .or_default()
-                .push("phosphor".into());
-        });
+    [
+        ("inter", include_bytes!("../assets/Inter-Regular.ttf").as_slice()),
+        ("inter-medium", include_bytes!("../assets/Inter-Medium.ttf").as_slice()),
+        (
+            "inter-semibold",
+            include_bytes!("../assets/Inter-SemiBold.ttf").as_slice(),
+        ),
+        ("phosphor", include_bytes!("../assets/Phosphor.ttf").as_slice()),
+    ]
+    .into_iter()
+    .for_each(|(name, bytes)| {
+        fonts
+            .font_data
+            .insert(name.into(), Arc::new(FontData::from_static(bytes)));
+    });
+    let fallback = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    let chain = |first: Option<&str>| -> Vec<String> {
+        first
+            .map(String::from)
+            .into_iter()
+            .chain(fallback.iter().cloned())
+            .chain(std::iter::once("phosphor".to_string()))
+            .collect()
+    };
+    fonts.families.insert(FontFamily::Proportional, chain(Some("inter")));
+    fonts
+        .families
+        .insert(FontFamily::Name(MEDIUM.into()), chain(Some("inter-medium")));
+    fonts
+        .families
+        .insert(FontFamily::Name(SEMIBOLD.into()), chain(Some("inter-semibold")));
+    fonts
+        .families
+        .insert(FontFamily::Name(WORDMARK_FAMILY.into()), chain(None));
+    fonts
+        .families
+        .entry(FontFamily::Monospace)
+        .or_default()
+        .push("phosphor".into());
     ctx.set_fonts(fonts);
     ctx.set_theme(egui::Theme::Dark);
     ctx.all_styles_mut(apply);
+    ctx.add_widget_theme::<ButtonStyle>(Look);
+    ctx.add_widget_theme::<TextEditStyle>(Look);
+    ctx.add_widget_theme::<CheckboxStyle>(Look);
+    ctx.add_widget_theme::<SeparatorStyle>(Look);
 }
 
 pub fn apply(style: &mut Style) {
     style.text_styles = [
-        (TextStyle::Small, FontId::proportional(SMALL)),
-        (TextStyle::Body, FontId::proportional(BODY)),
-        (TextStyle::Button, FontId::proportional(BODY)),
-        (TextStyle::Monospace, FontId::monospace(12.0)),
-        (TextStyle::Heading, FontId::proportional(HEADING)),
+        (TextStyle::Small, regular(SMALL)),
+        (TextStyle::Body, regular(BODY)),
+        (TextStyle::Button, medium(BODY)),
+        (TextStyle::Monospace, FontId::monospace(LABEL)),
+        (TextStyle::Heading, semibold(HEADING)),
     ]
     .into();
     let s = &mut style.spacing;
-    s.item_spacing = vec2(6.0, 5.0);
-    s.button_padding = vec2(8.0, 4.0);
-    s.interact_size = vec2(36.0, TARGET);
+    s.item_spacing = vec2(space::SM, space::XS);
+    s.button_padding = vec2(space::SM, space::XS);
+    s.interact_size = vec2(36.0, CONTROL);
     s.icon_width = 16.0;
-    s.icon_width_inner = 9.0;
-    s.icon_spacing = 6.0;
+    s.icon_width_inner = 8.0;
+    s.icon_spacing = space::SM;
     s.slider_width = 120.0;
+    s.slider_rail_height = space::XS;
     s.combo_width = 140.0;
-    s.window_margin = Margin::same(10);
-    s.menu_margin = Margin::same(6);
+    s.window_margin = Margin::same(space::MD as i8);
+    s.menu_margin = Margin::same(space::XS as i8);
+    s.scroll = scroll();
     style.interaction.tooltip_delay = 0.35;
     style.interaction.show_tooltips_only_when_still = true;
+    style.animation_time = EASE;
     let v = &mut style.visuals;
     v.dark_mode = true;
     v.panel_fill = PANEL;
-    v.window_fill = Color32::from_gray(38);
-    v.window_stroke = Stroke::new(1.0, Color32::from_gray(60));
-    v.window_corner_radius = CornerRadius::same(6);
-    v.menu_corner_radius = CornerRadius::same(5);
+    v.window_fill = PANEL;
+    v.window_stroke = Stroke::new(HAIRLINE, BORDER);
+    v.window_corner_radius = CornerRadius::same(radius::CARD);
+    v.menu_corner_radius = CornerRadius::same(radius::CARD);
     v.window_shadow = Shadow {
         offset: [0, 4],
-        blur: 14,
+        blur: 16,
         spread: 0,
-        color: Color32::from_black_alpha(90),
+        color: Color32::from_black_alpha(80),
     };
     v.popup_shadow = v.window_shadow;
-    v.extreme_bg_color = Color32::from_gray(22);
-    v.faint_bg_color = Color32::from_gray(40);
-    v.code_bg_color = Color32::from_gray(30);
-    v.selection.bg_fill = Color32::from_rgb(38, 96, 128);
-    v.selection.stroke = Stroke::new(1.0, ACCENT);
+    v.extreme_bg_color = BG;
+    v.text_edit_bg_color = Some(BG);
+    v.faint_bg_color = CONTROL_FILL;
+    v.code_bg_color = BG;
+    v.selection.bg_fill = ACCENT_SUBTLE;
+    v.selection.stroke = Stroke::new(HAIRLINE, TEXT);
     v.hyperlink_color = ACCENT;
     v.warn_fg_color = REFUSED;
     v.error_fg_color = ERROR;
+    v.weak_text_color = Some(WEAK);
     v.override_text_color = None;
+    v.slider_trailing_fill = true;
+    v.handle_shape = egui::style::HandleShape::Rect { aspect_ratio: 0.35 };
     let w = &mut v.widgets;
     w.noninteractive.bg_fill = PANEL;
     w.noninteractive.weak_bg_fill = PANEL;
-    w.noninteractive.bg_stroke = Stroke::new(1.0, Color32::from_gray(52));
-    w.noninteractive.fg_stroke = Stroke::new(1.0, TEXT);
-    w.inactive.bg_fill = Color32::from_gray(52);
-    w.inactive.weak_bg_fill = Color32::from_gray(46);
+    w.noninteractive.bg_stroke = Stroke::new(HAIRLINE, BORDER);
+    w.noninteractive.fg_stroke = Stroke::new(HAIRLINE, TEXT);
+    w.inactive.bg_fill = CONTROL_FILL;
+    w.inactive.weak_bg_fill = CONTROL_FILL;
     w.inactive.bg_stroke = Stroke::NONE;
-    w.inactive.fg_stroke = Stroke::new(1.0, TEXT);
-    w.hovered.bg_fill = Color32::from_gray(64);
-    w.hovered.weak_bg_fill = Color32::from_gray(60);
-    w.hovered.bg_stroke = Stroke::new(1.0, Color32::from_gray(96));
-    w.hovered.fg_stroke = Stroke::new(1.5, Color32::from_gray(236));
-    w.active.bg_fill = Color32::from_gray(74);
-    w.active.weak_bg_fill = Color32::from_gray(70);
-    w.active.bg_stroke = Stroke::new(1.0, ACCENT);
-    w.active.fg_stroke = Stroke::new(2.0, Color32::WHITE);
-    w.open.bg_fill = Color32::from_gray(48);
-    w.open.weak_bg_fill = Color32::from_gray(48);
+    w.inactive.fg_stroke = Stroke::new(HAIRLINE, TEXT);
+    w.hovered.bg_fill = HOVER;
+    w.hovered.weak_bg_fill = HOVER;
+    w.hovered.bg_stroke = Stroke::NONE;
+    w.hovered.fg_stroke = Stroke::new(1.5, TEXT);
+    w.active.bg_fill = PRESSED;
+    w.active.weak_bg_fill = PRESSED;
+    w.active.bg_stroke = Stroke::NONE;
+    w.active.fg_stroke = Stroke::new(1.5, TEXT);
+    w.open.bg_fill = HOVER;
+    w.open.weak_bg_fill = HOVER;
+    w.open.bg_stroke = Stroke::NONE;
+    w.open.fg_stroke = Stroke::new(HAIRLINE, TEXT);
     [
         &mut w.noninteractive,
         &mut w.inactive,
@@ -215,15 +370,139 @@ pub fn apply(style: &mut Style) {
     ]
     .into_iter()
     .for_each(|w| {
-        w.corner_radius = CornerRadius::same(4);
+        w.corner_radius = CornerRadius::same(radius::CONTROL);
         w.expansion = 0.0;
     });
 }
 
-pub fn shown_scroll() -> egui::style::ScrollStyle {
-    egui::style::ScrollStyle {
-        dormant_handle_opacity: 0.5,
-        ..egui::style::ScrollStyle::floating()
+pub const PRIMARY: &str = "klad::primary";
+pub const GHOST: &str = "klad::ghost";
+pub const CENTRED: &str = "klad::centred";
+pub const LARGE: &str = "klad::large";
+
+pub fn focus_ring() -> Stroke {
+    Stroke::new(1.5, ACCENT)
+}
+
+#[derive(Clone, Copy)]
+struct Look;
+
+impl StyleProvider<ButtonStyle> for Look {
+    fn style(&mut self, args: &StyleArgs<'_>) -> ButtonStyle {
+        let mut look = StyleProvider::<ButtonStyle>::style(&mut DefaultStyle, args);
+        let selected = args.classes.has_class(&egui::Button::CLASS_SELECTED);
+        let primary = args.classes.has_class(PRIMARY);
+        let ghost = args.classes.has_class(GHOST);
+        let state = args.state;
+        let in_menu = args
+            .stack
+            .iter()
+            .any(|ui| ui.kind() == Some(egui::UiKind::Menu) && ui.is_root_ui());
+        let layout = &mut look.atom_layout;
+        if in_menu && layout.min_size.y > 0.0 {
+            layout.min_size.y = MENU_ROW;
+        }
+        let (fill, text) = match (primary, selected, state) {
+            (_, _, WidgetState::Noninteractive) => (layout.frame.fill, TEXT),
+            (true, _, WidgetState::Hovered) => (ACCENT_HOVER, ON_ACCENT),
+            (true, _, WidgetState::Active) => (ACCENT_PRESSED, ON_ACCENT),
+            (true, _, _) => (ACCENT_FILL, ON_ACCENT),
+            (false, true, WidgetState::Hovered) => (ACCENT_SUBTLE_HOVER, TEXT),
+            (false, true, _) => (ACCENT_SUBTLE, TEXT),
+            (false, false, WidgetState::Inactive) if ghost => (Color32::TRANSPARENT, TEXT),
+            (false, false, _) => (layout.frame.fill, TEXT),
+        };
+        layout.frame.fill = fill;
+        layout.text_style.font_id = medium(layout.text_style.font_id.size.max(BODY));
+        if state != WidgetState::Noninteractive {
+            layout.text_style.color = text;
+        }
+        if primary {
+            layout.image_tint = ON_ACCENT;
+        }
+        if primary || args.classes.has_class(CENTRED) {
+            layout.align2 = Some(egui::Align2::CENTER_CENTER);
+        }
+        if args.classes.has_class(LARGE) {
+            let side = match primary {
+                true => space::XL,
+                false => space::LG,
+            };
+            layout.frame.corner_radius = CornerRadius::same(radius::CARD);
+            layout.frame.inner_margin = Margin::symmetric(side as i8, 0);
+            layout.text_style.font_id = medium(HEADING);
+            if ghost && !selected && state == WidgetState::Inactive {
+                layout.text_style.color = WEAK;
+            }
+        }
+        look
+    }
+}
+
+impl StyleProvider<TextEditStyle> for Look {
+    fn style(&mut self, args: &StyleArgs<'_>) -> TextEditStyle {
+        let mut look = StyleProvider::<TextEditStyle>::style(&mut DefaultStyle, args);
+        let read_only = args.classes.has_class(&egui::TextEdit::CLASS_READ_ONLY);
+        let stroke = match (read_only, args.state) {
+            (true, _) => Stroke::NONE,
+            (false, WidgetState::Active) => focus_ring(),
+            (false, WidgetState::Hovered) => Stroke::new(HAIRLINE, PRESSED),
+            _ => Stroke::new(HAIRLINE, BORDER),
+        };
+        look.atom_layout.frame = Frame {
+            fill: if read_only { Color32::TRANSPARENT } else { BG },
+            corner_radius: CornerRadius::same(radius::CONTROL),
+            inner_margin: args.style.spacing.button_padding.into(),
+            ..Default::default()
+        }
+        .apply_stroke_and_expansion_without_layout_shift(stroke, 0.0);
+        look.hint_text_color = DISABLED;
+        look
+    }
+}
+
+impl StyleProvider<CheckboxStyle> for Look {
+    fn style(&mut self, args: &StyleArgs<'_>) -> CheckboxStyle {
+        let mut look = StyleProvider::<CheckboxStyle>::style(&mut DefaultStyle, args);
+        look.checkbox_frame.stroke = match args.state {
+            WidgetState::Active => focus_ring(),
+            _ => Stroke::new(HAIRLINE, PRESSED),
+        };
+        look.check_stroke = Stroke::new(2.0, TEXT);
+        look
+    }
+}
+
+impl StyleProvider<SeparatorStyle> for Look {
+    fn style(&mut self, args: &StyleArgs<'_>) -> SeparatorStyle {
+        SeparatorStyle {
+            spacing: space::SM,
+            ..StyleProvider::<SeparatorStyle>::style(&mut DefaultStyle, args)
+        }
+    }
+}
+
+fn scroll() -> ScrollStyle {
+    ScrollStyle {
+        bar_width: 8.0,
+        floating_width: 4.0,
+        handle_min_length: CONTROL,
+        bar_inner_margin: 2.0,
+        bar_outer_margin: 2.0,
+        dormant_handle_opacity: 0.0,
+        active_handle_opacity: 0.35,
+        interact_handle_opacity: 0.7,
+        dormant_background_opacity: 0.0,
+        active_background_opacity: 0.0,
+        interact_background_opacity: 0.0,
+        ..ScrollStyle::floating()
+    }
+}
+
+pub fn shown_scroll() -> ScrollStyle {
+    ScrollStyle {
+        dormant_handle_opacity: 0.12,
+        ..scroll()
     }
 }
 
@@ -273,6 +552,17 @@ pub fn hint_parts(ctx: &egui::Context) -> Vec<(Rect, Rect, String)> {
     })
 }
 
+pub fn held_menu<'a, R>(
+    ui: &mut egui::Ui,
+    atoms: impl egui::IntoAtoms<'a>,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<Option<R>> {
+    let (response, inner) = egui::containers::menu::MenuButton::new(atoms)
+        .config(egui::containers::menu::MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside))
+        .ui(ui, add);
+    egui::InnerResponse::new(inner.map(|i| i.inner), response)
+}
+
 pub fn select_all(ctx: &egui::Context, field: Id, text: &str) {
     let mut state = egui::text_edit::TextEditState::load(ctx, field).unwrap_or_default();
     state
@@ -288,7 +578,10 @@ pub trait Hint {
 impl Hint for Response {
     fn hint(self, text: impl Into<WidgetText>) -> Response {
         let rect = self.rect;
-        let text = text.into();
+        let text = match text.into() {
+            WidgetText::Text(words) => WidgetText::Text(crate::commands::local_keys(&words)),
+            other => other,
+        };
         #[cfg(test)]
         let seen = self.interact_rect;
         self.ctx.data_mut(|d| {

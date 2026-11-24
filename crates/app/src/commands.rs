@@ -2,6 +2,28 @@ use crate::theme::icon;
 use egui::{Key, Modifiers};
 use std::collections::BTreeMap;
 
+pub const CMD: &str = if cfg!(target_os = "macos") { "cmd" } else { "ctrl" };
+
+pub fn local_keys(text: &str) -> String {
+    if CMD == "cmd" {
+        return text.to_string();
+    }
+    let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+    let mut out = String::with_capacity(text.len() + 8);
+    let last = text.match_indices("cmd").fold(0, |last, (at, _)| {
+        match word(text[..at].chars().next_back()) || word(text[at + 3..].chars().next()) {
+            true => last,
+            false => {
+                out.push_str(&text[last..at]);
+                out.push_str(CMD);
+                at + 3
+            }
+        }
+    });
+    out.push_str(&text[last..]);
+    out
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Cmd {
     Brush,
@@ -23,6 +45,7 @@ pub enum Cmd {
     MakeMirror,
     Unwrap,
     ImportPicture,
+    ImportFrames,
     Pixelize,
     Shapes,
     Strokes,
@@ -44,7 +67,49 @@ pub enum Cmd {
     Delete,
     Deselect,
     Copy,
+    CopyMerged,
+    Cut,
     Paste,
+    ShowGrid,
+    Snap,
+    GridWindow,
+    Rulers,
+    HideGuides,
+    LockGuides,
+    ClearGuides,
+    AssistsWindow,
+    FollowGuides,
+    CanvasWindow,
+    CropTool,
+    CropToSelection,
+    Trim,
+    CanvasRight,
+    CanvasLeft,
+    Canvas180,
+    CanvasFlipLevel,
+    CanvasFlipUpright,
+    Ungroup,
+    MergeDown,
+    MergeSelected,
+    MergeVisible,
+    LayerUp,
+    LayerDown,
+    LayerAbove,
+    LayerBelow,
+    ExportLayer,
+    CopyLook,
+    PasteLook,
+    Unite,
+    SubtractShapes,
+    Intersect,
+    Exclude,
+    ExportSvg,
+    ExportPdf,
+    ExportVideo,
+    BringToFront,
+    BringForward,
+    SendBackward,
+    SendToBack,
     SelectAll,
     SelectSameColour,
     TransformLayer,
@@ -182,14 +247,17 @@ pub enum Cmd {
     MoveEarlier,
     MoveLater,
     CopyCells,
+    CutCells,
     PasteCells,
     PasteCellsLinked,
     ClipSettings,
     NewDocument,
+    NewFromClipboard,
     OpenDocument,
     OpenRecent,
     CopyPath,
     InstallCommand,
+    ConnectAgent,
     ReportProblem,
     ContactSupport,
     Guides,
@@ -208,11 +276,23 @@ pub enum Cmd {
     CloseDocument,
     Quit,
     FirstSteps,
+    Welcome,
     PickAllLayers,
     FillShape,
     OutlineShape,
     SoloLayer,
     Save,
+    SaveCopy,
+    RenameDrawing,
+    DuplicateDrawing,
+    RevertDrawing,
+    NextOpen,
+    WeightPaint,
+    WeightAdd,
+    WeightRemove,
+    WeightSmooth,
+    PickWeight,
+    PreviousOpen,
     MoveToNewLayer,
     SelectAllFrames,
     ExportFrames,
@@ -307,16 +387,16 @@ impl Keys {
             .iter()
             .find(|(k, _)| *k == self.key)
             .map_or_else(|| self.key.name().to_string(), |(_, n)| n.to_string());
-        [(self.shift, "shift "), (self.alt, "alt "), (self.command, "cmd ")]
+        [(self.shift, "shift"), (self.alt, "alt"), (self.command, CMD)]
             .iter()
             .filter(|(on, _)| *on)
-            .map(|(_, word)| *word)
+            .map(|(_, word)| format!("{word} "))
             .collect::<String>()
             + &key
     }
 }
 
-const NAMED: [(Key, &str); 15] = [
+const NAMED: [(Key, &str); 16] = [
     (Key::Period, "."),
     (Key::Comma, ","),
     (Key::OpenBracket, "["),
@@ -325,6 +405,7 @@ const NAMED: [(Key, &str); 15] = [
     (Key::Plus, "+"),
     (Key::Minus, "-"),
     (Key::Questionmark, "?"),
+    (Key::Quote, "'"),
     (Key::Enter, "Return"),
     (Key::Escape, "Esc"),
     (Key::Num1, "1"),
@@ -355,10 +436,10 @@ impl Keys {
             .map(|(k, _)| *k)
             .or_else(|| Key::from_name(name))?;
         let has = |w: &str| mods.contains(&w);
-        if mods.iter().any(|m| !["shift", "alt", "cmd"].contains(m)) {
+        if mods.iter().any(|m| !["shift", "alt", "cmd", "ctrl"].contains(m)) {
             return None;
         }
-        Some(keys(key, has("shift"), has("alt"), has("cmd")))
+        Some(keys(key, has("shift"), has("alt"), has("cmd") || has("ctrl")))
     }
 }
 
@@ -496,7 +577,7 @@ impl Spec {
         match self.trigger {
             Trigger::None => String::new(),
             Trigger::Press(list) => list.iter().map(Keys::label).collect::<Vec<_>>().join(" or "),
-            Trigger::Hold(how) => how.to_string(),
+            Trigger::Hold(how) => local_keys(how),
         }
     }
 
@@ -506,10 +587,11 @@ impl Spec {
 
     pub fn hint_with(&self, key: &str) -> String {
         let key = key.to_string();
+        let about = local_keys(self.about);
         match (key.is_empty(), self.trigger) {
-            (true, _) => format!("{}\n{}", self.name, self.about),
-            (false, Trigger::Hold(_)) => format!("{}: {key}\n{}", self.name, self.about),
-            (false, _) => format!("{} ({key})\n{}", self.name, self.about),
+            (true, _) => format!("{}\n{about}", self.name),
+            (false, Trigger::Hold(_)) => format!("{}: {key}\n{about}", self.name),
+            (false, _) => format!("{} ({key})\n{about}", self.name),
         }
     }
 
@@ -543,7 +625,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 216] = [
+    pub const ALL: [Cmd; 274] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -563,6 +645,7 @@ impl Cmd {
         Cmd::MakeMirror,
         Cmd::Unwrap,
         Cmd::ImportPicture,
+        Cmd::ImportFrames,
         Cmd::Pixelize,
         Cmd::Shapes,
         Cmd::Strokes,
@@ -584,7 +667,49 @@ impl Cmd {
         Cmd::Delete,
         Cmd::Deselect,
         Cmd::Copy,
+        Cmd::CopyMerged,
+        Cmd::Cut,
         Cmd::Paste,
+        Cmd::ShowGrid,
+        Cmd::Snap,
+        Cmd::GridWindow,
+        Cmd::Rulers,
+        Cmd::HideGuides,
+        Cmd::LockGuides,
+        Cmd::ClearGuides,
+        Cmd::AssistsWindow,
+        Cmd::FollowGuides,
+        Cmd::CanvasWindow,
+        Cmd::CropTool,
+        Cmd::CropToSelection,
+        Cmd::Trim,
+        Cmd::CanvasRight,
+        Cmd::CanvasLeft,
+        Cmd::Canvas180,
+        Cmd::CanvasFlipLevel,
+        Cmd::CanvasFlipUpright,
+        Cmd::Ungroup,
+        Cmd::MergeDown,
+        Cmd::MergeSelected,
+        Cmd::MergeVisible,
+        Cmd::LayerUp,
+        Cmd::LayerDown,
+        Cmd::LayerAbove,
+        Cmd::LayerBelow,
+        Cmd::ExportLayer,
+        Cmd::CopyLook,
+        Cmd::PasteLook,
+        Cmd::Unite,
+        Cmd::SubtractShapes,
+        Cmd::Intersect,
+        Cmd::Exclude,
+        Cmd::ExportSvg,
+        Cmd::ExportPdf,
+        Cmd::ExportVideo,
+        Cmd::BringToFront,
+        Cmd::BringForward,
+        Cmd::SendBackward,
+        Cmd::SendToBack,
         Cmd::SelectAll,
         Cmd::SelectSameColour,
         Cmd::TransformLayer,
@@ -722,13 +847,16 @@ impl Cmd {
         Cmd::MoveEarlier,
         Cmd::MoveLater,
         Cmd::CopyCells,
+        Cmd::CutCells,
         Cmd::PasteCells,
         Cmd::PasteCellsLinked,
         Cmd::ClipSettings,
         Cmd::NewDocument,
+        Cmd::NewFromClipboard,
         Cmd::CloseDocument,
         Cmd::Quit,
         Cmd::FirstSteps,
+        Cmd::Welcome,
         Cmd::PickAllLayers,
         Cmd::FillShape,
         Cmd::OutlineShape,
@@ -737,6 +865,7 @@ impl Cmd {
         Cmd::OpenRecent,
         Cmd::CopyPath,
         Cmd::InstallCommand,
+        Cmd::ConnectAgent,
         Cmd::ReportProblem,
         Cmd::ContactSupport,
         Cmd::Guides,
@@ -753,6 +882,17 @@ impl Cmd {
         Cmd::ShowArcs,
         Cmd::CompareReference,
         Cmd::Save,
+        Cmd::SaveCopy,
+        Cmd::RenameDrawing,
+        Cmd::DuplicateDrawing,
+        Cmd::RevertDrawing,
+        Cmd::NextOpen,
+        Cmd::WeightPaint,
+        Cmd::WeightAdd,
+        Cmd::WeightRemove,
+        Cmd::WeightSmooth,
+        Cmd::PickWeight,
+        Cmd::PreviousOpen,
         Cmd::MoveToNewLayer,
         Cmd::SelectAllFrames,
         Cmd::ExportFrames,
@@ -953,6 +1093,15 @@ impl Cmd {
                 R::No,
                 "place a PNG or JPEG on a new layer to trace over or paint from (dropping the file works too)",
             ),
+            Cmd::ImportFrames => spec(
+                "file.import-frames",
+                "import frames",
+                icon::IMAGE,
+                G::File,
+                T::None,
+                R::No,
+                "frames from a sprite sheet cut into cells, or from a folder of numbered pictures: a new layer with a frame each, and a clip",
+            ),
             Cmd::Pixelize => spec(
                 "layer.pixelize",
                 "pixels of a picture",
@@ -1123,6 +1272,404 @@ impl Cmd {
                 T::Press(const { &[cmd(Key::C)] }),
                 R::No,
                 "keep the selected strokes or shapes for cmd V; while the timeline is in use, the selected frames",
+            ),
+            Cmd::CopyMerged => spec(
+                "edit.copy-merged",
+                "copy what you see",
+                icon::COPY,
+                G::Edit,
+                T::Press(const { &[keys(Key::C, true, false, true)] }),
+                R::No,
+                "put the picture as you see it, every layer together, on the clipboard for another app: inside the selection, or the whole canvas",
+            ),
+            Cmd::Cut => spec(
+                "edit.cut",
+                "cut the selection",
+                icon::CUT,
+                G::Edit,
+                T::Press(const { &[cmd(Key::X)] }),
+                R::No,
+                "take the selected strokes or shapes away and keep them for cmd V, in one undo step; while the timeline is in use, the selected frames",
+            ),
+            Cmd::ShowGrid => spec(
+                "view.grid",
+                "show the grid",
+                icon::PIXELS,
+                G::View,
+                T::Press(const { &[cmd(Key::Quote)] }),
+                R::No,
+                "the grid over the canvas; View > Grid… sets its spacing, kind and look",
+            ),
+            Cmd::Snap => spec(
+                "view.snap",
+                "snap",
+                icon::MAGNET,
+                G::View,
+                T::Press(const { &[keys(Key::Quote, true, false, true)] }),
+                R::No,
+                "shapes, points, moves, the pen and bones snap to the grid, the guides and other shapes' edges and centres; hold cmd while dragging to leave it",
+            ),
+            Cmd::GridWindow => spec(
+                "view.grid-window",
+                "grid settings",
+                icon::PIXELS,
+                G::View,
+                T::None,
+                R::No,
+                "the grid's spacing, stronger lines, start, square or isometric, colour and opacity",
+            ),
+            Cmd::Rulers => spec(
+                "view.rulers",
+                "show the rulers",
+                icon::RULER,
+                G::View,
+                T::Press(const { &[cmd(Key::R)] }),
+                R::No,
+                "rulers along the canvas; drag out of one to make a guide, and a guide back onto it to take it away",
+            ),
+            Cmd::HideGuides => spec(
+                "view.guides",
+                "show the guides",
+                icon::RULER,
+                G::View,
+                T::None,
+                R::No,
+                "the guides on the canvas; hidden ones do not snap",
+            ),
+            Cmd::LockGuides => spec(
+                "view.lock-guides",
+                "lock the guides",
+                icon::LOCK,
+                G::View,
+                T::None,
+                R::No,
+                "locked guides cannot be dragged",
+            ),
+            Cmd::ClearGuides => spec(
+                "view.clear-guides",
+                "clear the guides",
+                icon::TRASH,
+                G::View,
+                T::None,
+                R::No,
+                "take every guide away",
+            ),
+            Cmd::AssistsWindow => spec(
+                "view.drawing-guides",
+                "drawing guides",
+                icon::PERSPECTIVE,
+                G::View,
+                T::None,
+                R::No,
+                "a ruler, one, two or three point perspective or an ellipse that the brush follows; drag their points while the window is open",
+            ),
+            Cmd::FollowGuides => spec(
+                "brush.follow",
+                "follow the drawing guides",
+                icon::PERSPECTIVE,
+                G::Tools,
+                T::None,
+                R::No,
+                "brush strokes run along the drawing guides: to the vanishing point they head for, along a ruler, round an ellipse; hold cmd while you paint to draw freely",
+            ),
+            Cmd::CanvasWindow => spec(
+                "canvas.window",
+                "canvas size, scale and paper",
+                icon::SIZE,
+                G::Edit,
+                T::None,
+                R::No,
+                "a window for the canvas: its size around the drawing with an anchor, scaling the whole drawing, turns and flips, the paper colour",
+            ),
+            Cmd::CropTool => spec(
+                "canvas.crop",
+                "crop",
+                icon::CROP,
+                G::Tools,
+                T::Press(const { &[plain(Key::C)] }),
+                R::No,
+                "the crop tool: a box round the canvas with handles; drag them, the box or a new box over the area to keep, then Return",
+            ),
+            Cmd::CropToSelection => spec(
+                "canvas.crop-selection",
+                "crop to the selection",
+                icon::CROP,
+                G::Edit,
+                T::None,
+                R::No,
+                "the canvas becomes the selection's box",
+            ),
+            Cmd::Trim => spec(
+                "canvas.trim",
+                "trim to what is drawn",
+                icon::CROP,
+                G::Edit,
+                T::None,
+                R::No,
+                "crop the canvas to what the visible layers hold",
+            ),
+            Cmd::CanvasRight => spec(
+                "canvas.turn-right",
+                "turn the drawing right",
+                icon::TURN,
+                G::Edit,
+                T::None,
+                R::No,
+                "the whole drawing and its canvas, a quarter turn clockwise",
+            ),
+            Cmd::CanvasLeft => spec(
+                "canvas.turn-left",
+                "turn the drawing left",
+                icon::TURN_LEFT,
+                G::Edit,
+                T::None,
+                R::No,
+                "the whole drawing and its canvas, a quarter turn anticlockwise",
+            ),
+            Cmd::Canvas180 => spec(
+                "canvas.turn-180",
+                "turn the drawing round",
+                icon::TURN,
+                G::Edit,
+                T::None,
+                R::No,
+                "the whole drawing, a half turn",
+            ),
+            Cmd::CanvasFlipLevel => spec(
+                "canvas.flip-level",
+                "flip the drawing left to right",
+                icon::FLIP_H,
+                G::Edit,
+                T::None,
+                R::No,
+                "mirror the whole drawing, every layer",
+            ),
+            Cmd::CanvasFlipUpright => spec(
+                "canvas.flip-upright",
+                "flip the drawing upside down",
+                icon::FLIP_V,
+                G::Edit,
+                T::None,
+                R::No,
+                "mirror the whole drawing top to bottom",
+            ),
+            Cmd::Ungroup => spec(
+                "layer.ungroup",
+                "ungroup",
+                icon::LAYERS,
+                G::Layers,
+                T::None,
+                R::No,
+                "take the group apart: its layers go where it was, in the same order",
+            ),
+            Cmd::MergeDown => spec(
+                "layer.merge-down",
+                "merge down",
+                icon::MERGE,
+                G::Layers,
+                T::None,
+                R::No,
+                "merge the layer into the one under it, frame by frame; strokes, pixels and shapes stay editable",
+            ),
+            Cmd::MergeSelected => spec(
+                "layer.merge-selected",
+                "merge the selected layers",
+                icon::MERGE,
+                G::Layers,
+                T::None,
+                R::No,
+                "merge the layers selected in the layers panel (cmd click) into the lowest of them",
+            ),
+            Cmd::MergeVisible => spec(
+                "layer.merge-visible",
+                "merge the visible layers",
+                icon::MERGE,
+                G::Layers,
+                T::None,
+                R::No,
+                "every visible layer into one: kept editable when they are of one kind, else one picture",
+            ),
+            Cmd::LayerUp => spec(
+                "layer.up",
+                "move the layer up",
+                icon::UP,
+                G::Layers,
+                T::Press(const { &[keys(Key::CloseBracket, false, true, true)] }),
+                R::Yes,
+                "one place up in its group",
+            ),
+            Cmd::LayerDown => spec(
+                "layer.down",
+                "move the layer down",
+                icon::DOWN,
+                G::Layers,
+                T::Press(const { &[keys(Key::OpenBracket, false, true, true)] }),
+                R::Yes,
+                "one place down in its group",
+            ),
+            Cmd::LayerAbove => spec(
+                "layer.above",
+                "go to the layer above",
+                icon::UP,
+                G::Layers,
+                T::Press(const { &[alt(Key::CloseBracket)] }),
+                R::Yes,
+                "make the layer above the active one",
+            ),
+            Cmd::LayerBelow => spec(
+                "layer.below",
+                "go to the layer below",
+                icon::DOWN,
+                G::Layers,
+                T::Press(const { &[alt(Key::OpenBracket)] }),
+                R::Yes,
+                "make the layer below the active one",
+            ),
+            Cmd::ExportLayer => spec(
+                "layer.export",
+                "export this layer",
+                icon::EXPORT,
+                G::Layers,
+                T::None,
+                R::No,
+                "the export window with the active layer picked",
+            ),
+            Cmd::CopyLook => spec(
+                "shape.copy-look",
+                "copy the look",
+                icon::COPY,
+                G::Edit,
+                T::Press(const { &[keys(Key::C, false, true, true)] }),
+                R::No,
+                "keep the selected shape's fill, outline and opacity, to give them to other shapes with alt cmd V",
+            ),
+            Cmd::PasteLook => spec(
+                "shape.paste-look",
+                "paste the look",
+                icon::PASTE,
+                G::Edit,
+                T::Press(const { &[keys(Key::V, false, true, true)] }),
+                R::No,
+                "give the selected shapes the fill, outline and opacity copied with alt cmd C",
+            ),
+            Cmd::Unite => spec(
+                "shape.unite",
+                "unite shapes",
+                icon::UNITE,
+                G::Edit,
+                T::None,
+                R::No,
+                "make the selected shapes one path of everything they cover, with the look of the one at the back",
+            ),
+            Cmd::SubtractShapes => spec(
+                "shape.subtract",
+                "subtract the front shapes",
+                icon::SUBTRACT,
+                G::Edit,
+                T::None,
+                R::No,
+                "cut the shapes in front out of the one at the back, as one path",
+            ),
+            Cmd::Intersect => spec(
+                "shape.intersect",
+                "intersect shapes",
+                icon::INTERSECT,
+                G::Edit,
+                T::None,
+                R::No,
+                "keep only where the selected shapes all overlap, as one path",
+            ),
+            Cmd::Exclude => spec(
+                "shape.exclude",
+                "exclude where shapes overlap",
+                icon::EXCLUDE,
+                G::Edit,
+                T::None,
+                R::No,
+                "keep where the selected shapes do not overlap, as one path",
+            ),
+            Cmd::ExportSvg => spec(
+                "file.export-svg",
+                "export an SVG",
+                icon::EXPORT,
+                G::File,
+                T::None,
+                R::No,
+                "the frame on screen as an SVG an illustration app can edit: vector layers as shapes, paint and pixel layers as pictures, or the selected shapes alone",
+            ),
+            Cmd::ExportPdf => spec(
+                "file.export-pdf",
+                "export a PDF",
+                icon::EXPORT,
+                G::File,
+                T::None,
+                R::No,
+                "a PDF to print or send: vector layers stay sharp shapes, paint and pixel layers go in as pictures; on the drawing's size or a paper, a page per frame or clip",
+            ),
+            Cmd::ExportVideo => spec(
+                "file.export-video",
+                "export a video",
+                icon::EXPORT,
+                G::File,
+                T::None,
+                R::No,
+                "an MP4 video of a clip or the timeline, at its speed",
+            ),
+            Cmd::BringToFront => spec(
+                "edit.front",
+                "bring to the front",
+                icon::TO_FRONT,
+                G::Edit,
+                T::Press(
+                    const {
+                        &[
+                            keys(Key::CloseBracket, true, false, true),
+                            Keys {
+                                any_shift: true,
+                                ..cmd(Key::CloseCurlyBracket)
+                            },
+                        ]
+                    },
+                ),
+                R::No,
+                "put the selected shapes or strokes in front of everything else on their layer",
+            ),
+            Cmd::BringForward => spec(
+                "edit.forward",
+                "bring forward",
+                icon::UP,
+                G::Edit,
+                T::Press(const { &[cmd(Key::CloseBracket)] }),
+                R::Yes,
+                "put the selected shapes one place nearer the front, or the selected strokes in front of the next mark they overlap",
+            ),
+            Cmd::SendBackward => spec(
+                "edit.backward",
+                "send backward",
+                icon::DOWN,
+                G::Edit,
+                T::Press(const { &[cmd(Key::OpenBracket)] }),
+                R::Yes,
+                "put the selected shapes one place further back, or the selected strokes behind the next mark they overlap",
+            ),
+            Cmd::SendToBack => spec(
+                "edit.back",
+                "send to the back",
+                icon::TO_BACK,
+                G::Edit,
+                T::Press(
+                    const {
+                        &[
+                            keys(Key::OpenBracket, true, false, true),
+                            Keys {
+                                any_shift: true,
+                                ..cmd(Key::OpenCurlyBracket)
+                            },
+                        ]
+                    },
+                ),
+                R::No,
+                "put the selected shapes or strokes behind everything else on their layer",
             ),
             Cmd::Paste => spec(
                 "edit.paste",
@@ -2243,7 +2790,7 @@ impl Cmd {
             Cmd::DuplicateInPlace => spec(
                 "edit.duplicate",
                 "duplicate the selection in place",
-                icon::COPY,
+                icon::DUPLICATE,
                 G::Edit,
                 T::Press(const { &[cmd(Key::D)] }),
                 R::No,
@@ -2297,7 +2844,7 @@ impl Cmd {
             Cmd::DuplicateLayer => spec(
                 "layer.duplicate",
                 "duplicate the layer",
-                icon::COPY,
+                icon::DUPLICATE,
                 G::Layers,
                 T::None,
                 R::No,
@@ -2356,6 +2903,15 @@ impl Cmd {
                 T::None,
                 R::No,
                 "the drawings and holds of the selected frames and rows (or the drawing under the playhead)",
+            ),
+            Cmd::CutCells => spec(
+                "cells.cut",
+                "cut the selected cells",
+                icon::CUT,
+                G::Selected,
+                T::None,
+                R::No,
+                "copy the drawings of the selected frames and rows (or the drawing under the playhead) and take them off, in one undo step",
             ),
             Cmd::PasteCells => spec(
                 "cells.paste",
@@ -2419,6 +2975,105 @@ impl Cmd {
                 T::Press(const { &[cmd(Key::S)] }),
                 R::No,
                 "klad saves every change as you make it; this says so, and where the drawing is",
+            ),
+            Cmd::SaveCopy => spec(
+                "file.save-copy",
+                "save a copy",
+                icon::SAVE,
+                G::File,
+                T::Press(const { &[keys(Key::S, true, false, true)] }),
+                R::No,
+                "a copy of the drawing under a new name, next to it; go on in the copy or stay here",
+            ),
+            Cmd::RenameDrawing => spec(
+                "file.rename",
+                "rename the drawing",
+                icon::RENAME,
+                G::File,
+                T::None,
+                R::No,
+                "give the drawing's folder a new name; klad goes on in it",
+            ),
+            Cmd::DuplicateDrawing => spec(
+                "file.duplicate",
+                "duplicate the drawing",
+                icon::DUPLICATE,
+                G::File,
+                T::None,
+                R::No,
+                "a copy next to it, named after it; you stay in this one",
+            ),
+            Cmd::RevertDrawing => spec(
+                "file.revert",
+                "revert",
+                icon::HISTORY,
+                G::File,
+                T::None,
+                R::No,
+                "back to how the drawing was when you opened it, in one step that cmd Z takes back",
+            ),
+            Cmd::WeightPaint => spec(
+                "bones.weight-paint",
+                "paint weights",
+                icon::BRUSH,
+                G::Tools,
+                T::Press(const { &[shift(Key::Num1)] }),
+                R::No,
+                "the weight brush paints toward the weight",
+            ),
+            Cmd::WeightAdd => spec(
+                "bones.weight-add",
+                "add weight",
+                icon::PLUS,
+                G::Tools,
+                T::Press(const { &[shift(Key::Num2)] }),
+                R::No,
+                "the weight brush adds weight to the picked bone; alt takes it away",
+            ),
+            Cmd::WeightRemove => spec(
+                "bones.weight-remove",
+                "take weight away",
+                icon::MINUS,
+                G::Tools,
+                T::Press(const { &[shift(Key::Num3)] }),
+                R::No,
+                "the weight brush takes weight away from the picked bone; alt adds it",
+            ),
+            Cmd::WeightSmooth => spec(
+                "bones.weight-smooth",
+                "smooth weights",
+                icon::DROP,
+                G::Tools,
+                T::Press(const { &[shift(Key::Num4)] }),
+                R::No,
+                "the weight brush smooths the picked bone's weights under it",
+            ),
+            Cmd::PickWeight => spec(
+                "bones.pick-weight",
+                "pick up the weight",
+                icon::EYEDROPPER,
+                G::Tools,
+                T::Press(const { &[alt(Key::I)] }),
+                R::No,
+                "the picked bone's weight under the pointer becomes the brush's weight",
+            ),
+            Cmd::NextOpen => spec(
+                "window.next-drawing",
+                "next drawing",
+                icon::FILE,
+                G::View,
+                T::None,
+                R::No,
+                "show the next open drawing (ctrl Tab)",
+            ),
+            Cmd::PreviousOpen => spec(
+                "window.previous-drawing",
+                "previous drawing",
+                icon::FILE,
+                G::View,
+                T::None,
+                R::No,
+                "show the open drawing before this one (ctrl shift Tab)",
             ),
             Cmd::MoveToNewLayer => spec(
                 "edit.to-new-layer",
@@ -2499,7 +3154,7 @@ impl Cmd {
                 G::Panels,
                 T::None,
                 R::No,
-                "three steps for someone new: draw a shape, fill it, hand the drawing to an agent",
+                "six steps for someone new: paint and erase, fill a shape, reshape a stroke, let your agent change it",
             ),
             Cmd::CloseDocument => spec(
                 "file.close",
@@ -2527,6 +3182,15 @@ impl Cmd {
                 T::Press(const { &[cmd(Key::N)] }),
                 R::No,
                 "a new .klad bundle: name, folder, size, background; this one stays saved",
+            ),
+            Cmd::NewFromClipboard => spec(
+                "file.new-from-clipboard",
+                "new drawing from the clipboard",
+                icon::PASTE,
+                G::File,
+                T::None,
+                R::No,
+                "a new drawing of the size of the picture copied in another app, with the picture on a layer; it is made next to this drawing and opens",
             ),
             Cmd::OpenDocument => spec(
                 "file.open",
@@ -2663,6 +3327,15 @@ impl Cmd {
                 R::No,
                 "an email to klad's support in your email app, with the version and your system filled in",
             ),
+            Cmd::Welcome => spec(
+                "help.welcome",
+                "welcome to klad",
+                icon::SPARKLE,
+                G::Panels,
+                T::None,
+                R::No,
+                "the three welcome screens again: klad, connecting your agent app, the first steps",
+            ),
             Cmd::Guides => spec(
                 "help.guides",
                 "guides",
@@ -2680,6 +3353,15 @@ impl Cmd {
                 T::None,
                 R::No,
                 "what changed in each version of klad, on klad.studio",
+            ),
+            Cmd::ConnectAgent => spec(
+                "file.connect-agent",
+                "connect an agent app",
+                icon::LINK,
+                G::File,
+                T::None,
+                R::No,
+                "Claude Desktop, Codex and other agent apps paint in your drawings with klad: connect one here, no terminal needed",
             ),
             Cmd::InstallCommand => spec(
                 "file.install-command",
@@ -2726,6 +3408,7 @@ impl Cmd {
             Cmd::MakeMirror => "Mirror",
             Cmd::Unwrap => "Take shapes out",
             Cmd::ImportPicture => "Import picture…",
+            Cmd::ImportFrames => "Import frames…",
             Cmd::Pixelize => "Pixels of a picture…",
             Cmd::Shapes => "Select and move",
             Cmd::Strokes => "Select strokes",
@@ -2744,6 +3427,48 @@ impl Cmd {
             Cmd::Delete => "Delete",
             Cmd::Deselect => "Deselect",
             Cmd::Copy => "Copy",
+            Cmd::CopyMerged => "Copy merged",
+            Cmd::Cut => "Cut",
+            Cmd::ShowGrid => "Show grid",
+            Cmd::Snap => "Snap",
+            Cmd::GridWindow => "Grid…",
+            Cmd::Rulers => "Show rulers",
+            Cmd::HideGuides => "Guides",
+            Cmd::LockGuides => "Lock guides",
+            Cmd::ClearGuides => "Clear guides",
+            Cmd::AssistsWindow => "Drawing guides…",
+            Cmd::FollowGuides => "Follow the drawing guides",
+            Cmd::CanvasWindow => "Canvas size…",
+            Cmd::CropTool => "Crop",
+            Cmd::CropToSelection => "Crop to selection",
+            Cmd::Trim => "Trim",
+            Cmd::CanvasRight => "Turn right",
+            Cmd::CanvasLeft => "Turn left",
+            Cmd::Canvas180 => "Turn 180°",
+            Cmd::CanvasFlipLevel => "Flip horizontally",
+            Cmd::CanvasFlipUpright => "Flip vertically",
+            Cmd::Ungroup => "Ungroup",
+            Cmd::MergeDown => "Merge down",
+            Cmd::MergeSelected => "Merge selected",
+            Cmd::MergeVisible => "Merge visible",
+            Cmd::LayerUp => "Move up",
+            Cmd::LayerDown => "Move down",
+            Cmd::LayerAbove => "Layer above",
+            Cmd::LayerBelow => "Layer below",
+            Cmd::ExportLayer => "Export this layer…",
+            Cmd::CopyLook => "Copy look",
+            Cmd::PasteLook => "Paste look",
+            Cmd::Unite => "Unite",
+            Cmd::SubtractShapes => "Subtract",
+            Cmd::Intersect => "Intersect",
+            Cmd::Exclude => "Exclude",
+            Cmd::ExportSvg => "SVG…",
+            Cmd::ExportPdf => "PDF…",
+            Cmd::ExportVideo => "Video…",
+            Cmd::BringToFront => "Bring to front",
+            Cmd::BringForward => "Bring forward",
+            Cmd::SendBackward => "Send backward",
+            Cmd::SendToBack => "Send to back",
             Cmd::Paste => "Paste",
             Cmd::SelectAll => "Select all",
             Cmd::SelectSameColour => "Select same colour",
@@ -2883,14 +3608,17 @@ impl Cmd {
             Cmd::MoveEarlier => "Move earlier",
             Cmd::MoveLater => "Move later",
             Cmd::CopyCells => "Copy cells",
+            Cmd::CutCells => "Cut cells",
             Cmd::PasteCells => "Paste cells",
             Cmd::PasteCellsLinked => "Paste cells as links",
             Cmd::ClipSettings => "Clip settings…",
             Cmd::NewDocument => "New…",
+            Cmd::NewFromClipboard => "New from clipboard",
             Cmd::OpenDocument => "Open…",
             Cmd::OpenRecent => "All recent drawings…",
             Cmd::CopyPath => "Copy path",
             Cmd::InstallCommand => "Install the klad command",
+            Cmd::ConnectAgent => "Connect an agent app…",
             Cmd::ReportProblem => "Report a problem…",
             Cmd::ContactSupport => "Contact support",
             Cmd::Guides => "Guides",
@@ -2909,11 +3637,23 @@ impl Cmd {
             Cmd::CloseDocument => "Close",
             Cmd::Quit => "Quit klad",
             Cmd::FirstSteps => "First steps",
+            Cmd::Welcome => "Welcome to klad",
             Cmd::PickAllLayers => "Pick from all layers",
             Cmd::FillShape => "Fill with colour",
             Cmd::OutlineShape => "Outline with colour",
             Cmd::SoloLayer => "Show only this",
             Cmd::Save => "Save",
+            Cmd::SaveCopy => "Save a copy…",
+            Cmd::RenameDrawing => "Rename…",
+            Cmd::DuplicateDrawing => "Duplicate",
+            Cmd::RevertDrawing => "Revert",
+            Cmd::WeightPaint => "Paint weights",
+            Cmd::WeightAdd => "Add weight",
+            Cmd::WeightRemove => "Take weight away",
+            Cmd::WeightSmooth => "Smooth weights",
+            Cmd::PickWeight => "Pick up the weight",
+            Cmd::NextOpen => "Next open drawing",
+            Cmd::PreviousOpen => "Previous open drawing",
             Cmd::MoveToNewLayer => "Move to new layer",
             Cmd::SelectAllFrames => "Select all frames",
             Cmd::ExportFrames => "Frames…",
@@ -2962,12 +3702,18 @@ pub const MENUS: [Menu; 9] = [
         title: "File",
         items: &[
             Run(Cmd::NewDocument),
+            Run(Cmd::NewFromClipboard),
             Run(Cmd::OpenDocument),
             Item::Recent,
             Run(Cmd::CloseDocument),
             Run(Cmd::Save),
+            Run(Cmd::SaveCopy),
+            Run(Cmd::RenameDrawing),
+            Run(Cmd::DuplicateDrawing),
+            Run(Cmd::RevertDrawing),
             Line,
             Run(Cmd::ImportPicture),
+            Run(Cmd::ImportFrames),
             Run(Cmd::Pixelize),
             Run(Cmd::AddFont),
             Line,
@@ -2979,6 +3725,10 @@ pub const MENUS: [Menu; 9] = [
                     Run(Cmd::ExportSheet),
                     Run(Cmd::ExportGif),
                     Run(Cmd::ExportAseprite),
+                    Run(Cmd::ExportSvg),
+                    Run(Cmd::ExportPdf),
+                    Run(Cmd::ExportVideo),
+                    Run(Cmd::ExportLayer),
                     Line,
                     Run(Cmd::ExportGodotWindow),
                     Run(Cmd::ExportGodot),
@@ -2987,6 +3737,7 @@ pub const MENUS: [Menu; 9] = [
             Line,
             Run(Cmd::CopyPath),
             Run(Cmd::InstallCommand),
+            Run(Cmd::ConnectAgent),
             Line,
             Run(Cmd::Quit),
         ],
@@ -2997,7 +3748,9 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::Undo),
             Run(Cmd::Redo),
             Line,
+            Run(Cmd::Cut),
             Run(Cmd::Copy),
+            Run(Cmd::CopyMerged),
             Run(Cmd::Paste),
             Run(Cmd::DuplicateInPlace),
             Run(Cmd::Delete),
@@ -3009,6 +3762,29 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::CutLasso),
             Run(Cmd::PickAllLayers),
             Line,
+            Sub(
+                "Canvas",
+                &[
+                    Run(Cmd::CanvasWindow),
+                    Run(Cmd::CropToSelection),
+                    Run(Cmd::Trim),
+                    Line,
+                    Run(Cmd::CanvasRight),
+                    Run(Cmd::CanvasLeft),
+                    Run(Cmd::Canvas180),
+                    Run(Cmd::CanvasFlipLevel),
+                    Run(Cmd::CanvasFlipUpright),
+                ],
+            ),
+            Sub(
+                "Arrange",
+                &[
+                    Run(Cmd::BringToFront),
+                    Run(Cmd::BringForward),
+                    Run(Cmd::SendBackward),
+                    Run(Cmd::SendToBack),
+                ],
+            ),
             Sub(
                 "Transform",
                 &[
@@ -3053,7 +3829,21 @@ pub const MENUS: [Menu; 9] = [
                     Run(Cmd::Detach),
                 ],
             ),
-            Sub("Shape", &[Run(Cmd::FillShape), Run(Cmd::OutlineShape)]),
+            Sub(
+                "Shape",
+                &[
+                    Run(Cmd::FillShape),
+                    Run(Cmd::OutlineShape),
+                    Line,
+                    Run(Cmd::CopyLook),
+                    Run(Cmd::PasteLook),
+                    Line,
+                    Run(Cmd::Unite),
+                    Run(Cmd::SubtractShapes),
+                    Run(Cmd::Intersect),
+                    Run(Cmd::Exclude),
+                ],
+            ),
             Sub(
                 "Points",
                 &[
@@ -3076,10 +3866,21 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::Shapes),
             Run(Cmd::Strokes),
             Run(Cmd::Points),
+            Run(Cmd::CropTool),
             Run(Cmd::Pen),
             Run(Cmd::ShapeTool),
             Run(Cmd::TextTool),
             Run(Cmd::BoneTool),
+            Sub(
+                "Weights",
+                &[
+                    Run(Cmd::WeightPaint),
+                    Run(Cmd::WeightAdd),
+                    Run(Cmd::WeightRemove),
+                    Run(Cmd::WeightSmooth),
+                    Run(Cmd::PickWeight),
+                ],
+            ),
             Run(Cmd::Note),
             Line,
             Run(Cmd::Smaller),
@@ -3114,7 +3915,22 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::DuplicateLayer),
             Run(Cmd::RenameLayer),
             Run(Cmd::GroupLayer),
+            Run(Cmd::Ungroup),
             Run(Cmd::DeleteLayer),
+            Sub(
+                "Merge",
+                &[Run(Cmd::MergeDown), Run(Cmd::MergeSelected), Run(Cmd::MergeVisible)],
+            ),
+            Sub(
+                "Order",
+                &[
+                    Run(Cmd::LayerUp),
+                    Run(Cmd::LayerDown),
+                    Line,
+                    Run(Cmd::LayerAbove),
+                    Run(Cmd::LayerBelow),
+                ],
+            ),
             Run(Cmd::MakeMapLayer),
             Run(Cmd::MakeColourLayer),
             Line,
@@ -3211,6 +4027,7 @@ pub const MENUS: [Menu; 9] = [
                     Run(Cmd::Inbetween),
                     Run(Cmd::RedoInbetweens),
                     Line,
+                    Run(Cmd::CutCells),
                     Run(Cmd::CopyCells),
                     Run(Cmd::PasteCells),
                     Run(Cmd::PasteCellsLinked),
@@ -3248,6 +4065,17 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::WrapCanvas),
             Run(Cmd::TileSize),
             Line,
+            Run(Cmd::ShowGrid),
+            Run(Cmd::Snap),
+            Run(Cmd::GridWindow),
+            Run(Cmd::Rulers),
+            Sub(
+                "Guides",
+                &[Run(Cmd::HideGuides), Run(Cmd::LockGuides), Run(Cmd::ClearGuides)],
+            ),
+            Run(Cmd::AssistsWindow),
+            Run(Cmd::FollowGuides),
+            Line,
             Run(Cmd::MapView),
             Run(Cmd::LitView),
             Run(Cmd::CheckMaps),
@@ -3272,12 +4100,16 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::MapsPane),
             Run(Cmd::Timeline),
             Line,
+            Run(Cmd::NextOpen),
+            Run(Cmd::PreviousOpen),
+            Line,
             Run(Cmd::MessageLog),
         ],
     },
     Menu {
         title: "Help",
         items: &[
+            Run(Cmd::Welcome),
             Run(Cmd::FirstSteps),
             Run(Cmd::Guides),
             Run(Cmd::WhatsNew),
@@ -3348,6 +4180,7 @@ pub fn other_names(cmd: Cmd) -> &'static [&'static str] {
         Cmd::FlipH | Cmd::FlipV => &["mirror the selection"],
         Cmd::TransformLayer => &["free transform", "scale the layer", "rotate the layer"],
         Cmd::FirstSteps => &["help", "tutorial", "getting started"],
+        Cmd::Welcome => &["onboarding", "introduction", "start again"],
         Cmd::Guides => &["help", "manual", "documentation"],
         Cmd::InspectorPane => &["opacity", "transparency", "blend mode", "layer properties"],
         Cmd::Eyedropper => &["eyedropper", "colour picker", "sample colour"],
@@ -3407,6 +4240,27 @@ pub fn rank(query: &str, recent: &[Cmd]) -> Vec<Cmd> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keys_are_named_as_the_platform_names_them_and_saved_names_read_back_either_way() {
+        let undo = keys(Key::Z, true, false, true);
+        let words = "shift cmd Z (cmd click), cmd , then; command cmdline xcmd";
+        match cfg!(target_os = "macos") {
+            true => {
+                assert_eq!(undo.label(), "shift cmd Z");
+                assert_eq!(local_keys(words), words);
+            }
+            false => {
+                assert_eq!(undo.label(), "shift ctrl Z");
+                assert_eq!(
+                    local_keys(words),
+                    "shift ctrl Z (ctrl click), ctrl , then; command cmdline xcmd"
+                );
+            }
+        }
+        assert_eq!(Keys::parse("shift cmd Z"), Some(undo));
+        assert_eq!(Keys::parse("shift ctrl Z"), Some(undo), "a shortcut saved on Windows");
+    }
     use std::collections::BTreeSet;
 
     const INVENTORY: &[(&str, &str)] = &[
@@ -3541,7 +4395,7 @@ mod tests {
         assert!(IN_APP_MENU.iter().all(|c| listed.contains(c)));
         assert_eq!(menu_label(Cmd::NewDocument), "New…");
         assert_eq!(Bindings::default().menu_key(Cmd::Delete), "Backspace");
-        assert_eq!(Bindings::default().menu_key(Cmd::Redo), "shift cmd Z");
+        assert_eq!(Bindings::default().menu_key(Cmd::Redo), format!("shift {CMD} Z"));
     }
 
     #[test]
@@ -3736,14 +4590,17 @@ mod tests {
         assert!(rank("rotate", &[]).contains(&Cmd::TurnLeft90));
         assert!(rank("help", &[])[..2].contains(&Cmd::FirstSteps));
         assert!(rank("png", &[]).contains(&Cmd::Export));
-        ["crop", "merge", "canvas size", "lete", "elect", "dslct"]
+        assert_eq!(first("merge"), Some(Cmd::MergeDown));
+        assert_eq!(first("crop"), Some(Cmd::CropTool));
+        assert_eq!(first("canvas size"), Some(Cmd::CanvasWindow));
+        ["lete", "elect", "dslct"]
             .into_iter()
             .for_each(|q| assert_eq!(rank(q, &[]), Vec::<Cmd>::new(), "{q} finds nothing"));
     }
 
     #[test]
     fn keys_read_the_way_the_docs_write_them() {
-        assert_eq!(Cmd::Redo.spec().key_label(), "shift cmd Z or cmd Y");
+        assert_eq!(Cmd::Redo.spec().key_label(), format!("shift {CMD} Z or {CMD} Y"));
         assert_eq!(Cmd::NextDrawing.spec().key_label(), "alt .");
         assert_eq!(Cmd::Delete.spec().key_label(), "Delete or Backspace");
         assert_eq!(Cmd::Play.spec().key_label(), "Return");

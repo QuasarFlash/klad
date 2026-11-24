@@ -11,9 +11,10 @@ anyhow = "1.0.104"
 bytemuck = "1.25.2"
 klad-brush = { path = "../brush" }
 klad-core = { path = "../core" }
+klad-mcp = { path = "../mcp" }
 klad-render = { path = "../render" }
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "accesskit", "clipboard", "wayland", "x11"] }
-egui = "0.37.0"
+egui = { version = "0.37.0", features = ["experimental"] }
 egui-wgpu = "0.37.0"
 half = { version = "2.7.1", features = ["bytemuck"] }
 notify = "8"
@@ -28,11 +29,15 @@ zstd = "0.14.3"
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSResponder", "NSGraphics", "NSApplication", "NSWindow", "NSPanel", "NSSavePanel", "NSOpenPanel", "NSMenu", "NSMenuItem", "NSCell"] }
+objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSResponder", "NSGraphics", "NSApplication", "NSWindow", "NSPanel", "NSSavePanel", "NSOpenPanel", "NSMenu", "NSMenuItem", "NSCell", "NSWorkspace", "NSAccessibility"] }
 objc2-foundation = "0.3"
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
+
+[target.'cfg(windows)'.dependencies]
+raw-window-handle = "0.6.2"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Performance", "Win32_UI_Controls", "Win32_UI_Input_Pointer", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
 egui_kittest = { version = "0.37.0", features = ["wgpu"] }

@@ -1,7 +1,7 @@
 use crate::color::parse_hex;
 use crate::doc::{Cel, Clip, Document, Item, Kind, Layer, LayerContent, Loc, MASK, Node, Shape, Swatch, Tween};
 use crate::fill::{self, Coverage, Fill, FillRef, FillSource, Seed};
-use crate::markedit::{LassoAction, MarkChange, MarkTransform, Source, parse_address};
+use crate::markedit::{LassoAction, MarkChange, MarkTransform, Order, Source, arrange, parse_address};
 use crate::path::{flatten, length, profile, resample};
 use crate::pathedit::{self, PathEdit};
 use crate::retime::{self, Retime, RetimeSpec};
@@ -137,6 +137,14 @@ pub enum Op {
     Detach {
         ids: Vec<String>,
     },
+    Order {
+        ids: Vec<String>,
+        to: Order,
+    },
+    Style {
+        from: String,
+        ids: Vec<String>,
+    },
     Shift(ShiftSpec),
     Path {
         id: String,
@@ -152,8 +160,13 @@ pub enum Op {
     Canvas {
         wrap: Option<bool>,
         tile: Option<Option<[u32; 2]>>,
+        size: Option<[u32; 2]>,
+        background: Option<Option<String>>,
     },
     Atmosphere(Option<crate::look::Atmosphere>),
+    Grid(crate::guides::GridEdit),
+    Guides(crate::guides::GuideEdit),
+    Assists(crate::guides::AssistEdit),
     Maps(Option<crate::maps::Maps>),
     Frames(FrameSpec),
     Cel(CelSpec),
@@ -1038,8 +1051,36 @@ pub struct WeightsSpec {
     pub value: f32,
     #[serde(default)]
     pub smooth: bool,
+    #[serde(default)]
+    pub mode: crate::rig::Mode,
+    #[serde(default = "full")]
+    pub strength: f32,
+    #[serde(default)]
+    pub hardness: f32,
+    #[serde(default)]
+    pub pressures: Vec<f32>,
     #[serde(skip)]
     pub resolved: Option<crate::rig::Weights>,
+}
+
+impl Default for WeightsSpec {
+    fn default() -> Self {
+        Self {
+            layer: String::new(),
+            frame: 0,
+            auto: false,
+            bone: None,
+            set: Vec::new(),
+            part: None,
+            value: 1.0,
+            smooth: false,
+            mode: crate::rig::Mode::Paint,
+            strength: 1.0,
+            hardness: 0.0,
+            pressures: Vec::new(),
+            resolved: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -1831,6 +1872,34 @@ impl Op {
                 }
                 Op::Detach { ids }
             }
+            "style" => {
+                let from = take_str(&mut map, "from")?
+                    .ok_or_else(|| anyhow!("style needs from: the shape whose look to copy"))?;
+                let mut ids: Vec<String> = match map.remove("ids") {
+                    Some(v) => serde_json::from_value(v).map_err(|_| anyhow!("ids must be a list of strings"))?,
+                    None => Vec::new(),
+                };
+                ids.extend(take_str(&mut map, "id")?);
+                if ids.is_empty() {
+                    bail!("style needs the shapes to give the look to: id or ids");
+                }
+                Op::Style { from, ids }
+            }
+            "order" => {
+                let mut ids: Vec<String> = match map.remove("ids") {
+                    Some(v) => serde_json::from_value(v).map_err(|_| anyhow!("ids must be a list of strings"))?,
+                    None => Vec::new(),
+                };
+                ids.extend(take_str(&mut map, "id")?);
+                if ids.is_empty() {
+                    bail!("order needs an id or ids: shapes, or strokes and fills (<cel>:s<id>)");
+                }
+                let to = take_str(&mut map, "to")?.ok_or_else(|| anyhow!("order needs to: front, back, up or down"))?;
+                Op::Order {
+                    ids,
+                    to: Order::parse(&to)?,
+                }
+            }
             "path" => Op::Path {
                 id: take_str(&mut map, "id")?.ok_or_else(|| anyhow!("path needs the id of a path, rect or ellipse"))?,
                 edit: PathEdit::parse(&mut map)?,
@@ -1869,7 +1938,96 @@ impl Op {
                         })?))
                     }
                 },
+                size: match map.remove("size") {
+                    None => None,
+                    Some(v) => Some(
+                        serde_json::from_value(v).map_err(|_| anyhow!("size takes [width, height] in whole pixels"))?,
+                    ),
+                },
+                background: match map.remove("background") {
+                    None => None,
+                    Some(Value::Null) => Some(None),
+                    Some(Value::String(hex)) => Some(Some(hex)),
+                    Some(other) => bail!("background takes a colour like \"#f4efe6\" or null, not {other}"),
+                },
             },
+            "grid" => {
+                let pair = |map: &mut Map<String, Value>, key: &str| -> Result<Option<[f32; 2]>> {
+                    match map.remove(key) {
+                        None => Ok(None),
+                        Some(Value::Number(n)) => {
+                            let v = n.as_f64().ok_or_else(|| anyhow!("{key} takes a number or [x, y]"))? as f32;
+                            Ok(Some([v, v]))
+                        }
+                        Some(v) => serde_json::from_value(v)
+                            .map(Some)
+                            .map_err(|_| anyhow!("{key} takes a number or [x, y]")),
+                    }
+                };
+                let flag = |map: &mut Map<String, Value>, key: &str| -> Result<Option<bool>> {
+                    match map.remove(key) {
+                        None => Ok(None),
+                        Some(Value::Bool(b)) => Ok(Some(b)),
+                        Some(other) => bail!("{key} takes true or false, not {other}"),
+                    }
+                };
+                Op::Grid(crate::guides::GridEdit {
+                    off: flag(&mut map, "off")?.unwrap_or(false),
+                    every: pair(&mut map, "every")?,
+                    sub: whole(&mut map, "sub")?,
+                    offset: pair(&mut map, "offset")?,
+                    iso: flag(&mut map, "iso")?,
+                    colour: take_str(&mut map, "colour")?.or(take_str(&mut map, "color")?),
+                    opacity: map.remove("opacity").and_then(|v| v.as_f64()).map(|v| v as f32),
+                    show: flag(&mut map, "show")?,
+                    snap: flag(&mut map, "snap")?,
+                })
+            }
+            "guides" => {
+                let list = |map: &mut Map<String, Value>, key: &str| -> Result<Vec<f32>> {
+                    match map.remove(key) {
+                        None => Ok(Vec::new()),
+                        Some(Value::Number(n)) => Ok(vec![n.as_f64().unwrap_or(0.0) as f32]),
+                        Some(v) => serde_json::from_value(v).map_err(|_| anyhow!("{key} takes a number or a list")),
+                    }
+                };
+                let flag = |map: &mut Map<String, Value>, key: &str| -> Result<Option<bool>> {
+                    match map.remove(key) {
+                        None => Ok(None),
+                        Some(Value::Bool(b)) => Ok(Some(b)),
+                        Some(other) => bail!("{key} takes true or false, not {other}"),
+                    }
+                };
+                Op::Guides(crate::guides::GuideEdit {
+                    add_x: list(&mut map, "x")?,
+                    add_y: list(&mut map, "y")?,
+                    rm_x: list(&mut map, "rmX")?,
+                    rm_y: list(&mut map, "rmY")?,
+                    clear: flag(&mut map, "clear")?.unwrap_or(false),
+                    hidden: flag(&mut map, "hidden")?,
+                    locked: flag(&mut map, "locked")?,
+                    snap: flag(&mut map, "snap")?,
+                })
+            }
+            "assists" => Op::Assists(crate::guides::AssistEdit {
+                add: match map.remove("add") {
+                    None => Vec::new(),
+                    Some(v) => serde_json::from_value(v).map_err(|e| {
+                        anyhow!("add takes guides like {{\"kind\":\"perspective\",\"points\":[[x,y]]}}, {{\"kind\":\"ruler\",\"from\":[x,y],\"to\":[x,y]}} or {{\"kind\":\"ellipse\",\"center\":[x,y],\"radii\":[rx,ry]}}: {e}")
+                    })?,
+                },
+                set: None,
+                remove: match map.remove("remove") {
+                    None => Vec::new(),
+                    Some(v) => serde_json::from_value(v).map_err(|_| anyhow!("remove takes the guides' numbers, from 0"))?,
+                },
+                clear: matches!(map.remove("clear"), Some(Value::Bool(true))),
+                on: match map.remove("on") {
+                    None => None,
+                    Some(Value::Bool(b)) => Some(b),
+                    Some(other) => bail!("on takes true or false, not {other}"),
+                },
+            }),
             "timeline" => Op::Timeline {
                 fps: whole(&mut map, "fps")?,
                 frames: whole(&mut map, "frames")?,
@@ -4146,6 +4304,8 @@ pub fn apply(doc: &mut Document, op: &Op, out: &mut Applied) -> Result<()> {
             })?;
             out.changed.extend(ids.iter().cloned());
         }
+        Op::Order { ids, to } => order(doc, ids, *to, out)?,
+        Op::Style { from, ids } => style(doc, from, ids, out)?,
         Op::Shift(spec) => shift(doc, spec, out)?,
         Op::Move { id, place } => {
             move_item(doc, id, place).with_context(|| format!("mv {id}"))?;
@@ -4268,6 +4428,19 @@ pub fn apply(doc: &mut Document, op: &Op, out: &mut Applied) -> Result<()> {
                 out.changed.push("palette".into());
             }
         }
+        Op::Grid(edit) => {
+            let tile = doc.canvas.tile;
+            crate::guides::edit_grid(&mut doc.guides, edit, tile)?;
+            out.changed.push("grid".into());
+        }
+        Op::Guides(edit) => {
+            crate::guides::edit_guides(&mut doc.guides, edit)?;
+            out.changed.push("guides".into());
+        }
+        Op::Assists(edit) => {
+            crate::guides::edit_assists(&mut doc.guides, edit)?;
+            out.changed.push("guides".into());
+        }
         Op::Atmosphere(air) => {
             if let Some(air) = air {
                 air.validate()?;
@@ -4282,11 +4455,32 @@ pub fn apply(doc: &mut Document, op: &Op, out: &mut Applied) -> Result<()> {
             doc.maps = maps.clone();
             out.changed.push("maps".into());
         }
-        Op::Canvas { wrap, tile } => {
-            if wrap.is_none() && tile.is_none() {
+        Op::Canvas {
+            wrap,
+            tile,
+            size,
+            background,
+        } => {
+            if wrap.is_none() && tile.is_none() && size.is_none() && background.is_none() {
                 bail!(
-                    "canvas needs \"wrap\": true or false (a drawing that repeats at its edges), or \"tile\": the size of its tiles as 16 or [16, 16], null for none"
+                    "canvas needs \"wrap\": true or false (a drawing that repeats at its edges), \"tile\": the size of its tiles as 16 or [16, 16], null for none, \"size\": [width, height] or \"background\": a colour or null"
                 );
+            }
+            if let Some([w, h]) = size {
+                if *w == 0 || *h == 0 || *w > 16384 || *h > 16384 {
+                    bail!("the canvas takes 1 to 16384 px a side, not {w} by {h}");
+                }
+                doc.canvas.width = *w;
+                doc.canvas.height = *h;
+                if let Some(cut) = doc.canvas.tile.filter(|_| !matches!(tile, Some(None))) {
+                    doc.canvas.cut(cut)?;
+                }
+            }
+            if let Some(background) = background {
+                if let Some(hex) = background {
+                    parse_hex(hex)?;
+                }
+                doc.canvas.background = background.clone();
             }
             if let Some(wrap) = wrap {
                 doc.canvas.wrap = *wrap;
@@ -4552,6 +4746,68 @@ fn shift(doc: &mut Document, spec: &ShiftSpec, out: &mut Applied) -> Result<()> 
         });
     }
     out.changed.push(id);
+    Ok(())
+}
+
+type NodeList = (Vec<usize>, usize, Vec<usize>);
+
+fn style(doc: &mut Document, from: &str, ids: &[String], out: &mut Applied) -> Result<()> {
+    let look = match doc.item(from) {
+        Some(Item::Node(_, _, node)) => (node.fill.clone(), node.stroke.clone(), node.opacity),
+        _ => bail!("{from} is not a shape: style copies the fill, outline and opacity of a shape"),
+    };
+    ids.iter().try_for_each(|id| {
+        let Some(Loc::Node(layer, cel, mut path)) = doc.locate(id) else {
+            bail!("{id} is not a shape: style gives a look to shapes");
+        };
+        let index = path.pop().unwrap_or_default();
+        let node = &mut node_list(doc, &layer, cel, &path)?[index];
+        node.fill = look.0.clone();
+        node.stroke = look.1.clone();
+        node.opacity = look.2;
+        Ok::<_, anyhow::Error>(())
+    })?;
+    out.changed.extend(ids.iter().cloned());
+    Ok(())
+}
+
+fn order(doc: &mut Document, ids: &[String], to: Order, out: &mut Applied) -> Result<()> {
+    let mut cels: Vec<(String, Vec<u32>)> = Vec::new();
+    let mut lists: Vec<(NodeList, Vec<String>)> = Vec::new();
+    ids.iter().try_for_each(|id| {
+        if let Some((cel, mark)) = parse_address(id) {
+            match cels.iter_mut().find(|(c, _)| c == cel) {
+                Some((_, marks)) => marks.push(mark),
+                None => cels.push((cel.to_string(), vec![mark])),
+            }
+            return Ok(());
+        }
+        match doc.locate(id) {
+            Some(Loc::Node(layer, cel, mut path)) => {
+                path.pop();
+                let key = (layer, cel, path);
+                match lists.iter_mut().find(|(k, _)| *k == key) {
+                    Some((_, nodes)) => nodes.push(id.clone()),
+                    None => lists.push((key, vec![id.clone()])),
+                }
+                Ok(())
+            }
+            Some(Loc::Layer(_)) => bail!("{id} is a layer; layers change places with mv {id} --above or --below"),
+            Some(Loc::Cel(..)) => bail!("{id} is a drawing; drawings change frames with set {id} frame=<n>"),
+            None => bail!("no item {id}"),
+        }
+    })?;
+    cels.into_iter().try_for_each(|(cel, marks)| {
+        let layer = mark_owner(doc, &cel)?;
+        out.push(&layer, &cel, MarkChange::Order { ids: marks, to });
+        Ok::<_, anyhow::Error>(())
+    })?;
+    lists.into_iter().try_for_each(|((layer, cel, parent), nodes)| {
+        let list = node_list(doc, &layer, cel, &parent)?;
+        arrange(list, |n| nodes.contains(&n.id), |_| true, to);
+        Ok::<_, anyhow::Error>(())
+    })?;
+    out.changed.extend(ids.iter().cloned());
     Ok(())
 }
 

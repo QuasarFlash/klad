@@ -47,6 +47,18 @@ pub fn stretched(node: &Node, affine: [f32; 6], axis: usize, k: f32) -> Result<T
     Ok(t)
 }
 
+pub fn scaled(node: &Node, affine: [f32; 6], kx: f32, ky: f32) -> Result<Transform> {
+    let mut t = committed(node, affine, 1.0, 0.0)?;
+    let quarter = (t.rotate / 90.0).round() as i64;
+    let (a, b) = match quarter.rem_euclid(2) {
+        0 => (kx, ky),
+        _ => (ky, kx),
+    };
+    t.sx *= a;
+    t.sy *= b;
+    Ok(t)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
