@@ -3,6 +3,12 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: A test version with a dash (for example 0.0.0-test.1); the Windows build goes into the bucket under it and releases.json stays as it is
+        required: true
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,10 +20,26 @@ jobs:
   windows:
     needs: check
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
     steps:
+      - name: The version
+        run: |
+          version="${VERSION#v}"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [[ "$version" != *-* ]]; then
+            echo "::error::a run by hand publishes test versions only, with a dash (0.0.0-test.1); a release is a tag v$version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - name: Windows Defender leaves the build alone
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
@@ -25,12 +47,22 @@ jobs:
         with:
           key: x86_64-pc-windows-msvc
       - name: Build
-        shell: bash
-        run: bash packaging/archive.sh x86_64-pc-windows-msvc dist
-      # TODO: sign klad.exe and klad-editor.exe, then put the archive in the private bucket
+        run: |
+          set -o pipefail
+          bash packaging/archive.sh x86_64-pc-windows-msvc dist | tee built.txt
+          echo "BUILT=$(grep -E '\.zip$' built.txt | tail -1)" >> "$GITHUB_ENV"
+      # TODO: sign klad.exe and klad-editor.exe once Windows signing is set up (KLA-529)
+      - name: Into the bucket
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: bash packaging/publish.sh "$VERSION" windows "$BUILT"
 
   release:
     needs: windows
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
