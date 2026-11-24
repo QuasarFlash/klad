@@ -16,13 +16,17 @@ test -d "$app/samples"
 test -f "$app/unins000.exe"
 on_path || { echo "error: the installer did not put $app on the PATH" >&2; exit 1; }
 MSYS_NO_PATHCONV=1 "$app/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES
+set +x
+gone() { [ ! -e "$app/klad.exe" ] && [ ! -e "$app/unins000.exe" ] && ! on_path; }
 for _ in $(seq 60); do
-  [ -e "$app/klad.exe" ] || break
+  gone && break
   sleep 1
 done
 [ ! -e "$app/klad.exe" ] || { echo "error: klad.exe is still there a minute after the uninstaller" >&2; exit 1; }
+[ ! -e "$app/unins000.exe" ] || { echo "error: the uninstaller had not finished a minute later" >&2; exit 1; }
 if on_path; then
-  echo "error: the uninstaller left $app on the PATH" >&2
+  echo "error: the uninstaller left $app on the PATH:" >&2
+  MSYS_NO_PATHCONV=1 reg query 'HKCU\Environment' /v Path >&2 || true
   exit 1
 fi
 echo "installed, on the PATH, uninstalled and off the PATH again"
