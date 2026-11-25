@@ -344,6 +344,7 @@ mod mac {
         let services = menu(mtm, "Services", None);
         let command = NSEventModifierFlags::Command;
         klad.addItem(&self::command(mtm, &target, Cmd::About, bindings));
+        klad.addItem(&self::command(mtm, &target, Cmd::CheckUpdates, bindings));
         klad.addItem(&NSMenuItem::separatorItem(mtm));
         klad.addItem(&self::command(mtm, &target, Cmd::Settings, bindings));
         klad.addItem(&NSMenuItem::separatorItem(mtm));

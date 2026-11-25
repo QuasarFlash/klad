@@ -17,6 +17,7 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 
 ### Added
 
+- **Updates from inside klad on the Mac**: when a newer 1.x is out, klad shows what changed and installs it with **Install Update**, then opens again on the new version with your drawings and settings. It checks once a day (Settings > Updates turns that off), and **Check for updates…** in the klad menu and in Help asks at once. An update is checked against Indicode's signature before it is installed; when klad sits where your account can't write, macOS asks for an administrator's password.
 - **A welcome** the first time klad opens: klad's K paints itself and shows who changes it, your agent and you, then one screen connects the agent app you use and one starts the first steps, each with Skip. Help > Welcome to klad shows it again.
 - **Agent apps without a terminal**: the welcome connects the agent app you use, and File > Connect an agent app… does it later. One click puts klad into Claude Desktop, the Codex app, Claude Code, Cursor or VS Code; the app's row stays amber until it has started klad, then turns green. They paint, read and edit your drawings through klad's MCP server (`klad mcp`, `klad mcp --install`). ([Working with an agent](https://klad.studio/docs/guide/with-an-agent))
 - **Several drawings open at once**, with a tab each above the canvas: click a tab or press **ctrl Tab**; opening a drawing that is open shows its tab. Strokes and shapes copied in one drawing paste into another with their brushes, pictures and palette colours.

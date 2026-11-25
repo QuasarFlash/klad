@@ -7596,6 +7596,44 @@ fn help_reaches_support_by_email_and_about_links_the_site() {
 }
 
 #[test]
+fn check_for_updates_without_sparkle_opens_about_and_asks_the_feed() {
+    let path = sample("check-updates");
+    let feed = path.with_extension("appcast.xml");
+    std::fs::write(
+        &feed,
+        r#"<rss><channel><item><sparkle:shortVersionString>99.1.0</sparkle:shortVersionString><description><![CDATA[<p>A test update.</p>]]></description><enclosure url="https://klad.studio/api/updates/99.1.0/klad-99.1.0-macos.dmg" length="1"/></item></channel></rss>"#,
+    )
+    .unwrap();
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    h.state_mut().update_feed = feed.display().to_string();
+    assert!(!crate::sparkle::running(), "no Sparkle outside the Mac app");
+    h.state_mut().invoke(Cmd::CheckUpdates).unwrap();
+    h.run_steps(1);
+    assert!(h.state().windows.about, "About opens to show the answer");
+    let start = std::time::Instant::now();
+    while h.state().update.is_none() && start.elapsed() < std::time::Duration::from_secs(10) {
+        h.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(h.state().update.as_ref().map(|r| r.version.as_str()), Some("99.1.0"));
+    h.run_steps(1);
+    assert!(
+        h.query_by_label_contains("klad 99.1.0 is out: A test update.")
+            .is_some(),
+        "About says what is out"
+    );
+    let help = crate::commands::MENUS.iter().find(|m| m.title == "Help").unwrap();
+    assert!(
+        help.items
+            .iter()
+            .any(|i| matches!(i, crate::commands::Item::Run(Cmd::CheckUpdates))),
+        "Help has Check for updates"
+    );
+    let _ = std::fs::remove_file(&feed);
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn help_opens_the_guides_and_whats_new() {
     let path = sample("help-links");
     let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
