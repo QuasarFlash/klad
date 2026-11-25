@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 (to come)
+## 1.0.0 (2026-11-25)
 
 klad is a drawing and animation app where every stroke stays editable, hours later too, and where an AI agent can draw in the same drawing beside you from the command line. 1.0 fills in what painters, illustrators, pixel artists and animators reach for every day:
 
