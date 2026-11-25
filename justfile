@@ -29,8 +29,14 @@ samples: compile
 app:
     bash packaging/macos/app.sh
 
+update-key:
+    bash packaging/macos/update-key.sh
+
 publish release=version:
     bash packaging/publish.sh {{release}} macos dist/klad-{{version}}-macos.dmg
+
+unpublish release:
+    bash packaging/publish.sh {{release}} --remove
 
 dist target=`rustc -vV | sed -n 's/^host: //p'`:
     bash packaging/archive.sh {{target}}

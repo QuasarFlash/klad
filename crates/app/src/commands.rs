@@ -262,6 +262,7 @@ pub enum Cmd {
     ContactSupport,
     Guides,
     WhatsNew,
+    CheckUpdates,
     PaintOver,
     CompareReference,
     About,
@@ -625,7 +626,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 274] = [
+    pub const ALL: [Cmd; 275] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -870,6 +871,7 @@ impl Cmd {
         Cmd::ContactSupport,
         Cmd::Guides,
         Cmd::WhatsNew,
+        Cmd::CheckUpdates,
         Cmd::About,
         Cmd::Export,
         Cmd::AddFont,
@@ -3354,6 +3356,15 @@ impl Cmd {
                 R::No,
                 "what changed in each version of klad, on klad.studio",
             ),
+            Cmd::CheckUpdates => spec(
+                "help.check-updates",
+                "check for updates",
+                icon::DOWNLOAD,
+                G::Panels,
+                T::None,
+                R::No,
+                "ask whether a newer klad is out; the Mac app downloads it, installs it and opens again",
+            ),
             Cmd::ConnectAgent => spec(
                 "file.connect-agent",
                 "connect an agent app",
@@ -3623,6 +3634,7 @@ impl Cmd {
             Cmd::ContactSupport => "Contact support",
             Cmd::Guides => "Guides",
             Cmd::WhatsNew => "What's new",
+            Cmd::CheckUpdates => "Check for updates…",
             Cmd::PaintOver => "Paint over…",
             Cmd::CompareReference => "Compare with reference",
             Cmd::About => "About klad and licences",
@@ -4113,6 +4125,7 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::FirstSteps),
             Run(Cmd::Guides),
             Run(Cmd::WhatsNew),
+            Run(Cmd::CheckUpdates),
             Run(Cmd::Palette),
             Run(Cmd::Keys),
             Line,

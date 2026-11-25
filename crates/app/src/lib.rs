@@ -21,6 +21,7 @@ mod planes;
 mod preview;
 pub mod report;
 mod settings;
+mod sparkle;
 mod start;
 mod stats;
 mod sync;

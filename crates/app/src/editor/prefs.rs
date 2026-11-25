@@ -299,13 +299,19 @@ impl Editor {
             ui.end_row();
             row_label(ui, "Every day");
             let mut check = self.settings.check_updates;
+            let asks = if crate::sparkle::running() {
+                "asks klad.studio at most once a day; an update installs only when you say so"
+            } else {
+                "asks the release page on GitHub at most once a day; nothing is installed without you"
+            };
             if ui
                 .checkbox(&mut check, "check for a new version once a day")
-                .hint("asks the release page on GitHub at most once a day; nothing is installed without you")
+                .hint(asks)
                 .changed()
             {
                 self.settings.check_updates = check;
                 self.settings_dirty = true;
+                crate::sparkle::daily(check);
             }
             ui.end_row();
             row_label(ui, "Now");

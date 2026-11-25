@@ -529,6 +529,16 @@ impl Editor {
     }
 
     pub(super) fn update_rows(&mut self, ui: &mut egui::Ui) {
+        if crate::sparkle::running() {
+            if ui
+                .button("check for updates")
+                .hint("ask klad.studio whether a newer version is out: klad downloads it, installs it and opens again")
+                .clicked()
+            {
+                crate::sparkle::check_now();
+            }
+            return;
+        }
         if let Some(checked) = self.update_check.as_ref().and_then(|c| c.try_recv().ok()) {
             self.update_check = None;
             self.update_said = Some(crate::updates::outcome(&checked));

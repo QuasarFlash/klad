@@ -2,13 +2,16 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 version="${1:?give the version the file belongs to, for example 1.0.0}"
-platform="${2:?give the platform: macos, windows or linux}"
-file="${3:?give the file to publish}"
-case "$platform" in
-  macos | windows | linux) ;;
-  *) echo "error: the platform is macos, windows or linux, not $platform" >&2; exit 1 ;;
-esac
-[ -f "$file" ] || { echo "error: $file is not there" >&2; exit 1; }
+platform="${2:?give the platform: macos, windows or linux, or --remove to take the version out of releases.json}"
+file=""
+if [ "$platform" != --remove ]; then
+  file="${3:?give the file to publish}"
+  case "$platform" in
+    macos | windows | linux) ;;
+    *) echo "error: the platform is macos, windows or linux, not $platform" >&2; exit 1 ;;
+  esac
+  [ -f "$file" ] || { echo "error: $file is not there" >&2; exit 1; }
+fi
 for setting in R2_ACCOUNT_ID R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
   if [ -z "${!setting:-}" ] && command -v security >/dev/null; then
     kept="$(security find-generic-password -s klad-r2 -a "$setting" -w 2>/dev/null || true)"
@@ -29,7 +32,7 @@ hash() {
   if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
 }
 work="$(mktemp -d)"
-trap 'rm -f "$work/answer" "$work/headers" "$work/releases.json" "$work/shelf.json"; rmdir "$work"' EXIT
+trap 'rm -f "$work/answer" "$work/headers" "$work/releases.json" "$work/shelf.json" "$work/notes.md"; rmdir "$work"' EXIT
 r2() {
   printf 'user = "%s:%s"\n' "$R2_ACCESS_KEY_ID" "$R2_SECRET_ACCESS_KEY" |
     curl --config - --silent --show-error --aws-sigv4 "aws:amz:$region:s3" "$@"
@@ -42,25 +45,39 @@ put() {
     --upload-file "$from" "$endpoint/$R2_BUCKET/$key"
 }
 
-name="$(basename "$file")"
-key="$version/$name"
-size="$(wc -c <"$file" | tr -d ' ')"
-sha256="$(hash "$file")"
-case "$name" in
-  *.dmg) type=application/x-apple-diskimage ;;
-  *.exe) type=application/vnd.microsoft.portable-executable ;;
-  *.zip) type=application/zip ;;
-  *.gz) type=application/gzip ;;
-  *) type=application/octet-stream ;;
-esac
-echo "uploading $name ($size bytes) to $R2_BUCKET as $key"
-status="$(put "$file" "$key" "$type")"
-[ "$status" = 200 ] || { echo "error: the bucket answered $status to $key: $(cat "$work/answer")" >&2; exit 1; }
+upload() {
+  name="$(basename "$file")"
+  key="$version/$name"
+  size="$(wc -c <"$file" | tr -d ' ')"
+  sha256="$(hash "$file")"
+  case "$name" in
+    *.dmg) type=application/x-apple-diskimage ;;
+    *.exe) type=application/vnd.microsoft.portable-executable ;;
+    *.zip) type=application/zip ;;
+    *.gz) type=application/gzip ;;
+    *) type=application/octet-stream ;;
+  esac
+  signature=""
+  if [ "$platform" = macos ] && [[ "$version" != *-* ]]; then
+    sign_update="${SPARKLE_SIGN_UPDATE:-}"
+    [ -n "$sign_update" ] || sign_update="$(bash "$here/macos/sparkle.sh")/bin/sign_update"
+    signed="$("$sign_update" "$file")" || { echo "error: $name could not be signed with the update key; just update-key makes one" >&2; exit 1; }
+    signature="$(printf '%s' "$signed" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
+    [ -n "$signature" ] || { echo "error: sign_update gave no signature for $name: $signed" >&2; exit 1; }
+    echo "signed $name with the update key"
+  fi
+  echo "uploading $name ($size bytes) to $R2_BUCKET as $key"
+  status="$(put "$file" "$key" "$type")"
+  [ "$status" = 200 ] || { echo "error: the bucket answered $status to $key: $(cat "$work/answer")" >&2; exit 1; }
 
-if [[ "$version" == *-* ]]; then
-  echo "$version is a pre-release, so releases.json stays as it is; the file is at $key"
-  exit 0
-fi
+  if [[ "$version" == *-* ]]; then
+    echo "$version is a pre-release, so releases.json stays as it is; the file is at $key"
+    exit 0
+  fi
+  bash "$here/notes.sh" "$version" >"$work/notes.md"
+}
+
+[ -z "$file" ] || upload
 empty=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 for attempt in 1 2 3 4 5; do
   status="$(r2 --output "$work/releases.json" --dump-header "$work/headers" --write-out '%{http_code}' \
@@ -71,6 +88,7 @@ for attempt in 1 2 3 4 5; do
       condition=(--header "if-match: $etag")
       ;;
     404)
+      [ -n "$file" ] || { echo "the bucket has no releases.json, so nothing lists $version"; exit 0; }
       echo '{"releases": []}' >"$work/releases.json"
       condition=(--header "if-none-match: *")
       ;;
@@ -79,11 +97,20 @@ for attempt in 1 2 3 4 5; do
       exit 1
       ;;
   esac
-  "$python" "$here/releases.py" "$work/releases.json" "$version" "$platform" "$name" "$key" "$size" "$sha256" >"$work/shelf.json"
+  if [ -z "$file" ]; then
+    "$python" "$here/releases.py" remove "$work/releases.json" "$version" >"$work/shelf.json" ||
+      { echo "releases.json does not list $version; nothing to take out"; exit 0; }
+  else
+    "$python" "$here/releases.py" "$work/releases.json" "$version" "$platform" "$name" "$key" "$size" "$sha256" "$signature" "$work/notes.md" >"$work/shelf.json"
+  fi
   status="$(put "$work/shelf.json" releases.json application/json "${condition[@]}")"
   case "$status" in
     200)
-      echo "releases.json lists $key under $version"
+      if [ -z "$file" ]; then
+        echo "releases.json no longer lists $version; its files stay in the bucket under $version/ until you delete them there"
+      else
+        echo "releases.json lists $key under $version"
+      fi
       exit 0
       ;;
     412) echo "releases.json changed while it was read (try $attempt); reading it again" ;;

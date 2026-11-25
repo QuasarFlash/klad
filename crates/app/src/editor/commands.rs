@@ -1356,6 +1356,7 @@ impl Editor {
             Cmd::ContactSupport => self.contact_support(),
             Cmd::Guides => self.open_link(klad_core::contact::GUIDES.to_string()),
             Cmd::WhatsNew => self.open_link(klad_core::contact::CHANGES.to_string()),
+            Cmd::CheckUpdates => self.check_for_updates(),
             Cmd::CopyPath => {
                 let path = self.scene.bundle.root.display().to_string();
                 self.ctx.copy_text(path.clone());
@@ -1782,6 +1783,17 @@ impl Editor {
         #[cfg(test)]
         self.opened.push(url.clone());
         self.ctx.open_url(egui::OpenUrl::new_tab(url));
+    }
+
+    fn check_for_updates(&mut self) {
+        if crate::sparkle::check_now() {
+            return;
+        }
+        self.windows.about = true;
+        if self.update_check.is_none() {
+            self.update_check = Some(crate::updates::spawn(self.update_feed.clone()));
+            self.update_said = None;
+        }
     }
 
     fn contact_support(&mut self) {

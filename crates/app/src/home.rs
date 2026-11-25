@@ -106,11 +106,14 @@ impl Home {
         let mut home = Self::with(settings, settings_path, Some(gpu));
         home.native_menus = true;
         home.ran_out = klad_core::memory::last_time();
-        if updates::due(
-            home.settings.check_updates,
-            home.settings.updates_checked,
-            updates::now(),
-        ) {
+        let sparkle = crate::sparkle::start(home.settings.check_updates);
+        if !sparkle
+            && updates::due(
+                home.settings.check_updates,
+                home.settings.updates_checked,
+                updates::now(),
+            )
+        {
             home.checking = Some(updates::spawn(updates::feed()));
         }
         home.begin(&cc.egui_ctx, path);
@@ -424,6 +427,12 @@ impl Home {
                 }
                 (Picked::Run(Cmd::OpenDocument), None) => {
                     self.start = Some(Start::new(&self.settings, Section::Open));
+                    path
+                }
+                (Picked::Run(Cmd::CheckUpdates), None) => {
+                    if !crate::sparkle::check_now() && self.checking.is_none() {
+                        self.checking = Some(updates::spawn(updates::feed()));
+                    }
                     path
                 }
                 (Picked::Run(Cmd::Quit), None) => {

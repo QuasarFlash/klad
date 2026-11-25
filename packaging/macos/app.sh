@@ -8,6 +8,14 @@ export MACOSX_DEPLOYMENT_TARGET
 version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)"
 build="$(git -C "$root" describe --tags --always 2>/dev/null || echo "$version")"
 export KLAD_BUILD="$build"
+KLAD_SITE="${KLAD_SITE:-https://klad.studio}"
+KLAD_SITE="${KLAD_SITE%/}"
+export KLAD_SITE
+feed="$KLAD_SITE/api/appcast/${version%%.*}"
+key_file="$root/packaging/macos/sparkle-key.txt"
+[ -s "$key_file" ] || { echo "error: packaging/macos/sparkle-key.txt is missing: run just update-key once on this Mac, then commit the file" >&2; exit 1; }
+sparkle_key="$(tr -d '[:space:]' <"$key_file")"
+sparkle="$(bash "$root/packaging/macos/sparkle.sh")"
 binaries=()
 for target in $targets; do
   rustup target add "$target" >/dev/null 2>&1 || true
@@ -26,7 +34,10 @@ for exe in klad klad-editor; do
     cp "${inputs[0]}" "$app/Contents/MacOS/$exe"
   fi
 done
-sed -e "s/@VERSION@/$version/" -e "s/@BUILD@/$build/" "$root/packaging/macos/Info.plist" > "$app/Contents/Info.plist"
+sed -e "s/@VERSION@/$version/g" -e "s|@FEED@|$feed|" -e "s|@SPARKLE_KEY@|$sparkle_key|" "$root/packaging/macos/Info.plist" > "$app/Contents/Info.plist"
+mkdir -p "$app/Contents/Frameworks"
+ditto "$sparkle/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
+rm -rf "$app/Contents/Frameworks/Sparkle.framework/Versions/Current/XPCServices" "$app/Contents/Frameworks/Sparkle.framework/XPCServices"
 cp "$root/packaging/icon/klad.icns" "$app/Contents/Resources/"
 rsync -a --exclude update.py "$root/fonts/" "$app/Contents/Resources/fonts/"
 cp "$root/LICENSE" "$root/LICENSE-MIT" "$root/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/"
