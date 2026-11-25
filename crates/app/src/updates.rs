@@ -264,8 +264,8 @@ mod tests {
             r#"<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
 <channel><title>klad 0.x</title>
-<item><title>klad 0.5.0</title><sparkle:version>0.5.0</sparkle:version><sparkle:shortVersionString>0.5.0</sparkle:shortVersionString><description><![CDATA[<p>The first test.</p>]]></description><enclosure url="https://klad-dev.atelier-schaaf.be/api/updates/download?key=0.5.0%2Fklad-0.5.0-macos.dmg&amp;v=1" length="10" type="application/octet-stream" sparkle:edSignature="x"/></item>
-<item><title>klad 0.5.1</title><sparkle:version>0.5.1</sparkle:version><sparkle:shortVersionString>0.5.1</sparkle:shortVersionString><description><![CDATA[<p>Updates from inside klad &amp; more.</p><ul><li>Install and restart</li></ul>]]></description><enclosure url="https://klad-dev.atelier-schaaf.be/api/updates/download?key=0.5.1%2Fklad-0.5.1-macos.dmg" length="10" type="application/octet-stream" sparkle:edSignature="y"/></item>
+<item><title>klad 0.5.0</title><sparkle:version>0.5.0</sparkle:version><sparkle:shortVersionString>0.5.0</sparkle:shortVersionString><description><![CDATA[<p>The first test.</p>]]></description><enclosure url="https://klad-dev.atelier-schaaf.be/api/updates/0.5.0/klad-0.5.0-macos.dmg?v=1&amp;w=2" length="10" type="application/octet-stream" sparkle:edSignature="x"/></item>
+<item><title>klad 0.5.1</title><sparkle:version>0.5.1</sparkle:version><sparkle:shortVersionString>0.5.1</sparkle:shortVersionString><description><![CDATA[<p>Updates from inside klad &amp; more.</p><ul><li>Install and restart</li></ul>]]></description><enclosure url="https://klad-dev.atelier-schaaf.be/api/updates/0.5.1/klad-0.5.1-macos.dmg" length="10" type="application/octet-stream" sparkle:edSignature="y"/></item>
 </channel></rss>"#,
         )
         .unwrap();
@@ -273,7 +273,7 @@ mod tests {
         assert_eq!(found.version, "0.5.1");
         assert_eq!(
             found.url,
-            "https://klad-dev.atelier-schaaf.be/api/updates/download?key=0.5.1%2Fklad-0.5.1-macos.dmg"
+            "https://klad-dev.atelier-schaaf.be/api/updates/0.5.1/klad-0.5.1-macos.dmg"
         );
         assert_eq!(found.notes, "Updates from inside klad & more.\nInstall and restart");
         assert_eq!(summary(&found), "klad 0.5.1 is out: Updates from inside klad & more.");

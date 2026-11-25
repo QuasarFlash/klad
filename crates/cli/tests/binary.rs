@@ -196,6 +196,33 @@ fn updates_says_what_the_feed_holds() {
     let missing = run(&dir.join("missing.json"));
     assert!(!missing.status.success());
     assert!(String::from_utf8_lossy(&missing.stderr).starts_with("error: could not check: reading"));
+    let appcast = dir.join("appcast.xml");
+    std::fs::write(
+        &appcast,
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+<channel>
+<title>klad 9.x</title>
+<item>
+<title>klad 9.9.9</title>
+<sparkle:version>9.9.9</sparkle:version>
+<sparkle:shortVersionString>9.9.9</sparkle:shortVersionString>
+<description><![CDATA[<p>Updates from inside klad.</p>
+<ul><li><strong>Install Update</strong></li></ul>]]></description>
+<enclosure url="https://klad.studio/api/updates/9.9.9/klad-9.9.9-macos.dmg" length="25" type="application/octet-stream" sparkle:edSignature="x"/>
+</item>
+</channel>
+</rss>
+"#,
+    )
+    .unwrap();
+    let out = run(&appcast);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "klad 9.9.9 is out: Updates from inside klad.\nhttps://klad.studio/api/updates/9.9.9/klad-9.9.9-macos.dmg\n",
+        "a bought build reads the site's appcast"
+    );
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
