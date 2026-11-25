@@ -95,7 +95,7 @@ fn skeleton(h: &Harness<'static, Editor>) -> Layer {
         .map_or_else(|| Layer::skeleton("", ""), |l| (*l).clone())
 }
 
-fn ready(h: &mut Harness<'static, Editor>) {
+pub(super) fn ready(h: &mut Harness<'static, Editor>) {
     let start = std::time::Instant::now();
     while !h.state().canvas_current() && start.elapsed() < super::testkit::PATIENCE {
         h.run_steps(1);

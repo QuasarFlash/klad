@@ -1,4 +1,4 @@
-use super::ui_tests::{activate, canvas_at, drag, editor, harness, layer_named, marks_on, said, sample};
+use super::ui_tests::{activate, canvas_at, drag, editor, harness, layer_named, marks_on, ready, said, sample};
 use super::{Editor, Focus, Picked, Tool};
 use crate::commands::Cmd;
 use egui::{Key, Modifiers, vec2};
@@ -1446,14 +1446,16 @@ fn a_new_layer_made_inside_a_hidden_group_goes_above_the_group_where_it_shows() 
     );
     let at = |id: &str| doc.layers.iter().position(|l| l.id == id).unwrap();
     assert_eq!(at(&made), at(&group) + 1, "it sits just above the group");
+    ready(&mut h);
     let (a, b) = (canvas_at(&h, 100.0, 100.0), canvas_at(&h, 200.0, 150.0));
-    let before = h.state().scene.total_marks();
+    let (before, rev) = (h.state().scene.total_marks(), h.state().scene.bundle.doc.rev);
     drag(&mut h, a, b);
     h.run_steps(2);
     assert!(
         h.state().scene.total_marks() > before,
-        "and a stroke lands on it: {}",
-        said(&h)
+        "and a stroke lands on it: {} (rev {rev} before the stroke, {} after)",
+        said(&h),
+        h.state().scene.bundle.doc.rev
     );
     let _ = std::fs::remove_dir_all(&path);
 }
