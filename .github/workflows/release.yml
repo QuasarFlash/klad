@@ -19,6 +19,7 @@ jobs:
 
   windows:
     needs: check
+    if: github.event_name == 'workflow_dispatch' || vars.WINDOWS_RELEASE == 'yes'
     runs-on: windows-latest
     defaults:
       run:
@@ -77,8 +78,8 @@ jobs:
           bash packaging/publish.sh "$VERSION" windows "$SETUP" 2>&1 | tee publish.txt || { bash .github/failed.sh "Into the bucket" publish.txt; exit 1; }
 
   release:
-    needs: windows
-    if: github.event_name == 'push'
+    needs: [check, windows]
+    if: github.event_name == 'push' && !failure() && !cancelled()
     runs-on: ubuntu-24.04
     permissions:
       contents: write
