@@ -4,7 +4,7 @@
 
 **Give your agent real brushes.** klad is a 2D painting and animation app you share with a coding agent. You paint in the editor with a pen. The agent paints through the `klad` command line, with the same brushes, on the same drawing, and each of you sees the other's strokes instantly.
 
-*Don't want to build it? Sign up for the pre-built app release at [klad.studio](https://klad.studio).*
+*Don't want to build it? The signed Mac app is on [klad.studio](https://klad.studio/pricing), and it updates itself.*
 
 **There is no image model in klad.** Your agent (Claude Code, Codex, Claude Desktop, anything that can run commands or speak MCP) decides what to paint; klad gives it brushes, layers and a timeline. Whatever either of you puts down stays what it was: a stroke with its path, pressure, brush and colour, a shape with its points, a fill with its region. So there's no rerolling and hoping for the best: if one leaf looks off, you fix that leaf.
 
@@ -107,7 +107,7 @@ The steps in the editor are in [Drawing pixel art](docs/guide/pixel-art.md).
 
 ## Try it
 
-There are no installers yet, so you build klad yourself. It takes about ten minutes the first time.
+On a Mac you can buy the signed app on [klad.studio](https://klad.studio/pricing). On Windows and Linux, and on a Mac if you'd rather, you build klad yourself. It takes about ten minutes the first time.
 
 ### From source
 
@@ -142,9 +142,8 @@ What you build is for your own use, or your company's if it had less than 500,00
 
 ## What's rough
 
-- **You build it yourself.** Signed builds for macOS, Windows and Linux are planned, under the same licence as the source; [leave your email on klad.studio](https://klad.studio/pricing) to hear when they are ready.
+- **The ready-made app is for the Mac only.** On Windows and Linux you build klad yourself for now.
 - **The editor is made on a Mac.** On Linux it starts and you draw with the mouse: tablets give no pressure there yet. On Windows it builds, its tests pass and the pen works through Windows Ink, but it is drawn with far less than on a Mac, so tell us what you see.
-- **Some illustration basics are missing:** snapping, a grid for shapes, and SVG import and export.
 - **Bones are a preview:** their commands may still change.
 - **The file format still moves.** Drawings keep opening as klad changes: a new format version comes with a migration.
 
