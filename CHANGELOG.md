@@ -35,20 +35,20 @@ Drawings are saved in format `klad/9`; `klad/8` drawings open unchanged, and kla
 - **Exports**: JPEG, WebP (lossy, lossless and animated), TIFF (8 or 16 bits), PSD with a layer for each layer and groups, PDF with vector layers kept as shapes (a page per frame or clip, on the drawing's size or a paper), MP4 video, SVG, and the selection alone (`klad export --format jpeg|webp|tiff|psd|pdf|mp4|svg --only`).
 - **Imports**: PSD from Photoshop, Krita and Affinity with its layers and groups; SVG as shapes; a sprite sheet cut into frames, or a folder of numbered pictures, onto a new layer with a clip (**File > Import frames…**, `klad import sheet.png --cell 32x32 --to art.klad`).
 - **The weight brush**: paint, add, remove and smooth (**shift 1** to **4**), a strength that the pen's pressure drives, hardness, the weight under the pointer and **alt I** to pick it up, a legend and every bone's weight in its own colour (`klad weights --mode --strength --hardness --at`).
-- **Windows, for 1.0**: `klad.exe` and `klad-editor.exe` carry klad's icon and its version, and so does the editor's window. Key names say **ctrl** on Windows and Linux, in the menus, hints and messages. Claude Desktop from its Windows installer connects (klad finds the settings that version reads), and its next step says how to quit it on Windows. Explorer gets a drawing's picture as its folder picture when the drawing closes or klad quits.
+- **Windows, built from source**: `klad.exe` and `klad-editor.exe` carry klad's icon and its version, and so does the editor's window. Key names say **ctrl** on Windows and Linux, in the menus, hints and messages. Claude Desktop from its Windows installer connects (klad finds the settings that version reads), and its next step says how to quit it on Windows. Explorer gets a drawing's picture as its folder picture when the drawing closes or klad quits.
 - **Drawings preview in Finder**: select a drawing and press space to see it, and icon and gallery views show its picture. klad writes it when you close the drawing or quit, in the background (`klad preview`, `--all` for a folder).
 - **Very large canvases**: a canvas too big for the machine's memory is refused with the size it needs, a tight one is made with a warning, and the editor uses the graphics' real texture limit.
 
 ### Changed
 
-- **The Mac app is one app for Apple silicon and Intel Macs**, signed and notarised so it opens without a warning, and needs macOS 14 Sonoma or later. The Windows build needs 64-bit Windows 10 or 11.
+- **The Mac app is one app for Apple silicon and Intel Macs**, signed and notarised so it opens without a warning, and needs macOS 14 Sonoma or later. On Windows, klad builds from source on 64-bit Windows 10 or 11.
 - **Help > First steps** shows what klad does in six steps: paint a shape and erase part of it, paint and fill a second one, reshape the first stroke with edit points (the erased part bends with it), and let your agent change that stroke.
 - Opening a drawing keeps the one you were in open, in a tab, instead of closing it.
 - The bone tool's weights bar: the mode buttons, then size and weight; strength, hardness, pressure, the legend, **automatic** and **smooth all** under **⋯**.
 - The export window has a format row for pictures and its own pages for PDF and video; the GIF window also writes animated WebP.
 - Drawings are saved in format `klad/9` (the grid, guides and drawing guides).
 - The licence says plainly that the drawings you make are yours: you may sell them and use them in your own and your clients' commercial work.
-- The licence says that a larger company buys a company seat for each person who uses klad: a yearly subscription, sold only on klad.studio, that ends at the end of the last period paid for once it is cancelled. A build bought anywhere, itch.io and Steam included, is a personal licence.
+- The licence says that a larger company buys a company seat for each person who uses klad: a yearly subscription, sold only on klad.studio, that ends at the end of the last period paid for once it is cancelled. A build bought anywhere, itch.io and Steam included, is a personal licence. Company seats are not on sale yet: a company over the limit writes to hello@klad.studio.
 - The Mac disk image opens to a window with klad, an arrow and the Applications folder.
 
 ### Fixed

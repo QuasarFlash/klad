@@ -8,12 +8,9 @@ Keys are written the way a Mac shows them. On Windows and Linux, cmd is ctrl.
 
 ## Get klad
 
-Get the builds on [klad.studio](https://klad.studio/pricing), or [build klad from source](https://github.com/klad-app/klad#from-source): it is free and takes about ten minutes. The builds need:
+Buy the Mac app on [klad.studio](https://klad.studio/pricing), or [build klad from source](https://github.com/klad-app/klad#from-source): it is free and takes about ten minutes. The Mac app needs macOS 14 Sonoma or later, on Apple silicon or Intel.
 
-- **Mac:** macOS 14 Sonoma or later, on Apple silicon or Intel.
-- **Windows:** Windows 10 or 11, 64-bit.
-
-On Linux, build klad from source. On a Mac and on Windows the pen gives pressure and tilt (on Windows through Windows Ink), and on Linux you draw with the mouse for now.
+On Windows and Linux, build klad from source for now; on Windows it needs 64-bit Windows 10 or 11. On a Mac and on Windows the pen gives pressure and tilt (on Windows through Windows Ink), and on Linux you draw with the mouse for now.
 
 ## Make a drawing
 
