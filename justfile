@@ -1,5 +1,6 @@
 target_dir := env("KLAD_TARGET_DIR", if os() == "macos" { "target" } else { "target/" + os() })
 klad := target_dir / "release" / "klad" + if os() == "windows" { ".exe" } else { "" }
+version := `sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1`
 
 export CARGO_TARGET_DIR := target_dir
 export KLAD_TARGET_DIR := target_dir
@@ -15,7 +16,7 @@ compile:
     {{klad}} --version
 
 test:
-    cargo test --workspace
+    cargo test --workspace --no-fail-fast
     python3 docs/skill/drawkit.py --check
 
 lint:
@@ -27,6 +28,9 @@ samples: compile
 
 app:
     bash packaging/macos/app.sh
+
+publish release=version:
+    bash packaging/publish.sh {{release}} macos dist/klad-{{version}}-macos.dmg
 
 dist target=`rustc -vV | sed -n 's/^host: //p'`:
     bash packaging/archive.sh {{target}}

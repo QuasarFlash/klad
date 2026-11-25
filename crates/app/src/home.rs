@@ -1279,6 +1279,7 @@ mod tests {
         std::fs::write(&program, "").unwrap();
         let places = klad_mcp::Places {
             home: apps.clone(),
+            root: apps.join("computer"),
             os: klad_mcp::Os::Mac,
         };
         let state = h.state_mut();
@@ -1330,6 +1331,7 @@ mod tests {
         );
         let places = klad_mcp::Places {
             home: dir.join("apps"),
+            root: dir.join("apps/computer"),
             os: klad_mcp::Os::Mac,
         };
         assert!(klad_mcp::App::ClaudeDesktop.waiting(&places));
@@ -1488,6 +1490,7 @@ mod tests {
         with_claude_desktop(&mut h, &dir);
         let places = klad_mcp::Places {
             home: apps.clone(),
+            root: apps.join("computer"),
             os: klad_mcp::Os::Mac,
         };
         klad_mcp::App::ClaudeCode

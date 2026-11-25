@@ -1031,11 +1031,15 @@ pub(crate) struct Editor {
 impl Editor {
     pub(crate) fn open(ctx: egui::Context, path: &Path) -> Result<Self> {
         let start = Instant::now();
-        let scene = Scene::open_lazy(path)?;
+        let mut scene = Scene::open_lazy(path)?;
         let brushes = BrushSet::for_bundle(&scene.bundle)?;
         let embedded = scene.bundle.brushes()?;
+        let as_read = !scene.bundle.changed_on_disk();
         if let Err(e) = klad_core::drawings::keep_opened(&scene.bundle.root) {
             crate::report::log(&format!("no copy of the drawing as opened, so Revert is off: {e:#}"));
+        }
+        if as_read {
+            scene.bundle.settle();
         }
         let ink = brushes
             .def("ink")

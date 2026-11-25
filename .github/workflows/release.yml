@@ -3,6 +3,12 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: A test version with a dash (for example 0.0.0-test.1); the Windows build goes into the bucket under it and releases.json stays as it is
+        required: true
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -13,24 +19,67 @@ jobs:
 
   windows:
     needs: check
+    if: github.event_name == 'workflow_dispatch' || vars.WINDOWS_RELEASE == 'yes'
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
     steps:
+      - name: The version
+        run: |
+          version="${VERSION#v}"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [[ "$version" != *-* ]]; then
+            echo "::error::a run by hand publishes test versions only, with a dash (0.0.0-test.1); a release is a tag v$version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - name: Windows Defender leaves the build alone
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
         with:
           key: x86_64-pc-windows-msvc
+          cache-on-failure: true
       - name: Build
-        shell: bash
-        run: bash packaging/archive.sh x86_64-pc-windows-msvc dist
-      # TODO: sign klad.exe and klad-editor.exe, then put the archive in the private bucket
+        run: |
+          set -o pipefail
+          bash packaging/archive.sh x86_64-pc-windows-msvc dist 2>&1 | tee built.txt || { bash .github/failed.sh "Build" built.txt; exit 1; }
+          echo "STAGE=$(grep -E '\.zip$' built.txt | tail -1 | sed 's/\.zip$//')" >> "$GITHUB_ENV"
+      # TODO: sign klad.exe and klad-editor.exe once Windows signing is set up (KLA-529)
+      - name: Inno Setup
+        run: |
+          [ -f "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ] || choco install innosetup --version 6.4.3 -y --no-progress
+      - name: The installer
+        run: |
+          set -o pipefail
+          bash packaging/windows/setup.sh "$STAGE" dist 2>&1 | tee setup.txt || { bash .github/failed.sh "The installer" setup.txt; exit 1; }
+          echo "SETUP=$(tail -1 setup.txt)" >> "$GITHUB_ENV"
+      # TODO: sign the installer too (KLA-529)
+      - name: The installer installs, puts klad on the PATH and uninstalls
+        run: |
+          set -o pipefail
+          bash packaging/windows/check-install.sh "$SETUP" 2>&1 | tee check.txt || { bash .github/failed.sh "The installer check" check.txt; exit 1; }
+      - name: Into the bucket
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          set -o pipefail
+          bash packaging/publish.sh "$VERSION" windows "$SETUP" 2>&1 | tee publish.txt || { bash .github/failed.sh "Into the bucket" publish.txt; exit 1; }
 
   release:
-    needs: windows
+    needs: [check, windows]
+    if: github.event_name == 'push' && !failure() && !cancelled()
     runs-on: ubuntu-24.04
     permissions:
       contents: write

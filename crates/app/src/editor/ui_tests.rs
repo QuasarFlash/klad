@@ -4150,6 +4150,26 @@ fn a_checkout_under_the_open_editor_shows_the_drawing_it_brings() {
 }
 
 #[test]
+fn opening_a_drawing_keeps_its_copy_for_revert_without_reading_the_drawing_again() {
+    let path = sample("opened-once");
+    let rev = Bundle::open(&path).unwrap().doc.rev;
+    let mut h = harness(editor(&path), vec2(1024.0, 700.0));
+    let start = std::time::Instant::now();
+    while start.elapsed() < std::time::Duration::from_millis(1500) {
+        h.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(klad_core::drawings::has_opened(&path), "the copy for Revert is there");
+    assert!(!h.state().scene.bundle.changed_on_disk());
+    assert_eq!(
+        h.state().scene.bundle.doc.rev,
+        rev,
+        "making that copy is no change to the drawing, so the editor does not read it again"
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn an_agent_edit_while_the_editor_is_open_shows_in_the_history_and_keeps_its_author() {
     let path = sample("agent-row");
     let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
@@ -8769,9 +8789,24 @@ fn a_menu_longer_than_the_window_scrolls_to_its_last_item() {
     h.get_by_label("Layer").click();
     h.run_steps(4);
     let window = h.ctx.content_rect();
-    let items: Vec<(String, Rect)> = labels(&h)
+    let moved: Vec<(String, Rect)> = labels(&h)
         .into_iter()
         .filter(|(l, r)| !before.iter().any(|(b, br)| b == l && (br.min - r.min).length() < 0.5))
+        .collect();
+    let menu = h
+        .ctx
+        .memory(|m| {
+            m.areas()
+                .visible_layer_ids()
+                .into_iter()
+                .filter(|l| l.order == egui::Order::Foreground)
+                .filter_map(|l| m.area_rect(l.id))
+                .max_by_key(|a| moved.iter().filter(|(_, r)| a.contains(r.center())).count())
+        })
+        .expect("the Layer menu opens");
+    let items: Vec<(String, Rect)> = moved
+        .into_iter()
+        .filter(|(_, r)| (menu.left()..=menu.right()).contains(&r.center().x))
         .collect();
     let out: Vec<String> = items
         .iter()
@@ -8782,11 +8817,15 @@ fn a_menu_longer_than_the_window_scrolls_to_its_last_item() {
         !out.is_empty(),
         "the Layer menu fits a 420 point window: the test needs a shorter one"
     );
-    let middle = items
-        .iter()
-        .map(|(_, r)| r.intersect(window))
-        .fold(Rect::NOTHING, Rect::union)
-        .center();
+    let middle = menu.intersect(window).center();
+    let top = |h: &Harness<'static, Editor>| {
+        labels(h)
+            .into_iter()
+            .find(|(l, _)| *l == items[0].0)
+            .map(|(_, r)| r.top())
+    };
+    let first = top(&h);
+    let under = h.ctx.layer_id_at(middle);
     let mut reached: Vec<bool> = vec![false; out.len()];
     (0..40).for_each(|_| {
         h.event(egui::Event::PointerMoved(middle));
@@ -8805,9 +8844,19 @@ fn a_menu_longer_than_the_window_scrolls_to_its_last_item() {
         });
     });
     let still: Vec<&String> = out.iter().zip(&reached).filter(|(_, s)| !**s).map(|(l, _)| l).collect();
+    let areas: Vec<String> = h.ctx.memory(|m| {
+        m.areas()
+            .visible_layer_ids()
+            .into_iter()
+            .map(|l| format!("{:?} {:?}", l.order, m.area_rect(l.id)))
+            .collect()
+    });
     assert!(
         still.is_empty(),
-        "scrolling the menu does not bring these in: {still:?}"
+        "scrolling the menu does not bring these in: {still:?}\nthe pointer at {middle:?} was over {under:?} and is over {:?}; {} went from {first:?} to {:?}; the areas: {areas:?}",
+        h.ctx.layer_id_at(middle),
+        items[0].0,
+        top(&h)
     );
     let _ = std::fs::remove_dir_all(&path);
 }

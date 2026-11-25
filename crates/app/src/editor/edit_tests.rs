@@ -1761,6 +1761,7 @@ fn the_connect_window_puts_klad_in_an_agent_apps_settings_and_takes_it_out() {
     std::fs::write(&program, "").unwrap();
     h.state_mut().connect.places = Some(klad_mcp::Places {
         home: home.clone(),
+        root: home.join("computer"),
         os: klad_mcp::Os::Mac,
     });
     h.state_mut().connect.program = program.clone();
