@@ -70,6 +70,45 @@ pub(super) fn paste_ops(doc: &Document, cells: &[CellCopy], at: u32, links: bool
         .collect()
 }
 
+pub(super) fn move_ops(doc: &Document, rows: &[String], from: u32, to: u32, by: i64) -> Vec<Op> {
+    let frames = doc.timeline.frames;
+    let moving: Vec<(Cel, u32, u32)> = rows
+        .iter()
+        .filter_map(|id| doc.layer(id))
+        .flat_map(|layer| {
+            let cels = layer.cels();
+            exposures(layer, frames)
+                .into_iter()
+                .zip(ends(cels))
+                .filter(|((_, start, _), _)| (from..=to).contains(start))
+                .map(|((cel, start, end), open)| (cel, start, if open == OPEN { OPEN } else { end }))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let holds = moving
+        .iter()
+        .filter(|(cel, _, end)| cel.hold.is_none() && *end != OPEN)
+        .map(|(cel, start, end)| Op::Set {
+            id: cel.id.clone(),
+            props: serde_json::Map::from_iter([("hold".to_string(), serde_json::json!(end - start))]),
+        });
+    let mut order = moving.clone();
+    order.sort_by_key(|(_, start, _)| *start);
+    if by > 0 {
+        order.reverse();
+    }
+    let moves = order.into_iter().map(|(cel, start, _)| {
+        Op::Cel(CelSpec {
+            action: CelAction::Move { cel: cel.id },
+            id: None,
+            frame: Some((start as i64 + by).max(0) as u32),
+            hold: None,
+            insert: false,
+        })
+    });
+    holds.chain(moves).collect()
+}
+
 pub(super) fn free_at_the_end(doc: &Document) -> bool {
     let frames = doc.timeline.frames;
     let last = frames.saturating_sub(1);

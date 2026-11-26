@@ -1421,6 +1421,8 @@ impl Editor {
         let mut dismiss = None;
         let mut held = Vec::new();
         let room = canvas.shrink(12.0);
+        let width = WIDTH.min(room.width());
+        let tall = (room.height() / shown.len() as f32 - 24.0).max(theme::CONTROL);
         let stack = egui::UiBuilder::new()
             .max_rect(room)
             .layout(egui::Layout::bottom_up(egui::Align::Min));
@@ -1438,17 +1440,42 @@ impl Editor {
                         .fill(Color32::from_gray(30))
                         .stroke(egui::Stroke::new(1.0, colour_of(m.tone)))
                         .show(ui, |ui| {
-                            ui.set_max_width(WIDTH);
-                            ui.horizontal(|ui| {
+                            ui.set_max_width(width);
+                            let words = width - theme::ICON - if sticky { theme::CONTROL + 12.0 } else { 6.0 };
+                            let body = egui::TextStyle::Body.resolve(ui.style());
+                            let high = ui
+                                .painter()
+                                .layout(m.text.clone(), body, Color32::WHITE, words)
+                                .size()
+                                .y;
+                            let row = high.min(tall).max(theme::CONTROL);
+                            let align = match high > theme::CONTROL {
+                                true => egui::Align::Min,
+                                false => egui::Align::Center,
+                            };
+                            ui.allocate_ui_with_layout(vec2(width, row), egui::Layout::left_to_right(align), |ui| {
                                 ui.label(
                                     RichText::new(icon_of(m.tone))
                                         .color(colour_of(m.tone))
                                         .size(theme::ICON),
                                 );
-                                let words = WIDTH - theme::ICON - if sticky { theme::CONTROL + 12.0 } else { 6.0 };
                                 ui.scope(|ui| {
                                     ui.set_max_width(words);
-                                    ui.add(egui::Label::new(&m.text).wrap().selectable(false));
+                                    let label = |ui: &mut egui::Ui| {
+                                        ui.add(egui::Label::new(&m.text).wrap().selectable(false));
+                                    };
+                                    match high > tall {
+                                        true => {
+                                            egui::ScrollArea::vertical()
+                                                .id_salt(("toast words", m.id))
+                                                .max_height(tall)
+                                                .show(ui, |ui| {
+                                                    ui.set_max_width(words);
+                                                    label(ui);
+                                                });
+                                        }
+                                        false => label(ui),
+                                    }
                                 });
                                 if sticky
                                     && ui

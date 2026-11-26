@@ -301,7 +301,7 @@ impl Editor {
                     self.command_check(ui, Cmd::ClipLoops, "loops");
                     self.command_check(ui, Cmd::ClipOwnFps, "own fps");
                     if let Some(fps) = clip.fps {
-                        if !ui.memory(|m| m.focused().is_some()) || self.timeline.clip_fps == 0 {
+                        if (!ui.memory(|m| m.focused().is_some()) && !super::timeline::dragging(ui.ctx())) || self.timeline.clip_fps == 0 {
                             self.timeline.clip_fps = fps;
                         }
                         let r = ui

@@ -60,6 +60,7 @@ enum Drag {
         cel: String,
         from: u32,
         to: u32,
+        span: Option<Span>,
     },
     NewClip {
         from: u32,
@@ -246,6 +247,10 @@ fn press_at(g: &Geom, blocks: &[Vec<Block>], p: Pos2) -> Option<Press> {
     }
 }
 
+pub(super) fn dragging(ctx: &egui::Context) -> bool {
+    ctx.dragged_id().is_some() || ctx.drag_stopped_id().is_some()
+}
+
 fn drag_of(press: &Press, shift: bool, layer: impl Fn(usize) -> String) -> Drag {
     match press {
         Press::Ruler(f) if shift => Drag::Range { from: *f, to: *f },
@@ -262,6 +267,7 @@ fn drag_of(press: &Press, shift: bool, layer: impl Fn(usize) -> String) -> Drag 
             cel: b.cel.clone(),
             from: b.start,
             to: b.start,
+            span: None,
         },
         Press::Cell(r, f) => Drag::Select {
             from: *f,
@@ -1188,7 +1194,7 @@ impl Editor {
 
     fn timeline_header(&mut self, ui: &mut egui::Ui) -> Result<()> {
         let t = self.scene.bundle.doc.timeline.clone();
-        if !ui.memory(|m| m.focused().is_some()) {
+        if !ui.memory(|m| m.focused().is_some()) && !dragging(ui.ctx()) {
             self.timeline.fps = t.fps;
             self.timeline.length = t.frames;
         }
@@ -1533,7 +1539,20 @@ impl Editor {
                     None => number(&b.cel),
                 };
                 let moved_to = match &self.timeline.drag {
-                    Some(Drag::Move { cel, from, to }) if *cel == b.cel && from != to => Some(*to),
+                    Some(Drag::Move {
+                        from,
+                        to,
+                        span: Some(span),
+                        ..
+                    }) if from != to && span.rows.contains(&row.id) && (span.from..=span.to).contains(&b.start) => {
+                        Some((b.start as i64 + *to as i64 - *from as i64).max(0) as u32)
+                    }
+                    Some(Drag::Move {
+                        cel,
+                        from,
+                        to,
+                        span: None,
+                    }) if *cel == b.cel && from != to => Some(*to),
                     _ => None,
                 };
                 let at = |start: u32, end: u32| {
@@ -1670,6 +1689,14 @@ impl Editor {
                 Some(press) => Some(drag_of(&press, shift, |r| rows[r].id.clone())),
                 None => None,
             };
+            if let Some(Drag::Move { span, .. }) = &mut self.timeline.drag
+                && let Some(r) = row
+                && !alt
+            {
+                *span = span_now
+                    .clone()
+                    .filter(|s| s.rows.contains(&rows[r].id) && (s.from..=s.to).contains(&f));
+            }
             if matches!(
                 self.timeline.drag,
                 Some(Drag::Scrub | Drag::Hold { .. } | Drag::Move { .. } | Drag::Select { .. })
@@ -1715,7 +1742,26 @@ impl Editor {
                     open,
                     to,
                 }) => self.resize(&layer, &cel, (start, end, open), to)?,
-                Some(Drag::Move { cel, from, to }) if from != to => {
+                Some(Drag::Move {
+                    from,
+                    to,
+                    span: Some(span),
+                    ..
+                }) if from != to => {
+                    let by = (to as i64 - from as i64).max(-(span.from as i64));
+                    let ops = cells::move_ops(&self.scene.bundle.doc, &span.rows, span.from, span.to, by);
+                    if self.timeline_apply(ops)?.is_some() {
+                        let moved = |f: u32| (f as i64 + by) as u32;
+                        self.timeline.span = Some(Span {
+                            from: moved(span.from),
+                            to: moved(span.to),
+                            anchor: (moved(span.anchor.0), span.anchor.1),
+                            ..span
+                        });
+                        self.go_to(moved(from))?;
+                    }
+                }
+                Some(Drag::Move { cel, from, to, .. }) if from != to => {
                     let op = Op::Cel(CelSpec {
                         action: CelAction::Move { cel },
                         id: None,
