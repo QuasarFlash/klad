@@ -137,7 +137,10 @@ pub fn attach(cc: &eframe::CreationContext) {
 pub fn attach(_cc: &eframe::CreationContext) {}
 
 #[cfg(not(any(target_os = "macos", windows)))]
-pub struct Pen;
+#[derive(Clone, Default)]
+pub struct Pen {
+    queue: std::rc::Rc<std::cell::RefCell<Vec<PenEvent>>>,
+}
 
 #[cfg(not(any(target_os = "macos", windows)))]
 impl Pen {
@@ -146,7 +149,12 @@ impl Pen {
     }
 
     pub fn drain(&self, _ctx: &egui::Context) -> Vec<PenEvent> {
-        Vec::new()
+        self.queue.take()
+    }
+
+    #[cfg(test)]
+    pub fn feed(&self, events: impl IntoIterator<Item = PenEvent>) {
+        self.queue.borrow_mut().extend(events);
     }
 }
 
@@ -184,7 +192,13 @@ mod mac {
 
     pub struct Pen {
         queue: Arc<Mutex<Vec<Raw>>>,
-        _monitor: Retained<AnyObject>,
+        monitor: Retained<AnyObject>,
+    }
+
+    impl Drop for Pen {
+        fn drop(&mut self) {
+            unsafe { NSEvent::removeMonitor(&self.monitor) };
+        }
     }
 
     fn phase_of(kind: NSEventType) -> Option<Phase> {
@@ -280,10 +294,7 @@ mod mac {
                 event.as_ptr()
             });
             let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) }?;
-            Some(Self {
-                queue,
-                _monitor: monitor,
-            })
+            Some(Self { queue, monitor })
         }
 
         pub fn drain(&self, ctx: &egui::Context) -> Vec<PenEvent> {

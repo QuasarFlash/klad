@@ -40,7 +40,7 @@ Two binaries from one crate: `klad`, the command line, and `klad-editor`, the ed
 | Brush engine | Our own, dab based, on tiles | Full control over quality and determinism. Krita and MyPaint are the reference designs |
 | Editor window and GPU display | `winit` + `wgpu` (Metal), through `eframe` | The GPU only shows CPU-made tiles: pan, zoom, rotate, overlays |
 | Editor panels | `egui` | Fast to build, proven in pro tools (Rerun) |
-| Pen input (macOS) | `NSEvent` local monitor through `objc2-app-kit` | `winit` only reports trackpad pressure; the monitor gives tablet pressure, tilt and the eraser end at full rate |
+| Pen input (macOS) | `NSEvent` local monitor through `objc2-app-kit`, one for the whole app, owned by `Home` | `winit` only reports trackpad pressure; the monitor gives tablet pressure, tilt and the eraser end at full rate. `Home` drains the pen (here and on Windows) once a frame and hands the events to the drawing in front only when that drawing was in front the frame before too, so what is done in one drawing, or over the welcome, never lands on another (KLA-563); a drawing that goes to the back ends the stroke or drag it was in |
 | Pen input (Windows) | Windows Ink (`WM_POINTER`) through `windows-sys`, the window subclassed | `winit` hands a pen to egui as a touch, drops the lift's zero pressure and gives no tilt or eraser |
 | File dialogs (Windows, Linux) | `rfd` | The platform's own dialog (the XDG portal on Linux); macOS keeps `NSOpenPanel` |
 | Compression | `zstd` | Stroke files and cache tiles |

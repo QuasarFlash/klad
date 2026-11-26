@@ -80,6 +80,8 @@ pub(crate) struct Home {
     pub(crate) welcome: Option<Welcome>,
     tour: bool,
     shown_from: Option<f64>,
+    pub(crate) pen: Option<crate::pen::Pen>,
+    pen_front: Option<u64>,
 }
 
 fn used_twice(e: &anyhow::Error) -> bool {
@@ -96,6 +98,7 @@ impl Home {
         let settings_path = settings::default_path();
         let settings = settings_path.as_deref().map(Settings::load).unwrap_or_default();
         let mut home = Self::with(settings, settings_path, Some(gpu));
+        home.pen = crate::pen::Pen::install();
         home.native_menus = true;
         home.ran_out = klad_core::memory::last_time();
         let sparkle = crate::sparkle::start(home.settings.check_updates);
@@ -140,6 +143,8 @@ impl Home {
             welcome: None,
             tour: false,
             shown_from: None,
+            pen: None,
+            pen_front: None,
         }
     }
 
@@ -219,7 +224,8 @@ impl Home {
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(start::title(Some(path))));
         self.settings = settings;
         let mut editor = Box::new(editor);
-        if let Some(old) = self.editor.take() {
+        if let Some(mut old) = self.editor.take() {
+            old.leave(ctx);
             old.hand_over(&mut editor);
             self.parked.insert(self.at.min(self.parked.len()), old);
             self.at = (self.at + 1).min(self.parked.len());
@@ -244,7 +250,8 @@ impl Home {
         }
         let index = if slot < self.at { slot } else { slot - 1 };
         let mut next = self.parked.remove(index);
-        if let Some(old) = self.editor.take() {
+        if let Some(mut old) = self.editor.take() {
+            old.leave(ctx);
             old.hand_over(&mut next);
             old.hand_settings(&mut next);
             let back = if slot < self.at { self.at - 1 } else { self.at };
@@ -470,6 +477,7 @@ impl Home {
 
     pub(crate) fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        let pen = self.pen.as_ref().map(|pen| pen.drain(&ctx));
         self.tend_menus(&ctx);
         let from_menu = self.picked(&ctx);
         self.checked();
@@ -504,8 +512,12 @@ impl Home {
                 false => self.show_slot(&ctx, slot),
             }
         }
+        let front = self.editor.as_ref().filter(|_| welcomed.is_none()).map(|e| e.serial);
+        let stayed = front.is_some() && front == self.pen_front;
+        self.pen_front = front;
         match self.editor.as_mut().filter(|_| welcomed.is_none()) {
             Some(editor) => {
+                editor.pen = pen.map(|events| if stayed { events } else { Vec::new() });
                 editor.frame(ui);
                 match editor.wants.take() {
                     Some(Want::Cycle(by)) => cycle += by,
@@ -2182,6 +2194,190 @@ mod open_drawings {
         h.run_steps(4);
         assert_eq!(h.state().drawings(), [two.clone(), three.clone()]);
         assert!(h.state().editor.is_some(), "closing one drawing shows another");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn pen_event(phase: crate::pen::Phase, pos: egui::Pos2) -> crate::pen::PenEvent {
+        crate::pen::PenEvent {
+            phase,
+            pos,
+            pressure: if phase == crate::pen::Phase::Up { 0.0 } else { 0.6 },
+            tilt: (0.0, 0.0),
+            eraser: false,
+            tablet: true,
+            device: 0,
+            at: std::time::Instant::now(),
+        }
+    }
+
+    fn pressed_along(h: &Harness<'static, Home>) -> Vec<crate::pen::PenEvent> {
+        use crate::pen::Phase;
+        let editor = h.state().editor.as_ref().unwrap();
+        let along: Vec<egui::Pos2> = (0..=12)
+            .map(|k| editor.screen_at(100.0 + 10.0 * k as f32, 100.0))
+            .collect();
+        std::iter::once(pen_event(Phase::Down, along[0]))
+            .chain(along[1..].iter().map(|p| pen_event(Phase::Move, *p)))
+            .collect()
+    }
+
+    fn stroke_along(h: &Harness<'static, Home>) -> Vec<crate::pen::PenEvent> {
+        let mut events = pressed_along(h);
+        let end = events.last().unwrap().pos;
+        events.push(pen_event(crate::pen::Phase::Up, end));
+        events
+    }
+
+    fn rev_of(h: &Harness<'static, Home>, path: &Path) -> u64 {
+        let home = h.state();
+        home.editor
+            .iter()
+            .chain(&home.parked)
+            .find(|e| e.scene.bundle.root == path)
+            .expect("an open drawing")
+            .scene
+            .bundle
+            .doc
+            .rev
+    }
+
+    fn two_open(
+        name: &str,
+    ) -> (
+        PathBuf,
+        PathBuf,
+        PathBuf,
+        crate::pen::Pen,
+        egui::Context,
+        Harness<'static, Home>,
+    ) {
+        let dir = folder(name);
+        let (mushroom, donut) = (dir.join("mushroom.klad"), dir.join("donut.klad"));
+        [&mushroom, &donut].iter().for_each(|p| blank(p));
+        let settings = Settings {
+            drawings: Some(dir.display().to_string()),
+            welcomed: true,
+            ..Settings::default()
+        };
+        let mut home = Home::with(settings, None, None);
+        let pen = crate::pen::Pen::default();
+        home.pen = Some(pen.clone());
+        let ctx = egui::Context::default();
+        home.begin(&ctx, Some(&mushroom));
+        let mut h = Harness::builder()
+            .with_size(vec2(1440.0, 900.0))
+            .build_ui_state(|ui, home: &mut Home| home.frame(ui), home);
+        h.run_steps(3);
+        (dir, mushroom, donut, pen, ctx, h)
+    }
+
+    #[test]
+    fn what_is_drawn_in_one_drawing_never_lands_on_another_when_it_comes_to_the_front() {
+        let (dir, mushroom, donut, pen, ctx, mut h) = two_open("pen-front");
+        let before = rev_of(&h, &mushroom);
+        pen.feed(stroke_along(&h));
+        h.run_steps(3);
+        assert!(
+            rev_of(&h, &mushroom) > before,
+            "a stroke drawn on the mushroom lands on it"
+        );
+
+        h.state_mut().open(&ctx, &donut).unwrap();
+        h.run_steps(3);
+        let kept = rev_of(&h, &mushroom);
+        let painted = rev_of(&h, &donut);
+        (0..3).for_each(|_| {
+            pen.feed(stroke_along(&h));
+            h.run_steps(3);
+        });
+        assert!(rev_of(&h, &donut) > painted, "strokes drawn on the donut land on it");
+        assert_eq!(
+            rev_of(&h, &mushroom),
+            kept,
+            "and nothing lands on the mushroom behind it"
+        );
+
+        pen.feed(stroke_along(&h));
+        h.state_mut().show_slot(&ctx, 0);
+        h.run_steps(3);
+        assert_eq!(shown(&h), mushroom);
+        assert_eq!(
+            rev_of(&h, &mushroom),
+            kept,
+            "a stroke made while the donut was in front doesn't land on the mushroom that comes to the front"
+        );
+
+        h.state_mut().show_slot(&ctx, 1);
+        h.run_steps(3);
+        pen.feed(stroke_along(&h));
+        h.run_steps(3);
+        pen.feed(stroke_along(&h));
+        h.state_mut().editor.as_mut().unwrap().wants = Some(Want::Close);
+        h.run_steps(4);
+        assert_eq!(shown(&h), mushroom, "closing the donut shows the mushroom");
+        assert_eq!(rev_of(&h, &mushroom), kept, "and replays nothing of the donut on it");
+
+        h.state_mut().welcome = Some(Welcome::new(crate::connect::Connect::here()));
+        h.run_steps(2);
+        pen.feed(stroke_along(&h));
+        h.run_steps(3);
+        h.state_mut().welcome = None;
+        h.run_steps(3);
+        assert_eq!(
+            rev_of(&h, &mushroom),
+            kept,
+            "a stroke over the welcome doesn't land on the drawing behind it"
+        );
+
+        pen.feed(stroke_along(&h));
+        h.run_steps(3);
+        assert!(
+            rev_of(&h, &mushroom) > kept,
+            "and the mushroom still takes its own strokes"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_stroke_half_drawn_when_its_drawing_goes_to_the_back_ends_there() {
+        let (dir, mushroom, donut, pen, ctx, mut h) = two_open("pen-leave");
+        let before = rev_of(&h, &mushroom);
+        pen.feed(pressed_along(&h));
+        h.run_steps(3);
+        assert_eq!(rev_of(&h, &mushroom), before, "the stroke is still being drawn");
+
+        h.state_mut().open(&ctx, &donut).unwrap();
+        h.run_steps(3);
+        let ended = rev_of(&h, &mushroom);
+        assert!(
+            ended > before,
+            "the stroke ends where the pen was when the donut opened"
+        );
+
+        h.state_mut().show_slot(&ctx, 0);
+        h.run_steps(3);
+        let hover: Vec<crate::pen::PenEvent> = (0..6)
+            .map(|k| {
+                let at = h
+                    .state()
+                    .editor
+                    .as_ref()
+                    .unwrap()
+                    .screen_at(60.0 + 20.0 * k as f32, 160.0);
+                pen_event(crate::pen::Phase::Move, at)
+            })
+            .chain(std::iter::once(pen_event(
+                crate::pen::Phase::Up,
+                h.state().editor.as_ref().unwrap().screen_at(160.0, 160.0),
+            )))
+            .collect();
+        pen.feed(hover);
+        h.run_steps(3);
+        assert_eq!(
+            rev_of(&h, &mushroom),
+            ended,
+            "back on the mushroom, moving the pen doesn't go on with that stroke"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

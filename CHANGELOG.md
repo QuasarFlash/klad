@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- On the Mac, with several drawings open, what you did in one drawing could land on another one when it came to the front, after you closed the first or switched tabs: every press and drag made in the first replayed on it, which moved its strokes, or painted new ones with the brush in hand. A drawing now gets only what you do while it is in front, and a stroke or drag still under way when its drawing goes to the back ends where the pen was.
+
 ## 1.0.1 (2026-11-26)
 
 ### Fixed

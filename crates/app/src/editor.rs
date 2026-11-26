@@ -74,7 +74,7 @@ use crate::gpu::{CanvasPaint, Outbox};
 use crate::jobs::Jobs;
 use crate::lift;
 use crate::messages::{Messages, Tone};
-use crate::pen::{self, Pen, PenEvent, Phase, device_key};
+use crate::pen::{self, PenEvent, Phase, device_key};
 use crate::preview;
 use crate::settings::{self, Settings};
 use crate::stats::{Stats, lock};
@@ -103,11 +103,13 @@ use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use target::Target;
+
+static SERIALS: AtomicU64 = AtomicU64::new(1);
 
 const OWN_JOB: Duration = Duration::from_secs(3);
 const TEXT_SHARE: f32 = 0.25;
@@ -878,7 +880,9 @@ pub(crate) struct Editor {
     held_messages: Vec<Rect>,
     navigating: bool,
     focused: bool,
-    pen: Option<Pen>,
+    pub(crate) serial: u64,
+    pub(crate) pen: Option<Vec<PenEvent>>,
+    pen_down: Option<Pos2>,
     touch: Option<egui::TouchId>,
     readout: Readout,
     dirty: BTreeSet<usize>,
@@ -1123,7 +1127,9 @@ impl Editor {
             held_messages: Vec::new(),
             navigating: false,
             focused: false,
-            pen: if cfg!(test) { None } else { Pen::install() },
+            serial: SERIALS.fetch_add(1, AtomicOrdering::Relaxed),
+            pen: None,
+            pen_down: None,
             touch: None,
             readout: Readout::default(),
             pending: None,
@@ -3521,6 +3527,11 @@ impl Editor {
     }
 
     fn on_pen(&mut self, ctx: &egui::Context, e: PenEvent, rect: Rect, was_focused: bool) -> Result<()> {
+        self.pen_down = match e.phase {
+            Phase::Down => Some(e.pos),
+            Phase::Move => self.pen_down.map(|_| e.pos),
+            Phase::Up => None,
+        };
         self.readout.pressure = e.pressure;
         self.readout.tilt = e.tilt;
         self.readout.eraser = e.eraser;
@@ -4421,8 +4432,8 @@ impl Editor {
             drag.keys(self.modifiers);
         }
         self.refresh_shape();
-        let events = match &self.pen {
-            Some(pen) => pen.drain(&ctx),
+        let events = match self.pen.take() {
+            Some(events) => events,
             None => pen::from_egui(&ui.input(|i| i.events.clone()), &mut self.touch),
         };
         let holding = self.writing() && matches!(self.tool, Tool::Select | Tool::Direct);
@@ -6528,6 +6539,32 @@ impl Editor {
     pub(crate) fn hand_settings(&self, to: &mut Editor) {
         to.settings = self.settings.clone();
         to.settings_dirty = true;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn screen_at(&self, x: f32, y: f32) -> Pos2 {
+        self.view.map_or(self.canvas_rect.center(), |view| {
+            self.screen(view, self.canvas_rect, vec2(x, y))
+        })
+    }
+
+    pub(crate) fn leave(&mut self, ctx: &egui::Context) {
+        self.held = selection::Held::default();
+        let Some(pos) = self.pen_down.take() else {
+            return;
+        };
+        let up = PenEvent {
+            phase: Phase::Up,
+            pos,
+            pressure: 0.0,
+            tilt: (0.0, 0.0),
+            eraser: false,
+            tablet: false,
+            device: 0,
+            at: Instant::now(),
+        };
+        let rect = self.canvas_rect;
+        self.check(|e| e.on_pen(ctx, up, rect, true));
     }
 
     pub(crate) fn reshown(&mut self) {
