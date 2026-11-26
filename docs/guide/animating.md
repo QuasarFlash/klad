@@ -37,7 +37,7 @@ Right click the drawing's cell in the timeline and pick **duplicate to the next 
 1. Drag over the frames in the timeline. To take every frame, click a frame and press **cmd A**.
 2. Press **cmd D**, or click the duplicate button above the frames.
 
-The frames are repeated right after themselves as copies, and the copies are selected, so **cmd D** again adds another round. While frames are selected, **cmd C** and **cmd V** copy and paste them, and **Delete** removes their drawings.
+The frames are repeated right after themselves as copies, and the copies are selected, so **cmd D** again adds another round. While frames are selected, **cmd C** and **cmd V** copy and paste them, **Delete** removes their drawings, and dragging the dot at the start of one of their drawings moves them all.
 
 ## Make clips for a game
 

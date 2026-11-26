@@ -12,6 +12,7 @@ use egui_kittest::kittest::{By, NodeT, Queryable};
 use klad_core::bundle::Bundle;
 use klad_core::doc::{Document, Layer};
 use klad_core::ops::parse_lines;
+use klad_core::timing::ends;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -2982,6 +2983,152 @@ fn timeline_cells_select_by_dragging_copy_paste_move_and_open_the_clip() {
     let _ = std::fs::remove_dir_all(&path);
 }
 
+#[test]
+fn dragging_a_selected_drawing_moves_every_drawing_in_the_box() {
+    let path = sample("cells-together");
+    Bundle::open(&path)
+        .unwrap()
+        .apply(
+            &parse_lines(
+                r#"{"op":"cel","new":"l6","frame":3}
+{"op":"cel","new":"l6","frame":5}
+{"op":"cel","new":"l5","frame":3}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "lines");
+    let starts = |h: &Harness<'static, Editor>, name: &str| -> Vec<u32> {
+        layer_named(h, name).cels().iter().map(|c| c.frame).collect()
+    };
+    assert_eq!((starts(&h, "lines"), starts(&h, "colour")), (vec![0, 3, 5], vec![0, 3]));
+    let geom = h.state().timeline.geom.unwrap();
+    drag(&mut h, geom.cell_centre(3, 0), geom.cell_centre(6, 1));
+    h.run_steps(2);
+    let span = h.state().timeline.span.clone().unwrap();
+    assert_eq!((span.from, span.to, span.rows.len()), (3, 6, 2));
+    drag(&mut h, geom.cell_centre(3, 0) + vec2(3.0, 0.0), geom.cell_centre(5, 0));
+    h.run_steps(2);
+    assert_eq!(
+        (starts(&h, "lines"), starts(&h, "colour")),
+        (vec![0, 5, 7], vec![0, 5]),
+        "every drawing that starts in the box moves two frames later"
+    );
+    let lines = layer_named(&h, "lines");
+    assert_eq!(
+        lines
+            .cels()
+            .iter()
+            .zip(ends(lines.cels()))
+            .map(|(c, e)| e.min(24) - c.frame)
+            .collect::<Vec<_>>(),
+        [3, 2, 17],
+        "each keeps its length"
+    );
+    let span = h.state().timeline.span.clone().unwrap();
+    assert_eq!((span.from, span.to), (5, 8), "the box moves with them");
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.run_steps(2);
+    assert_eq!(
+        (starts(&h, "lines"), starts(&h, "colour")),
+        (vec![0, 3, 5], vec![0, 3]),
+        "one undo puts them back"
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn a_long_error_keeps_its_close_button_on_the_canvas() {
+    let path = sample("long-error");
+    let mut h = harness(editor(&path), vec2(1100.0, 700.0));
+    let long = (0..60)
+        .map(|i| format!("line {i}: could not read /a/folder/{}/drawing.klad", "deep".repeat(30)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    h.state_mut().say(Tone::Error, long);
+    h.run_steps(3);
+    let canvas = h.state().canvas_rect;
+    let toast = *h.state().held_messages.first().expect("the error stays on the canvas");
+    assert!(
+        canvas.expand(0.5).contains_rect(toast),
+        "the error fits on the canvas: {toast:?} in {canvas:?}"
+    );
+    let close = h
+        .query_all_by_label(theme::icon::CLOSE)
+        .find(|n| toast.contains_rect(n.rect()))
+        .expect("the error has its close button");
+    assert!(
+        canvas.contains_rect(close.rect()),
+        "{:?} is on the canvas {canvas:?}",
+        close.rect()
+    );
+    let at = close.rect().center();
+    h.hover_at(at);
+    h.run_steps(1);
+    [true, false].into_iter().for_each(|pressed| {
+        h.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+        h.run_steps(1);
+    });
+    h.run_steps(2);
+    assert!(h.state().held_messages.is_empty(), "the close button clears the error");
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn dragging_fps_and_length_in_the_timeline_changes_them() {
+    let path = sample("fps-drag");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    h.run_steps(2);
+    let field = |h: &Harness<'static, Editor>, hint: &str| {
+        theme::hints(&h.ctx)
+            .into_iter()
+            .find(|(_, text)| text.starts_with(hint))
+            .map(|(r, _)| r)
+            .unwrap_or_else(|| panic!("no field \"{hint}\" in the timeline"))
+    };
+    let before = h.state().scene.bundle.doc.timeline.clone();
+    let fps = field(&h, "frames per second of the document");
+    drag(&mut h, fps.center(), fps.center() + vec2(30.0, 0.0));
+    h.run_steps(2);
+    let after = h.state().scene.bundle.doc.timeline.fps;
+    assert!(
+        after > before.fps,
+        "dragging fps to the right raises it: {} to {after}",
+        before.fps
+    );
+    let length = field(&h, "the timeline's length in frames");
+    drag(&mut h, length.center(), length.center() + vec2(30.0, 0.0));
+    h.run_steps(2);
+    let frames = h.state().scene.bundle.doc.timeline.frames;
+    assert!(
+        frames > before.frames,
+        "dragging length to the right makes it longer: {} to {frames}",
+        before.frames
+    );
+    h.state_mut().go_to(3).unwrap();
+    h.state_mut().invoke(Cmd::ClipSettings).unwrap();
+    h.run_steps(2);
+    h.state_mut().invoke(Cmd::ClipOwnFps).unwrap();
+    h.run_steps(3);
+    let own = |h: &Harness<'static, Editor>| h.state().scene.bundle.doc.timeline.clips[0].fps;
+    let was = own(&h).expect("the clip has its own fps");
+    let clip_fps = field(&h, "the clip's own frames per second");
+    drag(&mut h, clip_fps.center(), clip_fps.center() + vec2(30.0, 0.0));
+    h.run_steps(2);
+    assert!(
+        own(&h).is_some_and(|now| now > was),
+        "dragging the clip's fps raises it: {was} to {:?}",
+        own(&h)
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
 pub(super) fn said(h: &Harness<'static, Editor>) -> String {
     h.state().messages.latest().map(|m| m.text.clone()).unwrap_or_default()
 }
@@ -3792,6 +3939,35 @@ fn a_note_pinned_on_the_canvas_is_marked_done_by_the_agent_and_edited_from_its_p
     h.get_by_role_and_label(Role::Button, "close").click();
     h.run_steps(2);
     assert!(h.state().note_open.is_none());
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn command_a_in_a_new_note_selects_its_words_not_the_strokes() {
+    let path = sample("note-keys");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    h.state_mut().tool = Tool::Note;
+    h.run_steps(3);
+    let c = h.state().canvas_rect.center();
+    drag(&mut h, c, c);
+    h.run_steps(2);
+    assert!(h.state().note_at.is_some());
+    h.query_all(By::new().label_contains("a note for the agent"))
+        .find(|n| n.accesskit_node().role() == Role::MultilineTextInput)
+        .unwrap()
+        .type_text("move the lamp left");
+    h.run_steps(2);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    h.run_steps(2);
+    assert!(h.state().picked.is_none(), "cmd A while typing a note picks no strokes");
+    assert_eq!(h.state().tool, Tool::Note);
+    h.key_press(Key::Backspace);
+    h.run_steps(2);
+    assert_eq!(
+        h.state().note_text,
+        "",
+        "cmd A selected the note's words, so one delete clears them"
+    );
     let _ = std::fs::remove_dir_all(&path);
 }
 

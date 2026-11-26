@@ -5,6 +5,10 @@
 ### Fixed
 
 - On the Mac, the Dock showed klad's icon only while klad was starting, then a white hexagon once its window was open; it now shows klad's icon the whole time.
+- On the Mac, while you type in a text box, such as a note for the agent, cmd A, C, V, X and Z work on the text you are typing: cmd A selected every stroke on the layer instead.
+- Dragging a drawing that is part of a box selection in the timeline moves every drawing in the selection, each keeping its length, and one undo puts them back; it moved only the drawing you held.
+- A long error message stays on the canvas, its text scrolls, and its close button stays in reach; it could run off the canvas with its close button.
+- Dragging fps and length in the timeline, and a clip's own fps, changes them; the value went back as you dragged.
 
 ## 1.0.0 (2026-11-25)
 

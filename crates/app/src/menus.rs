@@ -170,8 +170,22 @@ mod mac {
             }
 
             #[unsafe(method(menuHasKeyEquivalent:forEvent:target:action:))]
-            fn has_key(&self, _menu: &NSMenu, _event: &NSEvent, _target: *mut c_void, _action: *mut c_void) -> bool {
-                false
+            fn has_key(&self, _menu: &NSMenu, event: &NSEvent, target: *mut c_void, action: *mut c_void) -> bool {
+                let typing = CTX.get().is_some_and(egui::Context::egui_wants_keyboard_input)
+                    && for_text(event)
+                    && !target.is_null()
+                    && !action.is_null();
+                typing
+                    .then(|| MainThreadMarker::new().and_then(|mtm| NSApplication::sharedApplication(mtm).keyWindow()))
+                    .flatten()
+                    .is_some_and(|window| {
+                        unsafe {
+                            target.cast::<*mut c_void>().write(std::ptr::null_mut());
+                            action.cast::<*const c_void>().write(std::ptr::null());
+                        }
+                        window.sendEvent(event);
+                        true
+                    })
             }
         }
 
@@ -185,6 +199,18 @@ mod mac {
             let this = Self::alloc(mtm).set_ivars(());
             unsafe { msg_send![super(this), init] }
         }
+    }
+
+    const TEXT_KEYS: [&str; 11] = [
+        "a", "c", "v", "x", "z", "\u{7f}", "\u{F728}", "\u{F700}", "\u{F701}", "\u{F702}", "\u{F703}",
+    ];
+
+    fn for_text(event: &NSEvent) -> bool {
+        let pressed = event
+            .charactersIgnoringModifiers()
+            .map(|s| s.to_string().to_lowercase())
+            .unwrap_or_default();
+        !event.modifierFlags().contains(NSEventModifierFlags::Command) || TEXT_KEYS.contains(&pressed.as_str())
     }
 
     fn key_text(key: Key) -> Option<String> {
