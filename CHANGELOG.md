@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- On the Mac, the Dock showed klad's icon only while klad was starting, then a white hexagon once its window was open; it now shows klad's icon the whole time.
+
 ## 1.0.0 (2026-11-25)
 
 klad is a drawing and animation app where every stroke stays editable, hours later too, and where an AI agent can draw in the same drawing beside you from the command line. 1.0 fills in what painters, illustrators, pixel artists and animators reach for every day:

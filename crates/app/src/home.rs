@@ -23,16 +23,8 @@ pub fn run(path: Option<PathBuf>) -> Result<()> {
         crate::report::log(&format!("the editor stopped: {}", crate::report::panic_text(info)));
         previous(info);
     }));
-    let viewport = egui::ViewportBuilder::default()
-        .with_title(start::title(path.as_deref()))
-        .with_inner_size([1600.0, 1000.0]);
-    #[cfg(not(target_os = "macos"))]
-    let viewport = match window_icon() {
-        Some(icon) => viewport.with_icon(icon),
-        None => viewport,
-    };
     let options = eframe::NativeOptions {
-        viewport,
+        viewport: viewport(start::title(path.as_deref())),
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: egui_wgpu::WgpuConfiguration {
             surface: egui_wgpu::SurfaceConfig {
@@ -792,6 +784,26 @@ impl eframe::App for Home {
     }
 }
 
+fn viewport(title: String) -> egui::ViewportBuilder {
+    let viewport = egui::ViewportBuilder::default()
+        .with_title(title)
+        .with_inner_size([1600.0, 1000.0]);
+    match app_icon() {
+        Some(icon) => viewport.with_icon(icon),
+        None => viewport,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn app_icon() -> Option<egui::IconData> {
+    Some(egui::IconData::default())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn app_icon() -> Option<egui::IconData> {
+    window_icon()
+}
+
 pub(crate) fn window_icon() -> Option<egui::IconData> {
     let ico: &[u8] = include_bytes!("../../../packaging/icon/klad.ico");
     let long = |at: usize| {
@@ -1466,6 +1478,18 @@ mod tests {
         assert_eq!((icon.width, icon.height), (256, 256));
         assert_eq!(icon.rgba.len(), 256 * 256 * 4);
         assert!(icon.rgba.chunks(4).any(|p| p[3] == 255) && icon.rgba.chunks(4).any(|p| p[3] == 0));
+    }
+
+    #[test]
+    fn the_window_never_gets_eframes_default_icon() {
+        let icon = super::viewport("klad".into())
+            .icon
+            .expect("an icon, or eframe puts its own hexagon in");
+        if cfg!(target_os = "macos") {
+            assert!(icon.is_empty(), "the Mac keeps the bundle's klad.icns in the Dock");
+        } else {
+            assert_eq!(icon.as_ref(), &super::window_icon().unwrap());
+        }
     }
 
     #[test]
