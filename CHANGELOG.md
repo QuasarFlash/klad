@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- An edit on a layer with smudge, blender or wet strokes no longer redraws the whole layer: only the tiles the change and the smudges it reaches cover. Moving one stroke of the site's creature painting takes about half as long. Where smudges run across the whole picture, an edit still redraws all of it.
 - A stroke you smudged or blended over can be clicked again with V, S or A: the click goes through the smudges to the stroke under them and takes it with its smudges, as erasers do. Where a smudge dragged paint past its stroke, a click there takes that stroke; a smudge over nothing is still clicked itself, and Attached only still takes the smudges on their own.
 - With V, a shape with no fill is taken by a click on its outline anywhere along it (it was taken only near the edges of its box, so ellipses, pen lines and turned shapes were hard to click), a text by a click anywhere in its block (it was taken only on its letters), and a click on a shape inside the selected one takes that shape even when the pen moves a little (it moved the selected one). With this layer on, a click on a shape of another layer says how to take it.
 - Pixel art squashes, stretches, grows and shrinks by any amount when you drag a selection's edges or corners; it grew only by 2, 3 or 4 times and never got smaller. The pixels stay hard and on the grid, the status line shows the new size, and near a whole size (the size it had, or twice or three times it) the drag lands on it exactly unless you hold cmd.

@@ -364,6 +364,38 @@ impl CelReplay {
         })
     }
 
+    fn close_over_readers(
+        &self,
+        next: &[Mark],
+        kept: &[Option<usize>],
+        raster: &Raster,
+        start: usize,
+        dirty: &mut [bool],
+        brushes: &BrushSet,
+    ) {
+        let reach: Vec<Vec<usize>> = next
+            .iter()
+            .enumerate()
+            .skip(start)
+            .filter(|(_, m)| reads_any(std::slice::from_ref(*m), brushes))
+            .map(|(i, m)| match kept[i] {
+                Some(j) => self.footprints[j].iter().map(|&t| t as usize).collect(),
+                None => guess(raster, brushes, m),
+            })
+            .collect();
+        loop {
+            let pulled: Vec<usize> = reach
+                .iter()
+                .filter(|tiles| tiles.iter().any(|&t| dirty[t]))
+                .flat_map(|tiles| tiles.iter().copied().filter(|&t| !dirty[t]))
+                .collect();
+            if pulled.is_empty() {
+                return;
+            }
+            pulled.into_iter().for_each(|t| dirty[t] = true);
+        }
+    }
+
     fn retile(
         &mut self,
         raster: &mut Raster,
@@ -464,7 +496,7 @@ impl CelReplay {
         if next.len() >= TILED_FROM && kept.iter().all(Option::is_none) {
             return self.rebuild(raster, next, brushes, true);
         }
-        if reads || !kept.iter().flatten().is_sorted_by(|a, b| a < b) || self.footprints.len() != self.keys.len() {
+        if !kept.iter().flatten().is_sorted_by(|a, b| a < b) || self.footprints.len() != self.keys.len() {
             return self.rebuild(raster, next, brushes, false);
         }
         let mut kept_old = vec![false; self.keys.len()];
@@ -501,14 +533,29 @@ impl CelReplay {
                     known.insert(i, footprint);
                     Ok::<_, anyhow::Error>(())
                 })?;
-            loop {
-                let need = scope.widen(start, &dirty, raster.cols);
-                if need >= start {
-                    break;
-                }
-                base = self.checkpoints.iter().rposition(|c| c.at <= need).unwrap_or(0);
-                start = self.checkpoints[base].at;
+        }
+        if reads {
+            next.iter()
+                .enumerate()
+                .filter(|(i, _)| kept[*i].is_none() && !known.contains_key(i))
+                .for_each(|(_, m)| guess(raster, brushes, m).into_iter().for_each(|t| dirty[t] = true));
+        }
+        loop {
+            if reads {
+                self.close_over_readers(&next, &kept, raster, start, &mut dirty, brushes);
             }
+            let need = match scope.is_empty() {
+                true => start,
+                false => scope.widen(start, &dirty, raster.cols),
+            };
+            if need >= start {
+                break;
+            }
+            base = self.checkpoints.iter().rposition(|c| c.at <= need).unwrap_or(0);
+            start = self.checkpoints[base].at;
+        }
+        if reads && dirty.iter().all(|d| *d) {
+            return self.rebuild(raster, next, brushes, false);
         }
         if let Some(done) = self.retile(raster, &next, &kept, &dirty, start, brushes)? {
             return Ok(done);
@@ -782,6 +829,87 @@ mod tests {
 
     fn set_color(id: u32, color: &str) -> MarkChange {
         set(id, json!({ "color": color }))
+    }
+
+    #[test]
+    fn edits_on_a_layer_with_smudges_blends_and_wet_paint_redraw_only_what_they_reach_to_the_same_pixels() {
+        let (w, h) = (2048u32, 1536u32);
+        let kit = brushes();
+        let mut synth = Synth::canvas(w as f32, h as f32);
+        synth.brushes = ["ink", "oil", "pencil", "eraser", "ink", "oil"]
+            .map(String::from)
+            .to_vec();
+        let mut all = marks(synth.strokes(200, 11));
+        all.extend((0..30u32).map(|k| {
+            let (x, y) = (80.0 + (k * 337 % 1800) as f32, 80.0 + (k * 211 % 1300) as f32);
+            let brush = ["smudge", "blender", "wet"][k as usize % 3];
+            Mark::from(
+                Stroke::new(0, brush, [0.6, 0.3, 0.2, 1.0], 24.0 + (k % 4) as f32 * 6.0, k)
+                    .with_points(&[(x, y, 0.8), (x + 30.0, y + 12.0, 1.0), (x + 70.0, y + 6.0, 0.7)], 4.0),
+            )
+        }));
+        all.iter_mut().enumerate().for_each(|(i, m)| m.set_id(i as u32 + 1));
+        (0..all.len()).for_each(|i| klad_core::attach::attach(&mut all, i, |id| kit.def(id)));
+        let readers: Vec<u32> = all
+            .iter()
+            .filter(|m| reads_any(std::slice::from_ref(*m), &kit))
+            .map(Mark::id)
+            .collect();
+        assert_eq!(readers.len(), 30, "the smudges, blends and wet strokes read paint");
+        let (mut cel, mut raster, _) = CelReplay::replay(w, h, all.clone(), &kit).unwrap();
+        let tiles = raster.cols * raster.rows;
+        let same = |cel: &CelReplay, raster: &Raster, expected: &[Mark]| {
+            let full = replay(w, h, expected, &kit).unwrap().raster;
+            assert_eq!(
+                raster.hash(),
+                full.hash(),
+                "the same pixels and paint height as one replay"
+            );
+            let fresh = CelReplay::replay(w, h, expected.to_vec(), &kit).unwrap().0;
+            assert_eq!(cel.footprints(), fresh.footprints());
+            assert_eq!(cel.keys(), fresh.keys());
+        };
+        let shift = |ids: Vec<u32>, x: f32, y: f32| MarkChange::Transform {
+            ids,
+            transform: MarkTransform {
+                x,
+                y,
+                ..MarkTransform::default()
+            },
+        };
+        let steps: Vec<MarkChange> = vec![
+            shift(vec![10], 30.0, 8.0),
+            set_color(150, "#c83030"),
+            shift(vec![readers[readers.len() / 2]], -20.0, 15.0),
+            MarkChange::Remove { id: 200 },
+            set(50, json!({"size": 30.0})),
+            shift(vec![190], 12.0, -6.0),
+            set_color(readers[3], "#30c060"),
+        ];
+        let mut current = all;
+        let local = steps
+            .into_iter()
+            .map(|change| {
+                current = edited(&current, vec![change]);
+                let done = cel.update(&mut raster, current.clone(), &kit).unwrap();
+                same(&cel, &raster, &current);
+                !done.full && done.tiles.len() < tiles / 2
+            })
+            .filter(|l| *l)
+            .count();
+        assert!(local >= 4, "only {local} edits redrew less than half the layer");
+        let next = current.iter().map(Mark::id).max().unwrap() + 1;
+        let smear = Stroke::new(next, "smudge", [0.0, 0.0, 0.0, 1.0], 40.0, 3)
+            .with_points(&[(900.0, 600.0, 1.0), (1000.0, 640.0, 1.0), (1060.0, 720.0, 0.8)], 4.0);
+        current.push(smear.into());
+        let at = current.len() - 1;
+        klad_core::attach::attach(&mut current, at, |id| kit.def(id));
+        let done = cel.update(&mut raster, current.clone(), &kit).unwrap();
+        same(&cel, &raster, &current);
+        assert!(
+            !done.full && done.tiles.len() < tiles / 2,
+            "a new smudge redraws only what it reaches: {done:?}"
+        );
     }
 
     #[test]
