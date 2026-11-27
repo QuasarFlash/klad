@@ -149,6 +149,7 @@ impl Editor {
             (true, Cmd::DuplicateInPlace) => Cmd::Duplicate,
             (true, Cmd::Delete) => Cmd::DeleteDrawing,
             (true, Cmd::SelectAll) => Cmd::SelectAllFrames,
+            (true, Cmd::EyedropperTool) => Cmd::InsertFrame,
             _ => cmd,
         }
     }
@@ -724,6 +725,7 @@ impl Editor {
             Cmd::ShowOccluders => self.maps.outlines,
             Cmd::CheckMaps => self.checks.maps.is_some(),
             Cmd::Fill => self.tool == Tool::Fill,
+            Cmd::EyedropperTool => self.tool == Tool::Eyedropper,
             Cmd::Shapes => self.tool == Tool::Select,
             Cmd::Strokes => self.tool == Tool::Strokes,
             Cmd::Points => self.tool == Tool::Direct,
@@ -939,6 +941,7 @@ impl Editor {
                 self.swap_size();
             }
             Cmd::Fill => self.tool = Tool::Fill,
+            Cmd::EyedropperTool => self.tool = Tool::Eyedropper,
             Cmd::Shapes => self.tool = Tool::Select,
             Cmd::Strokes => self.tool = Tool::Strokes,
             Cmd::Points => self.tool = Tool::Direct,

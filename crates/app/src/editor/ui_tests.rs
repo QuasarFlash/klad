@@ -3392,6 +3392,76 @@ fn right_click(h: &mut Harness<'static, Editor>, at: egui::Pos2) {
 }
 
 #[test]
+fn the_eyedropper_tool_on_i_takes_the_colour_and_i_on_the_timeline_still_inserts_a_frame() {
+    use super::Focus;
+    let path = sample("eyedropper-tool");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "lines");
+    h.state_mut().color = [0.0, 0.0, 1.0, 1.0];
+    h.run_steps(2);
+    assert_eq!(h.state().focus, Focus::Canvas);
+    h.key_press(Key::I);
+    h.run_steps(2);
+    assert_eq!(h.state().tool, Tool::Eyedropper);
+    assert_eq!(h.state().is_on(Cmd::EyedropperTool), Some(true), "lit on the strip");
+    let rect = on_screen(&h, 130.0, 30.0);
+    h.hover_at(rect);
+    h.run_steps(1);
+    h.drag_at(rect);
+    h.run_steps(2);
+    let drop = h.state().dropping.expect("pressing shows what it would take");
+    assert_eq!(
+        drop.now.map(crate::color::hex).as_deref(),
+        Some("#a04030"),
+        "the shape's fill under the pen"
+    );
+    assert_eq!(crate::color::hex(drop.before), "#0000ff", "against the colour you had");
+    assert_eq!(
+        crate::color::hex(h.state().color),
+        "#0000ff",
+        "nothing is taken until you let go"
+    );
+    h.drop_at(rect);
+    h.run_steps(3);
+    assert_eq!(crate::color::hex(h.state().color), "#a04030", "letting go takes it");
+    assert!(h.state().dropping.is_none());
+    assert!(said(&h).contains("picked #a04030 from the image"), "{}", said(&h));
+    click_with(&mut h, rect, Modifiers::SHIFT);
+    h.run_steps(3);
+    assert_eq!(
+        crate::color::hex(h.state().color),
+        "#a04030",
+        "shift reads only the lines layer, empty there"
+    );
+    assert!(said(&h).contains("nothing to pick from this layer"), "{}", said(&h));
+    let timing = |h: &Harness<'static, Editor>| -> Vec<Vec<(u32, Option<u32>)>> {
+        h.state()
+            .scene
+            .bundle
+            .doc
+            .all_layers()
+            .iter()
+            .map(|l| l.cels().iter().map(|c| (c.frame, c.hold)).collect())
+            .collect()
+    };
+    let geom = h.state().timeline.geom.unwrap();
+    click_with(&mut h, geom.cell_centre(0, 0), Modifiers::NONE);
+    assert_eq!(h.state().focus, Focus::Timeline);
+    let before = timing(&h);
+    h.key_press(Key::I);
+    h.run_steps(2);
+    assert_eq!(
+        h.state().scene.bundle.doc.timeline.frames,
+        25,
+        "I on the timeline inserts a frame, as before: {}",
+        said(&h)
+    );
+    assert_eq!(timing(&h), before, "the one drawing of each layer shows a frame longer");
+    assert!(!said(&h).contains("timeline key"), "{}", said(&h));
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn frame_keys_wait_for_the_timeline_and_cmd_d_repeats_the_selected_frames() {
     use super::Focus;
     let path = sample("frame-keys");
@@ -3413,7 +3483,7 @@ fn frame_keys_wait_for_the_timeline_and_cmd_d_repeats_the_selected_frames() {
     h.key_press(Key::I);
     h.run_steps(2);
     assert_eq!(shown(&h, "lines"), [(0, None)]);
-    assert!(said(&h).contains("Frame > Insert frame"), "{}", said(&h));
+    assert_eq!(h.state().tool, Tool::Eyedropper, "I on the canvas is the eyedropper");
     h.state_mut().invoke(Cmd::HoldLonger).unwrap();
     h.run_steps(2);
     assert_eq!(frames(&h), 25, "the menu still runs it from anywhere");

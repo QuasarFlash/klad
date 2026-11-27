@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- An eyedropper tool on the tool strip, on I: click or drag over a colour and let go to take it, with a ring at the pen showing the new colour against the one you had; shift takes it from the active layer only, and on a pixel layer it takes the palette colour. Alt with the brush or fill still picks a colour as before. I still inserts a frame while the timeline is in use.
+
 ### Fixed
 
 - Pixel art squashes, stretches, grows and shrinks by any amount when you drag a selection's edges or corners; it grew only by 2, 3 or 4 times and never got smaller. The pixels stay hard and on the grid, the status line shows the new size, and near a whole size (the size it had, or twice or three times it) the drag lands on it exactly unless you hold cmd.

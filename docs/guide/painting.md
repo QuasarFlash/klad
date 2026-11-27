@@ -1,4 +1,4 @@
-_Last updated: 2026-11-27 14:30_
+_Last updated: 2026-11-27 16:40_
 
 # Painting
 
@@ -22,7 +22,7 @@ For a line, a rectangle or an ellipse in paint, click **more** in the brush bar,
 
 ## Pick a brush and a colour
 
-Click a brush in the **Brush** pane: Inking pen, Pencil and Marker for lines, Oil, Loaded oil and the bristle brushes for paint. Lean the pen with the Pencil to shade: the line grows wider and lighter. Hold **alt** and click the canvas to pick up a colour from it.
+Click a brush in the **Brush** pane: Inking pen, Pencil and Marker for lines, Oil, Loaded oil and the bristle brushes for paint. Lean the pen with the Pencil to shade: the line grows wider and lighter. To take a colour from the canvas, press **I** for the eyedropper (it is on the tool strip under the fill), then click or drag over the colour you want and let go; a ring around the pen shows the new colour against the one you had, and **shift** takes it from the active layer only. With the brush or the fill, holding **alt** and clicking does the same.
 
 In the **Colour** pane, mix a colour on the wheel or with the sliders next to it. **HSV**, **HSL**, **RGB** and **Lab** above the sliders choose what they change: for the shadow of a colour, pick **Lab** and lower **L**.
 

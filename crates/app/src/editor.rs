@@ -216,6 +216,7 @@ const ALPHA: color::Channel = color::Channel {
 enum Tool {
     Brush,
     Fill,
+    Eyedropper,
     Select,
     Strokes,
     Direct,
@@ -224,6 +225,13 @@ enum Tool {
     Text,
     Note,
     Bone,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Dropping {
+    before: [f32; 4],
+    now: Option<[f32; 4]>,
+    layer_only: bool,
 }
 
 struct PenPath {
@@ -1063,6 +1071,7 @@ pub(crate) struct Editor {
     shaped: Option<Shaped>,
     point_drag: Option<PointDrag>,
     pick_later: bool,
+    dropping: Option<Dropping>,
     also_shaped: Vec<Shaped>,
     path_commit: Option<PathCommit>,
     simplify_px: f32,
@@ -1312,6 +1321,7 @@ impl Editor {
             shaped: None,
             point_drag: None,
             pick_later: false,
+            dropping: None,
             also_shaped: Vec::new(),
             path_commit: None,
             simplify_px: 1.5,
@@ -3686,7 +3696,10 @@ impl Editor {
             self.say(Tone::Refused, why);
             return Ok(());
         }
-        let needs_canvas = matches!(self.tool, Tool::Brush | Tool::Fill | Tool::Strokes | Tool::Select);
+        let needs_canvas = matches!(
+            self.tool,
+            Tool::Brush | Tool::Fill | Tool::Strokes | Tool::Select | Tool::Eyedropper
+        );
         if pressing && !needs_canvas {
             self.hold_still();
         }
@@ -3700,6 +3713,9 @@ impl Editor {
         match (self.tool, e.phase) {
             (_, Phase::Down) if !was_focused || !on_canvas || self.navigating => {}
             (_, Phase::Down) if picking => self.pick_colour(c, self.modifiers.shift)?,
+            (Tool::Eyedropper, Phase::Down) => self.drop_at(c, None)?,
+            (Tool::Eyedropper, Phase::Move) if self.dropping.is_some() => self.drop_at(c, self.dropping)?,
+            (Tool::Eyedropper, Phase::Up) => self.drop_end(),
             (Tool::Fill, Phase::Down) if self.scene.on_grid() => {
                 if self.scene.can_paint() {
                     self.fill_pixels(klad_core::pixel::cell_at(c.x, c.y))?;
@@ -4156,6 +4172,30 @@ impl Editor {
             None => self.say(Tone::Refused, format!("nothing to pick from {where_from} there")),
         }
         Ok(())
+    }
+
+    fn drop_at(&mut self, at: Vec2, was: Option<Dropping>) -> Result<()> {
+        let layer_only = was.map_or(self.modifiers.shift, |d| d.layer_only);
+        self.dropping = Some(Dropping {
+            before: was.map_or(self.color, |d| d.before),
+            now: self.scene.sample((at.x, at.y), layer_only)?,
+            layer_only,
+        });
+        Ok(())
+    }
+
+    fn drop_end(&mut self) {
+        let Some(drop) = self.dropping.take() else {
+            return;
+        };
+        let where_from = if drop.layer_only { "this layer" } else { "the image" };
+        match drop.now {
+            Some(rgba) => {
+                self.pick_new_colour(rgba);
+                self.say(Tone::Done, format!("picked {} from {where_from}", color::hex(rgba)));
+            }
+            None => self.say(Tone::Refused, format!("nothing to pick from {where_from} there")),
+        }
     }
 
     fn fill_reference(&self) -> FillRef {
@@ -4853,7 +4893,28 @@ impl Editor {
             painter.add(egui::Shape::closed_line(line, egui::Stroke::new(1.5, tint)));
         }
         let hover = ui.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p));
-        let dropper = self.modifiers.alt && !self.modifiers.command && matches!(self.tool, Tool::Brush | Tool::Fill);
+        let dropper = (self.modifiers.alt && !self.modifiers.command && matches!(self.tool, Tool::Brush | Tool::Fill))
+            || self.tool == Tool::Eyedropper;
+        if let (Some(hover), Some(drop)) = (hover, self.dropping.filter(|_| self.tool == Tool::Eyedropper)) {
+            let half = |from: f32, colour: Option<[f32; 4]>| {
+                let points: Vec<Pos2> = (0..=24)
+                    .map(|i| {
+                        let a = from + std::f32::consts::PI * i as f32 / 24.0;
+                        hover + vec2(a.cos(), a.sin()) * DROPPER * 1.4
+                    })
+                    .collect();
+                let fill = colour.map_or(Color32::from_gray(128), |rgba| {
+                    color::color32([rgba[0], rgba[1], rgba[2], 1.0])
+                });
+                painter.add(egui::Shape::line(
+                    points.clone(),
+                    egui::Stroke::new(DROPPER * 0.7, Color32::from_black_alpha(120)),
+                ));
+                painter.add(egui::Shape::line(points, egui::Stroke::new(DROPPER * 0.55, fill)));
+            };
+            half(std::f32::consts::PI, drop.now);
+            half(0.0, Some(drop.before));
+        }
         if let Some(hover) = hover.filter(|_| dropper) {
             let font = egui::FontId::proportional(DROPPER);
             let tip = hover + vec2(-DROPPER * 0.12, DROPPER * 0.2);
