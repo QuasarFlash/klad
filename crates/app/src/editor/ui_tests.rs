@@ -511,6 +511,90 @@ fn a_selected_shape_takes_the_colour_as_its_fill_or_outline() {
 }
 
 #[test]
+fn a_selected_shape_can_have_no_fill_and_no_outline_from_its_bar_the_menu_and_layer_settings() {
+    let path = sample("shape-none");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "shapes");
+    let shapes = h.state().scene.active_id().unwrap();
+    let first = h.state().scene.bundle.doc.layer(&shapes).unwrap().cels()[0].nodes[0]
+        .id
+        .clone();
+    let ops = klad_core::ops::parse_lines(&format!(
+        "{}\n{}",
+        format_args!(r##"{{"op":"set","id":"{first}","stroke":{{"paint":"#101010","width":3}}}}"##),
+        format_args!(
+            r##"{{"op":"add","node":{{"type":"ellipse","cx":300,"cy":60,"rx":40,"ry":30,"fill":"#2040a0","stroke":{{"paint":"#000000","width":4}}}},"in":"{shapes}","frame":0}}"##
+        ),
+    ))
+    .unwrap();
+    h.state_mut().apply(ops).unwrap();
+    let second = h.state().scene.bundle.doc.layer(&shapes).unwrap().cels()[0].nodes[1]
+        .id
+        .clone();
+    let node = |h: &Harness<'static, Editor>, id: &str| match h.state().scene.bundle.doc.item(id) {
+        Some(klad_core::doc::Item::Node(_, _, n)) => n.clone(),
+        _ => panic!("the shape is gone"),
+    };
+    let unfilled = |h: &Harness<'static, Editor>, id: &str| serde_json::to_value(&node(h, id).fill).unwrap() == "none";
+    h.state_mut().tool = Tool::Select;
+    assert_eq!(
+        h.state().can_run(Cmd::NoFill).as_deref(),
+        Some("select a rectangle, ellipse, path or text with V first")
+    );
+    h.state_mut().select_shapes(vec![first.clone()]);
+    h.run_steps(3);
+    h.get_by_label("the shape's fill").click();
+    h.run_steps(3);
+    h.get_by_label("no fill").click();
+    h.run_steps(3);
+    assert!(unfilled(&h, &first), "no fill in the fill button's picker");
+    assert!(node(&h, &first).stroke.is_some(), "the outline stays");
+    assert_eq!(
+        h.state().can_run(Cmd::NoFill).as_deref(),
+        Some("the selected shape has no fill already")
+    );
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.run_steps(2);
+    assert!(!unfilled(&h, &first), "undo brings the fill back");
+    h.get_by_label("the shape's outline").click();
+    h.run_steps(3);
+    h.get_by_label("no outline").click();
+    h.run_steps(3);
+    assert!(
+        node(&h, &first).stroke.is_none(),
+        "no outline in the outline button's picker"
+    );
+    assert!(!unfilled(&h, &first));
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.state_mut().select_shapes(vec![first.clone(), second.clone()]);
+    h.run_steps(2);
+    h.state_mut().invoke(Cmd::NoOutline).unwrap();
+    h.run_steps(2);
+    assert!(
+        node(&h, &first).stroke.is_none() && node(&h, &second).stroke.is_none(),
+        "Edit > Shape > No outline takes it off every selected shape"
+    );
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.run_steps(2);
+    assert!(
+        node(&h, &first).stroke.is_some() && node(&h, &second).stroke.is_some(),
+        "in one step"
+    );
+    h.state_mut().select_shapes(vec![second.clone()]);
+    if let Some(p) = h.state_mut().settings.layout.pane_mut(Pane::Inspector) {
+        p.collapsed = false;
+    }
+    h.run_steps(3);
+    h.get_by_label("none").click();
+    h.run_steps(3);
+    assert!(
+        node(&h, &second).stroke.is_none(),
+        "none beside the outline's width in layer settings"
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn alt_click_on_an_eye_shows_only_that_layer_and_again_brings_the_rest_back() {
     let path = sample("solo");
     let mut h = harness(editor(&path), vec2(1440.0, 1000.0));

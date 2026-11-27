@@ -428,7 +428,7 @@ pub struct Square {
     what: String,
     current: Option<[f32; 4]>,
     alpha: bool,
-    removable: bool,
+    removable: Option<(String, String)>,
     upward: bool,
     palette: Vec<Shelf>,
 }
@@ -446,7 +446,7 @@ impl Square {
             what: what.into(),
             current: None,
             alpha: false,
-            removable: false,
+            removable: None,
             upward: false,
             palette: Vec::new(),
         }
@@ -477,8 +477,12 @@ impl Square {
         self
     }
 
-    pub fn removable(mut self) -> Self {
-        self.removable = true;
+    pub fn removable(self) -> Self {
+        self.removable_as("remove", "take this colour out")
+    }
+
+    pub fn removable_as(mut self, label: &str, hint: &str) -> Self {
+        self.removable = Some((label.to_string(), hint.to_string()));
         self
     }
 
@@ -611,7 +615,9 @@ impl Square {
                         Popup::close_id(ui.ctx(), self.id);
                     }
                 }
-                if self.removable && ui.button("remove").hint("take this colour out").clicked() {
+                if let Some((label, hint)) = &self.removable
+                    && ui.button(label.as_str()).hint(hint.as_str()).clicked()
+                {
                     out = Some(Pick::Remove);
                     Popup::close_id(ui.ctx(), self.id);
                 }

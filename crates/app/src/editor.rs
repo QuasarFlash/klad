@@ -5146,6 +5146,44 @@ impl Editor {
         }
     }
 
+    pub(super) fn undyeable(&self, outline: bool) -> Vec<String> {
+        let picked = match self.shapes() {
+            ids if !ids.is_empty() => ids,
+            _ => self.direct.as_ref().map(|d| d.node.clone()).into_iter().collect(),
+        };
+        picked
+            .into_iter()
+            .filter(|id| match self.scene.bundle.doc.item(id) {
+                Some(Item::Node(_, _, node)) => {
+                    matches!(
+                        node.shape,
+                        Shape::Rect { .. } | Shape::Ellipse { .. } | Shape::Path { .. } | Shape::Text(_)
+                    ) && match outline {
+                        true => node.stroke.is_some(),
+                        false => !matches!(&node.fill, Some(Paint::Solid(c)) if c == "none"),
+                    }
+                }
+                _ => false,
+            })
+            .collect()
+    }
+
+    pub(super) fn undye(&mut self, outline: bool) -> Result<()> {
+        let (key, value) = match outline {
+            true => ("stroke", Value::Null),
+            false => ("fill", json!("none")),
+        };
+        let ops = self
+            .undyeable(outline)
+            .into_iter()
+            .map(|id| Op::Set {
+                id,
+                props: Map::from_iter([(key.to_string(), value.clone())]),
+            })
+            .collect();
+        self.apply(ops)
+    }
+
     fn dye(&mut self, dye: Dye, rgba: [f32; 4]) -> Result<()> {
         if self.dyed(dye).is_some_and(|now| color::hex(now) == color::hex(rgba)) {
             return Ok(());
@@ -5208,14 +5246,29 @@ impl Editor {
             .iter()
             .filter_map(|hex| color::rgba_of(hex).map(|rgba| (rgba, format!("{hex}, used lately"))))
             .collect();
-        let picked = color::Square::new(ui, ("dye", dye.what()), now.unwrap_or(self.color), dye.what())
+        let none = match dye {
+            Dye::Fill => Some((Cmd::NoFill, "no fill", "the shape gets no fill: only its outline shows")),
+            Dye::Outline => Some((Cmd::NoOutline, "no outline", "the shape's outline comes off")),
+            Dye::Strokes => None,
+        }
+        .filter(|(cmd, _, _)| self.can_run(*cmd).is_none());
+        let square = color::Square::new(ui, ("dye", dye.what()), now.unwrap_or(self.color), dye.what())
             .current(self.color)
             .upward(self.bar_above)
             .colours("palette", palette)
-            .colours("recent", recent)
-            .under(ui, &response);
-        if let Some(rgba) = picked.and_then(color::Pick::chosen) {
-            self.check(|e| e.dye(dye, rgba));
+            .colours("recent", recent);
+        let square = match none {
+            Some((_, label, hint)) => square.removable_as(label, hint),
+            None => square,
+        };
+        match square.under(ui, &response) {
+            Some(color::Pick::Chosen(rgba)) => self.check(|e| e.dye(dye, rgba)),
+            Some(color::Pick::Remove) => {
+                if let Some((cmd, _, _)) = none {
+                    self.queued.push(cmd);
+                }
+            }
+            _ => {}
         }
     }
 

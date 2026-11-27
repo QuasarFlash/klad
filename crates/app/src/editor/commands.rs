@@ -352,6 +352,13 @@ impl Editor {
                 .is_none()
                 .then(|| "select a rectangle, ellipse, path or text with V first".to_string())
                 .or(editing),
+            Cmd::NoFill | Cmd::NoOutline => match (self.recolourable(), self.undyeable(cmd == Cmd::NoOutline).is_empty()) {
+                (_, false) => None,
+                (None, true) => Some("select a rectangle, ellipse, path or text with V first".to_string()),
+                (Some(_), true) if cmd == Cmd::NoFill => Some("the selected shape has no fill already".to_string()),
+                (Some(_), true) => Some("the selected shape has no outline already".to_string()),
+            }
+            .or(editing),
             Cmd::SoloLayer => match layer {
                 None => pick_layer(),
                 Some(_) if self.scene.active_is_mask() => Some("this is a mask: pick the layer it masks".to_string()),
@@ -1156,6 +1163,8 @@ impl Editor {
             Cmd::Recolour => self.recolour_picked()?,
             Cmd::FillShape => self.recolour_shape(false)?,
             Cmd::OutlineShape => self.recolour_shape(true)?,
+            Cmd::NoFill => self.undye(false)?,
+            Cmd::NoOutline => self.undye(true)?,
             Cmd::SoloLayer => {
                 if let Some(id) = self.scene.active_id() {
                     self.solo(&id)?;

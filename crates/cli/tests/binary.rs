@@ -4550,3 +4550,75 @@ fn a_preview_for_finder_is_written_sized_kept_out_of_git_and_skipped_when_nothin
     assert!(!missing.status.success());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_shape_loses_its_fill_and_its_outline_with_none() {
+    let dir = std::env::temp_dir().join(format!("klad-binary-none-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let bundle = dir.join("a.klad");
+    let klad = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_klad")).args(args).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let path = bundle.to_str().unwrap();
+    klad(&["new", path, "--width", "200", "--height", "200"]);
+    klad(&["add", path, "layer", "vector", "name=shapes"]);
+    let layers = klad(&["ls", path]);
+    let shapes = layers
+        .lines()
+        .find(|l| l.split_whitespace().nth(1) == Some("vector"))
+        .and_then(|l| l.split_whitespace().next())
+        .unwrap()
+        .to_string();
+    klad(&[
+        "add",
+        path,
+        "rect",
+        "--in",
+        &shapes,
+        "x=10",
+        "y=10",
+        "w=50",
+        "h=40",
+        "fill=#ff0000",
+        "stroke.paint=#000000",
+        "stroke.width=3",
+    ]);
+    klad(&[
+        "add",
+        path,
+        "ellipse",
+        "--in",
+        &shapes,
+        "cx=100",
+        "cy=100",
+        "rx=20",
+        "ry=20",
+        "stroke=none",
+    ]);
+    let listed = klad(&["ls", path]);
+    let id_of = |kind: &str| {
+        listed
+            .lines()
+            .find(|l| l.split_whitespace().nth(1) == Some(kind))
+            .and_then(|l| l.split_whitespace().next())
+            .unwrap_or_else(|| panic!("no {kind} in {listed}"))
+            .to_string()
+    };
+    let (rect, ellipse) = (id_of("rect"), id_of("ellipse"));
+    let shown = |id: &str| -> serde_json::Value { serde_json::from_str(&klad(&["show", path, id])).unwrap() };
+    assert!(shown(&rect).get("stroke").is_some());
+    assert!(
+        shown(&ellipse).get("stroke").is_none(),
+        "added with stroke=none: no outline"
+    );
+    klad(&["set", path, &rect, "stroke=none", "fill=none"]);
+    let after = shown(&rect);
+    assert!(
+        after.get("stroke").is_none(),
+        "stroke=none takes the outline off: {after}"
+    );
+    assert_eq!(after["fill"], "none");
+    let _ = std::fs::remove_dir_all(&dir);
+}

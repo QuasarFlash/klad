@@ -281,6 +281,8 @@ pub enum Cmd {
     PickAllLayers,
     FillShape,
     OutlineShape,
+    NoFill,
+    NoOutline,
     SoloLayer,
     Save,
     SaveCopy,
@@ -626,7 +628,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 275] = [
+    pub const ALL: [Cmd; 277] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -861,6 +863,8 @@ impl Cmd {
         Cmd::PickAllLayers,
         Cmd::FillShape,
         Cmd::OutlineShape,
+        Cmd::NoFill,
+        Cmd::NoOutline,
         Cmd::SoloLayer,
         Cmd::OpenDocument,
         Cmd::OpenRecent,
@@ -2969,6 +2973,24 @@ impl Cmd {
                 R::No,
                 "the selected shape's outline becomes the current colour (an outline is added at the pen's width when it has none)",
             ),
+            Cmd::NoFill => spec(
+                "shape.no-fill",
+                "no fill",
+                icon::CLOSE,
+                G::Edit,
+                T::None,
+                R::No,
+                "the selected shapes get no fill: only their outline shows",
+            ),
+            Cmd::NoOutline => spec(
+                "shape.no-outline",
+                "no outline",
+                icon::CLOSE,
+                G::Edit,
+                T::None,
+                R::No,
+                "the selected shapes lose their outline",
+            ),
             Cmd::Save => spec(
                 "file.save",
                 "save",
@@ -3653,6 +3675,8 @@ impl Cmd {
             Cmd::PickAllLayers => "Pick from all layers",
             Cmd::FillShape => "Fill with colour",
             Cmd::OutlineShape => "Outline with colour",
+            Cmd::NoFill => "No fill",
+            Cmd::NoOutline => "No outline",
             Cmd::SoloLayer => "Show only this",
             Cmd::Save => "Save",
             Cmd::SaveCopy => "Save a copy…",
@@ -3846,6 +3870,8 @@ pub const MENUS: [Menu; 9] = [
                 &[
                     Run(Cmd::FillShape),
                     Run(Cmd::OutlineShape),
+                    Run(Cmd::NoFill),
+                    Run(Cmd::NoOutline),
                     Line,
                     Run(Cmd::CopyLook),
                     Run(Cmd::PasteLook),
@@ -4197,6 +4223,8 @@ pub fn other_names(cmd: Cmd) -> &'static [&'static str] {
         Cmd::Guides => &["help", "manual", "documentation"],
         Cmd::InspectorPane => &["opacity", "transparency", "blend mode", "layer properties"],
         Cmd::Eyedropper => &["eyedropper", "colour picker", "sample colour"],
+        Cmd::NoFill => &["transparent fill", "remove the fill", "fill none"],
+        Cmd::NoOutline => &["no stroke", "remove the outline", "remove the stroke", "stroke none"],
         Cmd::Fill => &["bucket", "paint bucket", "flood fill"],
         Cmd::Strokes => &["lasso"],
         Cmd::TextTool => &["type"],
