@@ -30,6 +30,37 @@ impl PenEvent {
     }
 }
 
+fn in_use_id() -> egui::Id {
+    egui::Id::unique("klad pen in use")
+}
+
+pub fn note(ctx: &egui::Context, native: Option<&[PenEvent]>) {
+    let seen = match native {
+        Some(events) => events.last().map(|e| e.tablet),
+        None => ctx.input(|i| {
+            let pen = i
+                .events
+                .iter()
+                .any(|e| matches!(e, egui::Event::Touch { force: Some(_), .. }));
+            let mouse = i
+                .events
+                .iter()
+                .any(|e| matches!(e, egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. }));
+            (pen || mouse).then_some(pen)
+        }),
+    };
+    if let Some(tablet) = seen {
+        ctx.data_mut(|d| d.insert_temp(in_use_id(), tablet));
+        if ctx.global_style().interaction.selectable_labels == tablet {
+            ctx.all_styles_mut(|s| s.interaction.selectable_labels = !tablet);
+        }
+    }
+}
+
+pub fn in_use(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(in_use_id())).unwrap_or(false)
+}
+
 pub fn device_key(device: u64) -> String {
     if device == 0 {
         "tablet".into()
@@ -434,6 +465,61 @@ mod tests {
         assert_eq!(
             phases(&[egui::Event::PointerMoved(egui::pos2(4.0, 5.0))], &mut held),
             [(Phase::Move, 1.0)]
+        );
+    }
+
+    #[test]
+    fn the_last_pointer_event_says_whether_the_pen_is_in_use() {
+        let ctx = egui::Context::default();
+        let frame = |events: Vec<egui::Event>, native: Option<Vec<PenEvent>>| {
+            let input = egui::RawInput {
+                events,
+                ..Default::default()
+            };
+            ctx.run_ui(input, |ui| note(ui.ctx(), native.as_deref()))
+                .textures_delta
+                .clear();
+            in_use(&ctx)
+        };
+        let pen = |tablet: bool| PenEvent {
+            phase: Phase::Move,
+            pos: egui::pos2(3.0, 4.0),
+            pressure: 0.5,
+            tilt: (0.0, 0.0),
+            eraser: false,
+            tablet,
+            device: 0,
+            at: Instant::now(),
+        };
+        assert!(!frame(Vec::new(), None), "nothing seen yet: no pen");
+        assert!(
+            frame(Vec::new(), Some(vec![pen(false), pen(true)])),
+            "the Mac and Windows backends say the pen moved last"
+        );
+        assert!(frame(Vec::new(), Some(Vec::new())), "a frame with no events keeps it");
+        assert!(
+            !ctx.global_style().interaction.selectable_labels,
+            "with the pen a drag on text scrolls instead of selecting it, as egui does on touch screens"
+        );
+        assert!(
+            !frame(vec![button(3.0, true)], Some(vec![pen(true), pen(false)])),
+            "a mouse after the pen: the backend's word counts, not egui's events"
+        );
+        assert!(
+            frame(
+                vec![touch(egui::TouchPhase::Start, 3.0, Some(0.4)), button(3.0, true)],
+                None
+            ),
+            "without a backend, a touch with force is the pen"
+        );
+        assert!(frame(Vec::new(), None), "and it stays until something else moves");
+        assert!(
+            !frame(vec![egui::Event::PointerMoved(egui::pos2(9.0, 9.0))], None),
+            "a mouse that moves on its own is not the pen"
+        );
+        assert!(
+            ctx.global_style().interaction.selectable_labels,
+            "and the mouse selects text again"
         );
     }
 

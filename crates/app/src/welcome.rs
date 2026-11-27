@@ -1,5 +1,6 @@
 use crate::connect::Connect;
 use crate::theme::{self, Hint, icon, leading};
+use crate::widgets::PenScroll;
 use crate::widgets::{self, Place};
 use anyhow::{Result, anyhow};
 use egui::{
@@ -581,6 +582,7 @@ impl Welcome {
                     .id_salt(("welcome side", index))
                     .auto_shrink([false, true])
                     .max_height(room.bottom() - top)
+                    .pen_scroll(ui.ctx())
                     .show(ui, |ui| add(self, ui, room.width()));
                 height = Some(shown.content_size.y);
             },

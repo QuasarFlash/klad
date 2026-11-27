@@ -3,6 +3,7 @@ use crate::color;
 use crate::jobs::{Spec, Tag};
 use crate::messages::Tone;
 use crate::theme::{self, Hint, icon};
+use crate::widgets::PenScroll;
 use anyhow::Result;
 use egui::{Color32, Key, Rect, RichText, Stroke, TextureHandle, Vec2, pos2, vec2};
 use klad_core::doc::{Item, Kind, Layer, Node, Paint, Shape};
@@ -1020,7 +1021,7 @@ impl Editor {
                     .collect(),
                 false => Vec::new(),
             };
-            egui::ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
+            egui::ScrollArea::vertical().max_height(380.0).pen_scroll(ui.ctx()).show(ui, |ui| {
                 families.iter().for_each(|f| {
                     if let Some(name) = self.family_row(ui, f, shown) {
                         picked = Some(name);

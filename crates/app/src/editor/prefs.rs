@@ -3,6 +3,7 @@ use crate::commands::Cmd;
 use crate::layout::Layout;
 use crate::messages::Tone;
 use crate::theme::{self, Hint, icon};
+use crate::widgets::PenScroll;
 use egui::{Align, RichText, vec2};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -130,6 +131,7 @@ impl Editor {
                             egui::ScrollArea::vertical()
                                 .id_salt(("settings", section.name()))
                                 .auto_shrink([false, false])
+                                .pen_scroll(ui.ctx())
                                 .show(ui, |ui| match section {
                                     Section::Pen => self.pen_panel(ui),
                                     Section::Drawing => self.defaults_section(ui),
@@ -362,6 +364,7 @@ impl Editor {
             .id_salt("keys list")
             .max_height(ui.available_height())
             .auto_shrink([false, false])
+            .pen_scroll(ui.ctx())
             .show(ui, |ui| {
                 shown.iter().for_each(|cmd| {
                     let spec = cmd.spec();

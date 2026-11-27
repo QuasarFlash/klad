@@ -3,6 +3,7 @@ use crate::commands::Cmd;
 use crate::layout;
 use crate::messages::Tone;
 use crate::theme::{self, Hint, icon};
+use crate::widgets::PenScroll;
 use anyhow::Result;
 use egui::{Color32, ColorImage, Rect, RichText, Sense, TextureHandle, TextureOptions, UiBuilder, vec2};
 use klad_brush::Raster;
@@ -689,6 +690,7 @@ impl Editor {
             .max_height(list)
             .min_scrolled_height(list)
             .auto_shrink([false, false])
+            .pen_scroll(ui.ctx())
             .show(ui, |ui| {
                 egui::Frame::new()
                     .inner_margin(egui::Margin {

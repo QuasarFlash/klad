@@ -478,6 +478,7 @@ impl Home {
     pub(crate) fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let pen = self.pen.as_ref().map(|pen| pen.drain(&ctx));
+        crate::pen::note(&ctx, pen.as_deref());
         self.tend_menus(&ctx);
         let from_menu = self.picked(&ctx);
         self.checked();

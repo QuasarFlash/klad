@@ -6,6 +6,7 @@ use crate::layout::{self, Layout, Pane};
 use crate::messages::{Message, Tone};
 use crate::stats::lock;
 use crate::theme::{self, Hint, icon};
+use crate::widgets::PenScroll;
 use anyhow::Result;
 use egui::{Align, Color32, Id, Key, Layout as Flow, Margin, Modifiers, RichText, Sense, UiBuilder, vec2};
 use std::time::{Duration, Instant};
@@ -99,6 +100,7 @@ impl Editor {
     }
 
     pub(crate) fn frame(&mut self, ui: &mut egui::Ui) {
+        crate::pen::note(ui.ctx(), self.pen.as_deref());
         let focused = ui.input(|i| i.focused);
         if focused && !self.window_focused {
             self.yours.reload();
@@ -344,6 +346,7 @@ impl Editor {
                 drag: egui::scroll_area::DragScroll::Never,
                 ..egui::scroll_area::ScrollSource::default()
             })
+            .pen_scroll(ui.ctx())
             .show(ui, |ui| {
                 let drawn = ui
                     .vertical_centered(|ui| {
@@ -596,6 +599,7 @@ impl Editor {
         egui::ScrollArea::vertical()
             .max_height(420.0)
             .auto_shrink([false, false])
+            .pen_scroll(ui.ctx())
             .show_rows(ui, row, lines.len(), |ui, rows| {
                 ui.set_width(600.0);
                 lines[rows].iter().for_each(|line| {
@@ -649,6 +653,7 @@ impl Editor {
                             .max_height(height)
                             .min_scrolled_height(height)
                             .auto_shrink([false, false])
+                            .pen_scroll(ui.ctx())
                             .show(ui, |ui| {
                                 ui.spacing_mut().item_spacing.y = 5.0;
                                 egui::Frame::new()
@@ -799,30 +804,33 @@ impl Editor {
         };
         let scale = self.settings.real_size_scale.clamp(1, 4) as f32 / ui.ctx().pixels_per_point();
         let size = vec2(w as f32, h as f32) * scale;
-        egui::ScrollArea::both().id_salt("real size").show(ui, |ui| {
-            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-            let painter = ui.painter().with_clip_rect(rect);
-            painter.rect_filled(rect, 0.0, Color32::from_gray(235));
-            let cell = 8.0;
-            let (cols, rows) = ((size.x / cell).ceil() as usize, (size.y / cell).ceil() as usize);
-            (0..rows)
-                .flat_map(|j| (0..cols).map(move |i| (i, j)))
-                .filter(|(i, j)| (i + j) % 2 == 1)
-                .for_each(|(i, j)| {
-                    let at = rect.min + vec2(i as f32 * cell, j as f32 * cell);
-                    painter.rect_filled(
-                        egui::Rect::from_min_size(at, vec2(cell, cell)),
-                        0.0,
-                        Color32::from_gray(204),
-                    );
-                });
-            painter.image(
-                texture.id(),
-                rect,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                Color32::WHITE,
-            );
-        });
+        egui::ScrollArea::both()
+            .id_salt("real size")
+            .pen_scroll(ui.ctx())
+            .show(ui, |ui| {
+                let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+                let painter = ui.painter().with_clip_rect(rect);
+                painter.rect_filled(rect, 0.0, Color32::from_gray(235));
+                let cell = 8.0;
+                let (cols, rows) = ((size.x / cell).ceil() as usize, (size.y / cell).ceil() as usize);
+                (0..rows)
+                    .flat_map(|j| (0..cols).map(move |i| (i, j)))
+                    .filter(|(i, j)| (i + j) % 2 == 1)
+                    .for_each(|(i, j)| {
+                        let at = rect.min + vec2(i as f32 * cell, j as f32 * cell);
+                        painter.rect_filled(
+                            egui::Rect::from_min_size(at, vec2(cell, cell)),
+                            0.0,
+                            Color32::from_gray(204),
+                        );
+                    });
+                painter.image(
+                    texture.id(),
+                    rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+            });
         Ok(())
     }
 
@@ -1391,23 +1399,26 @@ impl Editor {
     fn log_panel(&mut self, ui: &mut egui::Ui) {
         let now = Instant::now();
         let log: Vec<Message> = self.messages.log().rev().cloned().collect();
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            if log.is_empty() {
-                ui.label("no messages yet");
-            }
-            log.iter().for_each(|m| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(icon_of(m.tone)).color(colour_of(m.tone)));
-                    ui.label(RichText::new(ago(m.at, now)).color(theme::WEAK).small());
-                    let times = if m.times > 1 {
-                        format!(" (x{})", m.times)
-                    } else {
-                        String::new()
-                    };
-                    ui.label(format!("{}{times}", m.text));
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .pen_scroll(ui.ctx())
+            .show(ui, |ui| {
+                if log.is_empty() {
+                    ui.label("no messages yet");
+                }
+                log.iter().for_each(|m| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new(icon_of(m.tone)).color(colour_of(m.tone)));
+                        ui.label(RichText::new(ago(m.at, now)).color(theme::WEAK).small());
+                        let times = if m.times > 1 {
+                            format!(" (x{})", m.times)
+                        } else {
+                            String::new()
+                        };
+                        ui.label(format!("{}{times}", m.text));
+                    });
                 });
             });
-        });
     }
 
     fn toasts(&mut self, ui: &mut egui::Ui) {
@@ -1469,6 +1480,7 @@ impl Editor {
                                             egui::ScrollArea::vertical()
                                                 .id_salt(("toast words", m.id))
                                                 .max_height(tall)
+                                                .pen_scroll(ui.ctx())
                                                 .show(ui, |ui| {
                                                     ui.set_max_width(words);
                                                     label(ui);
@@ -1552,6 +1564,7 @@ impl Editor {
             egui::ScrollArea::vertical()
                 .max_height(room)
                 .min_scrolled_height(room)
+                .pen_scroll(ui.ctx())
                 .show(ui, |ui| {
                     if found.is_empty() {
                         ui.label("nothing matches");
@@ -1597,6 +1610,7 @@ fn scrolled_menu(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     egui::ScrollArea::vertical()
         .max_height(room)
         .min_scrolled_height(room)
+        .pen_scroll(ui.ctx())
         .show(ui, add);
 }
 
