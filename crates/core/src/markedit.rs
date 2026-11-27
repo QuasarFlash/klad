@@ -631,6 +631,31 @@ pub fn pick(marks: &[Mark], at: (f32, f32), slack: f32, hidden: impl Fn(&Mark) -
     found(0.0).or_else(|| (slack > 0.0).then(|| found(slack)).flatten())
 }
 
+pub fn pick_through(
+    marks: &[Mark],
+    at: (f32, f32),
+    slack: f32,
+    hidden: impl Fn(&Mark) -> bool,
+    rides: impl Fn(&Mark) -> bool,
+) -> Option<u32> {
+    pick(marks, at, slack, |m| hidden(m) || rides(m))
+        .or_else(|| pick(marks, at, slack, |m| hidden(m) || !rides(m)).map(|smudge| ridden(marks, smudge)))
+}
+
+pub fn ridden(marks: &[Mark], modifier: u32) -> u32 {
+    let live = marks
+        .iter()
+        .find(|m| m.id() == modifier)
+        .and_then(Mark::as_stroke)
+        .map_or(Vec::new(), |s| attach::live_on(marks, s));
+    marks
+        .iter()
+        .rev()
+        .map(Mark::id)
+        .find(|id| live.contains(id))
+        .unwrap_or(modifier)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Side {
     Inside,
@@ -979,6 +1004,44 @@ mod tests {
             .with_points(&[(10.0, 10.0, 1.0), (30.0, 10.0, 1.0)], 4.0)
             .tapered([4.0, 8.0])
             .into()
+    }
+
+    #[test]
+    fn a_click_goes_through_an_attached_smudge_to_the_stroke_under_it() {
+        let smudge = |id: u32, from: (f32, f32), to: (f32, f32), on: Vec<u32>| -> Mark {
+            let mut s = Stroke::new(id, "smudge", [0.0, 0.0, 0.0, 1.0], 12.0, 1)
+                .with_points(&[(from.0, from.1, 1.0), (to.0, to.1, 1.0)], 4.0);
+            s.on = on;
+            s.into()
+        };
+        let marks = vec![
+            line(1),
+            line(2),
+            smudge(3, (12.0, 10.0), (28.0, 10.0), vec![2]),
+            smudge(4, (14.0, 10.0), (60.0, 10.0), vec![2]),
+            smudge(5, (100.0, 100.0), (120.0, 100.0), Vec::new()),
+        ];
+        let rides = |m: &Mark| m.as_stroke().is_some_and(|s| s.brush == "smudge" && !s.on.is_empty());
+        let at = |x: f32, y: f32| pick_through(&marks, (x, y), 2.0, |_| false, rides);
+        assert_eq!(
+            pick(&marks, (20.0, 10.0), 2.0, |_| false),
+            Some(4),
+            "a plain pick takes the smudge on top"
+        );
+        assert_eq!(at(20.0, 10.0), Some(2), "through the smudges to the stroke under them");
+        assert_eq!(at(50.0, 10.0), Some(2), "past the stroke, the smudge's own stroke");
+        assert_eq!(
+            at(110.0, 100.0),
+            Some(5),
+            "a smudge attached to nothing is picked itself"
+        );
+        assert_eq!(at(200.0, 200.0), None);
+        let gone = vec![smudge(6, (12.0, 10.0), (28.0, 10.0), vec![99])];
+        assert_eq!(
+            pick_through(&gone, (20.0, 10.0), 2.0, |_| false, rides),
+            Some(6),
+            "a smudge whose strokes are gone is picked itself"
+        );
     }
 
     #[test]

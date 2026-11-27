@@ -284,6 +284,7 @@ pub enum Cmd {
     NoFill,
     NoOutline,
     EyedropperTool,
+    Smudge,
     SoloLayer,
     Save,
     SaveCopy,
@@ -629,7 +630,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 278] = [
+    pub const ALL: [Cmd; 279] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -867,6 +868,7 @@ impl Cmd {
         Cmd::NoFill,
         Cmd::NoOutline,
         Cmd::EyedropperTool,
+        Cmd::Smudge,
         Cmd::SoloLayer,
         Cmd::OpenDocument,
         Cmd::OpenRecent,
@@ -2975,6 +2977,15 @@ impl Cmd {
                 R::No,
                 "the selected shape's outline becomes the current colour (an outline is added at the pen's width when it has none)",
             ),
+            Cmd::Smudge => spec(
+                "tool.smudge",
+                "smudge and blend",
+                icon::DROP,
+                G::Tools,
+                T::None,
+                R::No,
+                "smudge or blend the paint with the smudge, the blender or your own brushes that smudge or blend; it keeps its own brush and size, and what it smudges stays with the strokes under it",
+            ),
             Cmd::EyedropperTool => spec(
                 "tool.eyedropper",
                 "eyedropper",
@@ -3687,6 +3698,7 @@ impl Cmd {
             Cmd::FillShape => "Fill with colour",
             Cmd::OutlineShape => "Outline with colour",
             Cmd::EyedropperTool => "Eyedropper",
+            Cmd::Smudge => "Smudge and blend",
             Cmd::NoFill => "No fill",
             Cmd::NoOutline => "No outline",
             Cmd::SoloLayer => "Show only this",
@@ -3912,6 +3924,7 @@ pub const MENUS: [Menu; 9] = [
         items: &[
             Run(Cmd::Brush),
             Run(Cmd::Eraser),
+            Run(Cmd::Smudge),
             Run(Cmd::Fill),
             Run(Cmd::EyedropperTool),
             Run(Cmd::Shapes),
@@ -4236,6 +4249,7 @@ pub fn other_names(cmd: Cmd) -> &'static [&'static str] {
         Cmd::Guides => &["help", "manual", "documentation"],
         Cmd::InspectorPane => &["opacity", "transparency", "blend mode", "layer properties"],
         Cmd::Eyedropper => &["alt click", "sample colour"],
+        Cmd::Smudge => &["smudge tool", "blend tool", "blender", "smear", "finger"],
         Cmd::EyedropperTool => &[
             "colour picker",
             "color picker",

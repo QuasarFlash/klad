@@ -1,4 +1,4 @@
-_Last updated: 2026-11-27 16:40_
+_Last updated: 2026-11-27 19:00_
 
 # Painting
 
@@ -28,7 +28,7 @@ In the **Colour** pane, mix a colour on the wheel or with the sliders next to it
 
 ## Blend colours
 
-Paint with **Smudge**, **Wet round** or **Blender** over colours that are already there. They only mix paint on the layer they paint on, so put the colours you want to blend on one layer.
+Click the **smudge and blend** tool under the eraser on the tool strip, and paint with **Smudge** or **Blender** over colours that are already there; the tool keeps its own brush and size, and its brush tiles show only the brushes that smudge or blend. **Wet round**, a paint brush, mixes the colours it paints into too. They only mix paint on the layer they paint on, so put the colours you want to blend on one layer. A click with **V** or **S** on a smudged stroke takes the stroke, with its smudges.
 
 ## Make paint look thick
 

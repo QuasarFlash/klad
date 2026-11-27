@@ -250,32 +250,39 @@ impl Editor {
         }
     }
 
+    pub(super) fn brush_choices(&self) -> Vec<(String, String)> {
+        let smudging = self.hand_of(&self.brush) == super::Hand::Smudge;
+        self.brushes
+            .defs()
+            .filter(|(_, d)| (Self::hand_of_def(d) == super::Hand::Smudge) == smudging)
+            .map(|(id, d)| (id.to_string(), label_of(id, d)))
+            .collect()
+    }
+
     fn brush_main(&mut self, ui: &mut egui::Ui) {
         let current = self.brush.clone();
-        let choices: Vec<(String, String)> = self
-            .brushes
-            .defs()
-            .map(|(id, d)| (id.to_string(), label_of(id, d)))
-            .collect();
+        let choices = self.brush_choices();
         let shown = choices
             .iter()
             .find(|(id, _)| *id == current)
             .map_or(current.clone(), |(_, l)| l.clone());
         let mut picked = None;
-        egui::ComboBox::from_id_salt("options.brush")
-            .selected_text(shown)
-            .width(150.0)
-            .show_ui(ui, |ui| {
-                choices.iter().for_each(|(id, text)| {
-                    if ui.selectable_label(*id == current, text).clicked() {
-                        picked = Some(id.clone());
-                    }
-                });
-            })
-            .response
-            .hint("the brush; the brush panel shows them with a sample stroke");
+        if !self.shows_pane(crate::layout::Pane::Brush) {
+            egui::ComboBox::from_id_salt("options.brush")
+                .selected_text(shown)
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    choices.iter().for_each(|(id, text)| {
+                        if ui.selectable_label(*id == current, text).clicked() {
+                            picked = Some(id.clone());
+                        }
+                    });
+                })
+                .response
+                .hint("the brush, while the Brush pane is folded or the panels are hidden; the pane shows them with a sample stroke");
+        }
         if let Some(id) = picked {
-            self.pick(&id);
+            self.take_up(&id);
         }
         whole(ui, "size", |ui| {
             crate::widgets::labelled_slider(
@@ -413,6 +420,7 @@ impl Editor {
             ui.spacing_mut().item_spacing.x = theme::space::XS;
             let (cmd, name) = match self.tool {
                 Tool::Brush if self.is_on(Cmd::Eraser) == Some(true) => (Cmd::Eraser, "eraser"),
+                Tool::Brush if self.is_on(Cmd::Smudge) == Some(true) => (Cmd::Smudge, "smudge and blend"),
                 Tool::Brush => (Cmd::Brush, "brush"),
                 Tool::Fill => (Cmd::Fill, "fill"),
                 Tool::Eyedropper => (Cmd::EyedropperTool, "eyedropper"),
@@ -697,7 +705,13 @@ impl Editor {
                 }
             });
         });
-        let defs: Vec<(String, BrushDef)> = self.brushes.defs().map(|(id, d)| (id.to_string(), d.clone())).collect();
+        let smudging = self.hand_of(&self.brush) == super::Hand::Smudge;
+        let defs: Vec<(String, BrushDef)> = self
+            .brushes
+            .defs()
+            .filter(|(_, d)| (Self::hand_of_def(d) == super::Hand::Smudge) == smudging)
+            .map(|(id, d)| (id.to_string(), d.clone()))
+            .collect();
         let (own, library): (Vec<_>, Vec<_>) = defs.into_iter().partition(|(id, _)| self.embedded.contains_key(id));
         let ctx = ui.ctx().clone();
         let mut picked = None;
@@ -720,10 +734,7 @@ impl Editor {
         self.yours_tiles(ui);
         if let Some(id) = picked {
             self.tool = Tool::Brush;
-            if id != "eraser" {
-                self.previous_brush = id.clone();
-            }
-            self.pick(&id);
+            self.take_up(&id);
         }
     }
 

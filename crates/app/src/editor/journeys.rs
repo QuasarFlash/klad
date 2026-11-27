@@ -3672,11 +3672,18 @@ fn fills(j: &Journey, layer: &str) -> Vec<[f32; 4]> {
         .collect()
 }
 
+fn size_tile(j: &mut Journey, size: &str) -> bool {
+    j.click(size) || (j.scroll_to(size) && j.click(size))
+}
+
 fn brush_named(j: &mut Journey, name: &str) -> bool {
-    if j.click(name) {
+    if j.click(name) || (j.scroll_to(name) && j.click(name)) {
         return true;
     }
-    j.pick_in_list("the brush; the brush panel shows them with a sample stroke", name)
+    j.pick_in_list(
+        "the brush, while the Brush pane is folded or the panels are hidden; the pane shows them with a sample stroke",
+        name,
+    )
 }
 
 fn layer_of(j: &Journey, name: &str) -> Option<klad_core::doc::Layer> {
@@ -3796,7 +3803,7 @@ fn someone_sketches_inks_and_colours_a_picture() {
 
     j.act("ink the cap and the stem with the Inking pen at size 8");
     let ink = brush_named(&mut j, "Inking pen");
-    j.click("8");
+    size_tile(&mut j, "8");
     j.pen_stroke(&ring(512.0, 400.0, 220.0, 150.0, 0.0));
     j.pen_stroke(&[
         (440.0, 545.0, 0.5),
@@ -3917,7 +3924,7 @@ fn someone_sketches_inks_and_colours_a_picture() {
     j.pick_in_list("how the active layer mixes with what is below it", "multiply");
     j.key(Key::B);
     let soft = brush_named(&mut j, "Soft");
-    j.click("64");
+    size_tile(&mut j, "64");
     j.retype("hex", "#808080");
     let flat = j.picture();
     j.pen_stroke(&[(330.0, 470.0, 0.6), (512.0, 520.0, 0.9), (700.0, 470.0, 0.6)]);
@@ -4217,7 +4224,7 @@ fn someone_fixes_and_adjusts_a_painting() {
     j.act("put the picture away and soften an edge with the Smudge brush");
     j.press_hinted("show or hide photo");
     j.click("lines");
-    let smudge = brush_named(&mut j, "Smudge");
+    let smudge = j.press_hinted(&crate::commands::Cmd::Smudge.spec().hint()) && brush_named(&mut j, "Smudge");
     let before = (count_on(&j, "lines"), j.picture());
     j.drag(&[(120.0, 500.0), (260.0, 560.0)]);
     j.look("smudged");
@@ -4264,7 +4271,7 @@ fn someone_paints_fast_with_brushes_sizes_and_opacity() {
     );
 
     j.act("pick a size from the Brush panel, and half the opacity in the bar");
-    j.click("32");
+    size_tile(&mut j, "32");
     let slider = |j: &Journey| {
         j.h.query_all_by_label("opacity")
             .filter(|n| n.accesskit_node().role() == egui::accesskit::Role::Slider)
@@ -4299,10 +4306,10 @@ fn someone_paints_fast_with_brushes_sizes_and_opacity() {
             "the opacity slider all the way to the right",
         );
     }
-    j.click("12");
+    size_tile(&mut j, "12");
 
     j.act("paint a line with every brush in the list, top to bottom");
-    let listed: Vec<(String, String, bool)> = j.ed().map_or_else(Vec::new, |ed| {
+    let listed: Vec<(String, String, bool, bool)> = j.ed().map_or_else(Vec::new, |ed| {
         ed.brushes
             .defs()
             .map(|(id, def)| {
@@ -4310,14 +4317,25 @@ fn someone_paints_fast_with_brushes_sizes_and_opacity() {
                     .brushes
                     .get(id)
                     .is_ok_and(|b| b.blend == klad_brush::brush::StrokeBlend::Erase);
-                (id.to_string(), def.name.clone(), erases)
+                let smudges = Editor::hand_of_def(def) == super::Hand::Smudge;
+                (id.to_string(), def.name.clone(), erases, smudges)
             })
             .collect()
     });
     let mut wrong = Vec::new();
-    listed.iter().enumerate().for_each(|(i, (id, name, erases))| {
+    listed.iter().enumerate().for_each(|(i, (id, name, erases, smudges))| {
         let before = count_on(&j, "paint 1");
-        let picked = j.pick_in_list("the brush; the brush panel shows them with a sample stroke", name);
+        let picked = match (erases, smudges) {
+            (true, _) => {
+                j.key(Key::E);
+                j.ed().is_some_and(|ed| ed.brush == *id)
+            }
+            (false, true) => j.press_hinted(&crate::commands::Cmd::Smudge.spec().hint()) && brush_named(&mut j, name),
+            (false, false) => {
+                j.key(Key::B);
+                brush_named(&mut j, name)
+            }
+        };
         let y = 220.0 + (i % 12) as f32 * 62.0;
         let x = 100.0 + (i / 12) as f32 * 460.0;
         j.pen_stroke(&[(x, y, 0.4), (x + 180.0, y + 12.0, 0.9), (x + 360.0, y, 0.5)]);
@@ -5968,7 +5986,7 @@ fn someone_gives_an_arm_bones_and_poses_it() {
     }
     let layer = active_name(&j);
     j.key(Key::B);
-    j.click("64");
+    size_tile(&mut j, "64");
     j.drag(&[(300.0, 500.0), (500.0, 500.0), (700.0, 500.0)]);
     j.look("arm");
     let rest = layer_box(&j, &layer);

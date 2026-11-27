@@ -125,3 +125,43 @@ fn move_all_time() {
         updated.full
     );
 }
+
+#[test]
+#[ignore]
+fn replay_time_by_brush() {
+    let Ok(path) = std::env::var("KLAD_EDIT_BUNDLE") else {
+        eprintln!("set KLAD_EDIT_BUNDLE and KLAD_EDIT_LAYER");
+        return;
+    };
+    let layer = std::env::var("KLAD_EDIT_LAYER").unwrap();
+    let bundle = Bundle::open(&path).unwrap();
+    let brushes = BrushSet::for_bundle(&bundle).unwrap();
+    let found = bundle.doc.find_layer(&layer).unwrap();
+    let cel = found.cels()[0].id.clone();
+    let marks = bundle.read_marks(&found.id, &cel).unwrap();
+    let (w, h) = (bundle.doc.canvas.width, bundle.doc.canvas.height);
+    let mut raster = klad_brush::Raster::new(w, h);
+    let mut buffer = klad_brush::StrokeBuffer::new(w, h);
+    let mut by: std::collections::BTreeMap<String, (usize, f64, usize)> = std::collections::BTreeMap::new();
+    marks.iter().for_each(|mark| {
+        let name = match mark {
+            klad_core::stroke::Mark::Stroke(s) => s.brush.clone(),
+            klad_core::stroke::Mark::Fill(_) => "fill".to_string(),
+        };
+        let start = Instant::now();
+        let tiles = klad_brush::paint_mark(&mut raster, &mut buffer, &brushes, mark)
+            .unwrap()
+            .len();
+        let took = start.elapsed().as_secs_f64() * 1000.0;
+        buffer.reset();
+        let entry = by.entry(name).or_default();
+        *entry = (entry.0 + 1, entry.1 + took, entry.2 + tiles);
+    });
+    by.iter().for_each(|(brush, (n, ms, tiles))| {
+        println!(
+            "{brush}: {n} marks, {ms:.0} ms, {:.1} ms each, {:.1} tiles each",
+            ms / *n as f64,
+            *tiles as f64 / *n as f64
+        );
+    });
+}
