@@ -1,4 +1,4 @@
-_Last updated: 2026-11-27 18:00_
+_Last updated: 2026-11-27 19:00_
 
 # Changing strokes
 
@@ -45,6 +45,8 @@ They move to a new layer right above the one they were on and stay selected.
 2. Click it, and drag. The eraser attaches to the strokes it lands on.
 
 To let it erase whatever is under it instead, choose **Edit > Strokes > Detach**.
+
+Smudges and blends work the same way: a click on a smudged stroke takes the stroke, and its attached count takes the smudges on their own.
 
 ## Bend a stroke
 

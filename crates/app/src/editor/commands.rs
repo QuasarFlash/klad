@@ -1,6 +1,6 @@
 use super::selection::Selected;
 use super::tweens::{self, SpanAction};
-use super::{Editor, Focus, Tool};
+use super::{Editor, Focus, Hand, Tool};
 use crate::commands::{Cmd, Repeat};
 use crate::jobs::{Spec, Tag};
 use crate::layout::Pane;
@@ -110,11 +110,42 @@ impl Editor {
         })
     }
 
-    fn swap_size(&mut self) {
-        let (size, pixel) = self.other_size.unwrap_or((self.size, self.pixel_size));
-        self.other_size = Some((self.size, self.pixel_size));
-        self.size = size;
-        self.pixel_size = pixel;
+    pub(super) fn hand_of_def(def: &klad_core::brushes::BrushDef) -> Hand {
+        match klad_core::attach::modifier(def) {
+            Some(klad_core::attach::Modifier::Erase) => Hand::Eraser,
+            Some(_) => Hand::Smudge,
+            None => Hand::Paint,
+        }
+    }
+
+    pub(super) fn hand_of(&self, brush: &str) -> Hand {
+        match self.brushes.def(brush) {
+            _ if brush == "eraser" => Hand::Eraser,
+            Some(def) => Self::hand_of_def(def),
+            None => Hand::Paint,
+        }
+    }
+
+    pub(super) fn take_up(&mut self, brush: &str) {
+        let (from, to) = (self.hand_of(&self.brush), self.hand_of(brush));
+        match from {
+            Hand::Paint => self.previous_brush = self.brush.clone(),
+            Hand::Smudge => self.previous_smudge = self.brush.clone(),
+            Hand::Eraser => {}
+        }
+        if from != to {
+            self.hand_sizes.insert(from, (self.size, self.pixel_size));
+            if let Some((size, pixel)) = self.hand_sizes.get(&to).copied() {
+                self.size = size;
+                self.pixel_size = pixel;
+            }
+        }
+        match to {
+            Hand::Paint => self.previous_brush = brush.to_string(),
+            Hand::Smudge => self.previous_smudge = brush.to_string(),
+            Hand::Eraser => {}
+        }
+        self.pick(brush);
     }
 
     pub(super) fn active_paint(&self) -> bool {
@@ -713,8 +744,9 @@ impl Editor {
         let layout = &self.settings.layout;
         let erasing = self.brush == "eraser" || (self.readout.eraser && self.readout.tablet);
         let on = match cmd {
-            Cmd::Brush => self.tool == Tool::Brush && !erasing,
+            Cmd::Brush => self.tool == Tool::Brush && !erasing && self.hand_of(&self.brush) != Hand::Smudge,
             Cmd::Eraser => self.tool == Tool::Brush && erasing,
+            Cmd::Smudge => self.tool == Tool::Brush && !erasing && self.hand_of(&self.brush) == Hand::Smudge,
             Cmd::FlipView => self.view.is_some_and(|v| v.flip),
             Cmd::PixelGrid => self.settings.pixel_grid,
             Cmd::WrapCanvas => self.scene.bundle.doc.canvas.wrap,
@@ -923,22 +955,26 @@ impl Editor {
         match cmd {
             Cmd::Brush => {
                 self.tool = Tool::Brush;
-                if self.brush == "eraser" {
+                if self.hand_of(&self.brush) != Hand::Paint {
                     let back = self.previous_brush.clone();
-                    self.pick(&back);
-                    self.swap_size();
+                    self.take_up(&back);
                 }
             }
             Cmd::Eraser => {
                 self.tool = Tool::Brush;
-                if self.brush == "eraser" {
-                    let back = self.previous_brush.clone();
-                    self.pick(&back);
-                } else {
-                    self.previous_brush = self.brush.clone();
-                    self.pick("eraser");
-                }
-                self.swap_size();
+                let back = match self.brush == "eraser" {
+                    true => self.previous_brush.clone(),
+                    false => "eraser".to_string(),
+                };
+                self.take_up(&back);
+            }
+            Cmd::Smudge => {
+                self.tool = Tool::Brush;
+                let next = match self.hand_of(&self.brush) {
+                    Hand::Smudge => self.previous_brush.clone(),
+                    _ => self.previous_smudge.clone(),
+                };
+                self.take_up(&next);
             }
             Cmd::Fill => self.tool = Tool::Fill,
             Cmd::EyedropperTool => self.tool = Tool::Eyedropper,

@@ -4,10 +4,12 @@
 
 ### Added
 
+- A smudge and blend tool on the tool strip, under the eraser and in the Tools menu: it paints with the smudge, the blender or your own brushes that smudge or blend, keeps its own brush and size, and its brush tiles show only those brushes. The brush tool's tiles no longer show them.
 - An eyedropper tool on the tool strip, on I: click or drag over a colour and let go to take it, with a ring at the pen showing the new colour against the one you had; shift takes it from the active layer only, and on a pixel layer it takes the palette colour. Alt with the brush or fill still picks a colour as before. I still inserts a frame while the timeline is in use.
 
 ### Fixed
 
+- A stroke you smudged or blended over can be clicked again with V, S or A: the click goes through the smudges to the stroke under them and takes it with its smudges, as erasers do. Where a smudge dragged paint past its stroke, a click there takes that stroke; a smudge over nothing is still clicked itself, and Attached only still takes the smudges on their own.
 - With V, a shape with no fill is taken by a click on its outline anywhere along it (it was taken only near the edges of its box, so ellipses, pen lines and turned shapes were hard to click), a text by a click anywhere in its block (it was taken only on its letters), and a click on a shape inside the selected one takes that shape even when the pen moves a little (it moved the selected one). With this layer on, a click on a shape of another layer says how to take it.
 - Pixel art squashes, stretches, grows and shrinks by any amount when you drag a selection's edges or corners; it grew only by 2, 3 or 4 times and never got smaller. The pixels stay hard and on the grid, the status line shows the new size, and near a whole size (the size it had, or twice or three times it) the drag lands on it exactly unless you hold cmd.
 - A shape can have no fill or no outline from where you pick its colours: **no fill** and **no outline** in the fill and outline buttons' pickers, in Edit > Shape for every selected shape, and **none** next to the outline's width in layer settings. `klad set` and `klad add` take `stroke=none`, as they took `stroke=null`.

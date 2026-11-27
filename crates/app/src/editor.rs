@@ -227,6 +227,13 @@ enum Tool {
     Bone,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Hand {
+    Paint,
+    Eraser,
+    Smudge,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Dropping {
     before: [f32; 4],
@@ -901,7 +908,8 @@ pub(crate) struct Editor {
     tool: Tool,
     brush: String,
     previous_brush: String,
-    other_size: Option<(f32, u32)>,
+    hand_sizes: BTreeMap<Hand, (f32, u32)>,
+    previous_smudge: String,
     heard_seq: Option<u64>,
     bar_above: bool,
     text_click: Option<(Instant, usize)>,
@@ -1149,7 +1157,8 @@ impl Editor {
             tool: Tool::Brush,
             brush: "ink".into(),
             previous_brush: "ink".into(),
-            other_size: None,
+            hand_sizes: BTreeMap::new(),
+            previous_smudge: "smudge".into(),
             heard_seq: None,
             bar_above: false,
             text_click: None,
@@ -2413,8 +2422,37 @@ impl Editor {
     }
 
     pub(super) fn mark_at(&self, at: Vec2, slack: f32) -> Option<(Vec<usize>, u32)> {
+        let (erased, rides, all) = (self.erased(), self.rides(), self.settings.pick_all_layers);
+        let point = (at.x, at.y);
         self.scene
-            .marks_at((at.x, at.y), slack, self.settings.pick_all_layers, self.erased())
+            .marks_at(point, slack, all, move |marks, m| erased(marks, m) || rides(m))
+            .or_else(|| {
+                let (path, smudge) = self
+                    .scene
+                    .marks_at(point, slack, all, move |marks, m| erased(marks, m) || !rides(m))?;
+                let cel = self
+                    .scene
+                    .bundle
+                    .doc
+                    .locate_path(&path)?
+                    .content_at(self.scene.frame)?
+                    .id
+                    .clone();
+                Some((path, markedit::ridden(self.scene.marks_of(&cel), smudge)))
+            })
+    }
+
+    pub(super) fn rides(&self) -> impl Fn(&Mark) -> bool + Copy + '_ {
+        move |m: &Mark| {
+            m.as_stroke().is_some_and(|s| {
+                !s.on.is_empty()
+                    && self
+                        .brushes
+                        .def(&s.brush)
+                        .and_then(klad_core::attach::modifier)
+                        .is_some_and(|k| k != klad_core::attach::Modifier::Erase)
+            })
+        }
     }
 
     fn select_at(&mut self, at: Vec2, cycle: bool) -> Result<()> {
@@ -2757,7 +2795,7 @@ impl Editor {
             return Ok(());
         };
         let at = lasso.points[0];
-        let erased = self.erased();
+        let (erased, rides) = (self.erased(), self.rides());
         let outline = self.lasso_outline(&lasso);
         let polygon: Option<Vec<[f32; 2]>> = match wand {
             true => self.wand_polygon(at),
@@ -2788,7 +2826,7 @@ impl Editor {
                     (inside, crossing)
                 }
                 None => (
-                    markedit::pick(marks, (at.x, at.y), 5.0 / zoom, |m| erased(marks, m))
+                    markedit::pick_through(marks, (at.x, at.y), 5.0 / zoom, |m| erased(marks, m), rides)
                         .into_iter()
                         .collect(),
                     false,

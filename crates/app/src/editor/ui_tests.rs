@@ -215,7 +215,7 @@ fn the_strip_shrinks_then_folds_its_foot_when_the_window_is_short() {
         "one column: {brush:?} {settings:?}"
     );
     drop(tall);
-    let smaller = harness(editor(&path), vec2(1280.0, 1100.0));
+    let smaller = harness(editor(&path), vec2(1280.0, 1150.0));
     let (brush, redo) = (
         in_strip(&smaller, theme::icon::BRUSH).unwrap(),
         in_strip(&smaller, theme::icon::REDO).unwrap(),
@@ -224,7 +224,7 @@ fn the_strip_shrinks_then_folds_its_foot_when_the_window_is_short() {
     assert!(brush.height() < 36.0 && brush.height() >= theme::CONTROL, "{brush:?}");
     assert!(file.top() >= redo.bottom(), "nothing overlaps: {redo:?} {file:?}");
     drop(smaller);
-    let medium = harness(editor(&path), vec2(1280.0, 1000.0));
+    let medium = harness(editor(&path), vec2(1280.0, 1040.0));
     assert!(in_strip(&medium, theme::icon::FILE).is_none(), "then the foot folds");
     let more = in_strip(&medium, theme::icon::MORE).expect("one menu holds the foot");
     let (brush, redo) = (
@@ -570,6 +570,152 @@ fn v_selects_a_shape_by_its_outline_its_text_block_and_inside_a_selected_one() {
         said(&h).contains("a shape on shapes is under the pointer"),
         "with this layer on, a shape of another layer says why: {}",
         said(&h)
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn a_smudged_stroke_is_picked_through_its_smudges_and_smudge_is_a_tool_of_its_own() {
+    let path = sample("smudge-pick");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "lines");
+    let lines = layer_named(&h, "lines").id.clone();
+    let stroke = |d: &str, brush: &str, size: u32| {
+        format!(r##"{{"op":"stroke","layer":"{lines}","brush":"{brush}","path":"{d}","size":{size}}}"##)
+    };
+    let ops = parse_lines(
+        &[
+            stroke("M100 330 L300 330", "ink", 20),
+            stroke("M120 330 L200 330", "smudge", 30),
+            stroke("M140 332 L220 330", "smudge", 30),
+            stroke("M160 328 L240 330", "blender", 30),
+            stroke("M250 330 L420 330", "smudge", 30),
+            stroke("M440 40 L500 40", "smudge", 20),
+        ]
+        .join("\n"),
+    )
+    .unwrap();
+    h.state_mut().apply(ops).unwrap();
+    h.run_steps(3);
+    ready(&mut h);
+    let marks = h.state().scene.active_marks().to_vec();
+    let id_of = |brush: &str, x: f32| {
+        marks
+            .iter()
+            .filter_map(|m| m.as_stroke())
+            .find(|s| s.brush == brush && (s.samples[0].pos().0 - x).abs() < 1.0)
+            .map(|s| s.id)
+            .unwrap()
+    };
+    let (ink, lone) = (id_of("ink", 100.0), id_of("smudge", 440.0));
+    let smudges: Vec<u32> = [
+        (120.0, "smudge"),
+        (140.0, "smudge"),
+        (160.0, "blender"),
+        (250.0, "smudge"),
+    ]
+    .iter()
+    .map(|(x, b)| id_of(b, *x))
+    .collect();
+    assert!(
+        smudges.iter().all(|id| marks
+            .iter()
+            .find(|m| m.id() == *id)
+            .and_then(|m| m.as_stroke())
+            .is_some_and(|s| s.on.contains(&ink))),
+        "the smudges and the blend are attached to the stroke"
+    );
+    let picked = |h: &mut Harness<'static, Editor>, tool: Tool, x: f32, y: f32| {
+        h.state_mut().picked = None;
+        h.state_mut().tool = tool;
+        h.run_steps(1);
+        let at = on_screen(h, x, y);
+        click_with(h, at, Modifiers::NONE);
+        h.run_steps(3);
+        h.state().picked.as_ref().map(|p| p.ids.clone()).unwrap_or_default()
+    };
+    assert_eq!(
+        picked(&mut h, Tool::Select, 180.0, 330.0),
+        [ink],
+        "V picks the stroke under the smudges"
+    );
+    assert_eq!(picked(&mut h, Tool::Strokes, 180.0, 330.0), [ink], "and so does S");
+    assert_eq!(
+        picked(&mut h, Tool::Select, 380.0, 330.0),
+        [ink],
+        "where the smudge went past the stroke, its stroke"
+    );
+    assert_eq!(
+        picked(&mut h, Tool::Select, 470.0, 40.0),
+        [lone],
+        "a smudge over nothing is picked itself"
+    );
+    picked(&mut h, Tool::Select, 180.0, 330.0);
+    h.state_mut().invoke(Cmd::AttachedOnly).unwrap();
+    h.run_steps(2);
+    let mut attached = h.state().picked.as_ref().map(|p| p.ids.clone()).unwrap_or_default();
+    attached.sort_unstable();
+    let mut want = smudges.clone();
+    want.sort_unstable();
+    assert_eq!(attached, want, "Attached only still reaches the smudges on their own");
+
+    h.state_mut().tool = Tool::Brush;
+    h.state_mut().pick("ink");
+    h.state_mut().size = 12.0;
+    [Pane::Layers, Pane::Inspector, Pane::Notes, Pane::History, Pane::Tool]
+        .into_iter()
+        .for_each(|pane| {
+            if let Some(p) = h.state_mut().settings.layout.pane_mut(pane) {
+                p.collapsed = true;
+            }
+        });
+    if let Some(p) = h.state_mut().settings.layout.pane_mut(Pane::Brush) {
+        p.collapsed = false;
+    }
+    h.run_steps(2);
+    assert!(
+        h.query_by_label("Inking pen").is_some(),
+        "the brush pane shows the paint brushes"
+    );
+    assert!(h.query_by_label("Blender").is_none(), "but not the blender");
+    h.state_mut().invoke(Cmd::Smudge).unwrap();
+    h.run_steps(2);
+    assert_eq!(
+        h.state().brush,
+        "smudge",
+        "the smudge tool takes the smudge brush first"
+    );
+    assert_eq!(h.state().is_on(Cmd::Smudge), Some(true));
+    assert_eq!(h.state().is_on(Cmd::Brush), Some(false));
+    assert!(h.query_by_label("Blender").is_some(), "its tiles show the blender");
+    assert!(h.query_by_label("Inking pen").is_none(), "and no paint brushes");
+    h.get_by_label("Blender").click();
+    h.run_steps(2);
+    assert_eq!(h.state().brush, "blender");
+    h.state_mut().size = 40.0;
+    h.state_mut().invoke(Cmd::Brush).unwrap();
+    h.run_steps(2);
+    assert_eq!(
+        (h.state().brush.as_str(), h.state().size),
+        ("ink", 12.0),
+        "B goes back to the ink at its size"
+    );
+    assert!(h.query_by_label("Inking pen").is_some() && h.query_by_label("Blender").is_none());
+    h.state_mut().invoke(Cmd::Smudge).unwrap();
+    h.run_steps(2);
+    assert_eq!(
+        (h.state().brush.as_str(), h.state().size),
+        ("blender", 40.0),
+        "the smudge tool keeps its own brush and size"
+    );
+    h.state_mut().invoke(Cmd::Eraser).unwrap();
+    h.run_steps(1);
+    h.state_mut().invoke(Cmd::Eraser).unwrap();
+    h.run_steps(1);
+    assert_eq!(
+        h.state().brush,
+        "ink",
+        "E and E again land on the paint brush, not the smudge"
     );
     let _ = std::fs::remove_dir_all(&path);
 }

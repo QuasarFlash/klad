@@ -84,8 +84,7 @@ impl Editor {
         match own {
             true => {
                 self.tool = Tool::Brush;
-                self.previous_brush = id.to_string();
-                self.pick(id);
+                self.take_up(id);
                 self.say(
                     Tone::Info,
                     format!("{id} was taken out of your brushes in another drawing; this drawing keeps its own copy"),
@@ -104,8 +103,7 @@ impl Editor {
         self.embedded = self.scene.bundle.brushes()?;
         self.brushes.refresh(&self.scene.bundle)?;
         self.tool = Tool::Brush;
-        self.previous_brush = id.to_string();
-        self.pick(id);
+        self.take_up(id);
         if !fresh {
             self.say(
                 Tone::Info,
@@ -191,8 +189,14 @@ impl Editor {
                     .small(),
             );
         }
-        saved.iter().enumerate().for_each(|(i, s)| {
-            if !s.group.is_empty() && (i == 0 || saved[i - 1].group != s.group) {
+        let smudging = self.hand_of(&self.brush) == super::Hand::Smudge;
+        let shown: Vec<(usize, &Saved)> = saved
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| (Self::hand_of_def(&s.def) == super::Hand::Smudge) == smudging)
+            .collect();
+        shown.iter().enumerate().for_each(|(k, &(i, s))| {
+            if !s.group.is_empty() && (k == 0 || shown[k - 1].1.group != s.group) {
                 ui.label(RichText::new(&s.group).color(theme::WEAK).small());
             }
             let response = self.brush_tile(ui, &ctx, &key(&s.id), &s.id, &s.def, true);

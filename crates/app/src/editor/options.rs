@@ -413,6 +413,7 @@ impl Editor {
             ui.spacing_mut().item_spacing.x = theme::space::XS;
             let (cmd, name) = match self.tool {
                 Tool::Brush if self.is_on(Cmd::Eraser) == Some(true) => (Cmd::Eraser, "eraser"),
+                Tool::Brush if self.is_on(Cmd::Smudge) == Some(true) => (Cmd::Smudge, "smudge and blend"),
                 Tool::Brush => (Cmd::Brush, "brush"),
                 Tool::Fill => (Cmd::Fill, "fill"),
                 Tool::Eyedropper => (Cmd::EyedropperTool, "eyedropper"),
@@ -697,7 +698,13 @@ impl Editor {
                 }
             });
         });
-        let defs: Vec<(String, BrushDef)> = self.brushes.defs().map(|(id, d)| (id.to_string(), d.clone())).collect();
+        let smudging = self.hand_of(&self.brush) == super::Hand::Smudge;
+        let defs: Vec<(String, BrushDef)> = self
+            .brushes
+            .defs()
+            .filter(|(_, d)| (Self::hand_of_def(d) == super::Hand::Smudge) == smudging)
+            .map(|(id, d)| (id.to_string(), d.clone()))
+            .collect();
         let (own, library): (Vec<_>, Vec<_>) = defs.into_iter().partition(|(id, _)| self.embedded.contains_key(id));
         let ctx = ui.ctx().clone();
         let mut picked = None;
@@ -720,10 +727,7 @@ impl Editor {
         self.yours_tiles(ui);
         if let Some(id) = picked {
             self.tool = Tool::Brush;
-            if id != "eraser" {
-                self.previous_brush = id.clone();
-            }
-            self.pick(&id);
+            self.take_up(&id);
         }
     }
 

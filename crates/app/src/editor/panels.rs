@@ -77,9 +77,10 @@ fn ago(at: Instant, now: Instant) -> String {
     }
 }
 
-const STRIP_TOOLS: [Cmd; 13] = [
+const STRIP_TOOLS: [Cmd; 14] = [
     Cmd::Brush,
     Cmd::Eraser,
+    Cmd::Smudge,
     Cmd::Fill,
     Cmd::EyedropperTool,
     Cmd::Strokes,
