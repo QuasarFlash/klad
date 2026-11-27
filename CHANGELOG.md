@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- With a tablet pen, the panes, the brush tiles, the tool strip on a short window, the settings and long menus scroll when you drag them, as they would on a touch screen; with a mouse or a trackpad nothing changes. A drag on a slider, a swatch or a layer row still moves it, and with the pen a drag on text scrolls instead of selecting it.
 - Dragging part of a layer with many strokes, such as one lemon in a painting merged into one layer, now follows the pointer after the first moment, also for strokes with lock alpha or oil paint: klad moves a picture of them while you drag and paints them exactly where they land when you let go. On such a layer, letting go and other large edits redraw the parts they touch side by side on the processor's cores.
 
 ## 1.0.2 (2026-11-26)

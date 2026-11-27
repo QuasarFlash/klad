@@ -366,3 +366,19 @@ pub fn percent(slider: egui::Slider<'_>) -> egui::Slider<'_> {
             })
         })
 }
+
+pub trait PenScroll {
+    fn pen_scroll(self, ctx: &egui::Context) -> Self;
+}
+
+impl PenScroll for egui::ScrollArea {
+    fn pen_scroll(self, ctx: &egui::Context) -> Self {
+        match crate::pen::in_use(ctx) {
+            true => self.scroll_source(egui::scroll_area::ScrollSource {
+                drag: egui::scroll_area::DragScroll::Always,
+                ..egui::scroll_area::ScrollSource::default()
+            }),
+            false => self,
+        }
+    }
+}

@@ -259,6 +259,73 @@ fn the_strip_shrinks_then_folds_its_foot_when_the_window_is_short() {
 }
 
 #[test]
+fn a_pen_drags_a_long_list_to_scroll_it_and_a_mouse_does_not() {
+    use crate::pen::{PenEvent, Phase};
+    let path = sample("pen-scroll");
+    let mut h = harness(editor(&path), vec2(1280.0, 560.0));
+    h.ctx
+        .all_styles_mut(|s| s.scroll_animation = egui::style::ScrollAnimation::none());
+    h.state_mut().invoke(Cmd::Settings).unwrap();
+    h.state_mut().settings_section = super::prefs::Section::Keys;
+    h.run_steps(3);
+    let first = Cmd::ALL
+        .into_iter()
+        .find(|c| !crate::commands::DEVELOPER.contains(c))
+        .map(|c| c.spec().name)
+        .unwrap();
+    let top = |h: &Harness<'static, Editor>| h.get_by_label(first).rect().top();
+    let from = h.get_by_label(first).rect().center() + vec2(0.0, 40.0);
+    let to = from - vec2(0.0, 220.0);
+    let drag = |h: &mut Harness<'static, Editor>, pen: bool| {
+        let step = |h: &mut Harness<'static, Editor>, pos: egui::Pos2, phase: Phase| {
+            if pen {
+                h.state_mut().pen = Some(vec![PenEvent {
+                    phase,
+                    pos,
+                    pressure: 0.5,
+                    tilt: (0.0, 0.0),
+                    eraser: false,
+                    tablet: true,
+                    device: 0,
+                    at: std::time::Instant::now(),
+                }]);
+            }
+            match phase {
+                Phase::Move => h.hover_at(pos),
+                _ => h.event(egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: phase == Phase::Down,
+                    modifiers: Modifiers::NONE,
+                }),
+            }
+            h.run_steps(1);
+        };
+        step(h, from, Phase::Move);
+        step(h, from, Phase::Down);
+        (1..=10).for_each(|i| step(h, from + (to - from) * (i as f32 / 10.0), Phase::Move));
+        step(h, to, Phase::Up);
+        h.run_steps(2);
+    };
+    let before = top(&h);
+    drag(&mut h, false);
+    assert!(
+        (top(&h) - before).abs() < 0.5,
+        "a mouse drag on the list does not scroll it: {before} then {}",
+        top(&h)
+    );
+    assert!(!h.ctx.input(|i| i.has_touch_screen()), "no touch screen in this test");
+    drag(&mut h, true);
+    assert!(
+        top(&h) < before - 150.0,
+        "a pen drag scrolls the list with the pen: {before} then {}",
+        top(&h)
+    );
+    assert!(h.state().windows.settings, "the drag only scrolled");
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn settings_is_a_modal_with_a_sidebar_and_esc_closes_it_unless_a_key_is_being_set() {
     let path = sample("settings-modal");
     let mut h = harness(editor(&path), vec2(1440.0, 1000.0));

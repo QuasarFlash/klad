@@ -7,6 +7,7 @@ use crate::layout::Pane;
 use crate::messages::Tone;
 use crate::stats::{Stats, lock};
 use crate::theme::{self, Hint};
+use crate::widgets::PenScroll;
 use anyhow::Result;
 use egui::{Key, RichText};
 use klad_core::doc::{Kind as LayerKind, MASK, Shape};
@@ -1819,9 +1820,12 @@ impl Editor {
         )
         .hint("the drawing without its cache, so whoever reads the issue sees what you see");
         let text = self.problem_report(None);
-        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-            ui.add(egui::Label::new(RichText::new(&text).monospace().size(theme::SMALL)).wrap());
-        });
+        egui::ScrollArea::vertical()
+            .max_height(260.0)
+            .pen_scroll(ui.ctx())
+            .show(ui, |ui| {
+                ui.add(egui::Label::new(RichText::new(&text).monospace().size(theme::SMALL)).wrap());
+            });
         ui.horizontal(|ui| {
             if ui
                 .button(format!("{} copy the report", crate::theme::icon::COPY))

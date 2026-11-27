@@ -1,4 +1,4 @@
-_Last updated: 2026-11-21 20:00_
+_Last updated: 2026-11-27 14:30_
 
 # Painting
 
@@ -73,3 +73,5 @@ Right click a brush of the drawing in the brush tiles to save it in **your brush
 3. If light strokes still come out too heavy, set the curve above 1.
 
 On Windows, klad reads the pen through Windows Ink. If the **Pen** bars don't move when you press, open your tablet's driver settings and turn on **Windows Ink** (Huion, Wacom and XP-Pen drivers have it as a check box). Without it the pen draws like a mouse, at full pressure.
+
+With the pen you can also scroll the panes, the brush tiles, the tool strip on a short window, the settings and long menus: drag them up or down where the drag does nothing else. Sliders, swatches and layer rows still move as they do with a mouse (the layers list scrolls by its bar), and while you use the pen a drag on text scrolls instead of selecting the text.

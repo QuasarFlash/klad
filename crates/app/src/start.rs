@@ -2,6 +2,7 @@ use crate::picker;
 use crate::settings::Settings;
 use crate::theme::{self, icon};
 use crate::widgets;
+use crate::widgets::PenScroll;
 use anyhow::{Result, anyhow, bail};
 use egui::{RichText, TextureHandle, vec2};
 use klad_core::bundle::{Blank, Bundle};
@@ -251,30 +252,33 @@ impl Start {
 
     pub fn ui(&mut self, ui: &mut egui::Ui, settings: &mut Settings) -> Option<PathBuf> {
         let mut chosen = None;
-        egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
-            chosen = self.top_cards(ui, settings);
-            if let Some(error) = self.error.clone() {
-                ui.add_space(theme::space::SM);
-                ui.colored_label(theme::ERROR, error);
-                if let Some(path) = self.repair.clone()
-                    && ui.button("Repair and open").clicked()
-                {
-                    match klad_core::bundle::Bundle::repair(&path) {
-                        Ok(done) => {
-                            self.repaired = Some(repaired_words(&done));
-                            self.error = None;
-                            self.repair = None;
-                            chosen = Some(path);
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, true])
+            .pen_scroll(ui.ctx())
+            .show(ui, |ui| {
+                chosen = self.top_cards(ui, settings);
+                if let Some(error) = self.error.clone() {
+                    ui.add_space(theme::space::SM);
+                    ui.colored_label(theme::ERROR, error);
+                    if let Some(path) = self.repair.clone()
+                        && ui.button("Repair and open").clicked()
+                    {
+                        match klad_core::bundle::Bundle::repair(&path) {
+                            Ok(done) => {
+                                self.repaired = Some(repaired_words(&done));
+                                self.error = None;
+                                self.repair = None;
+                                chosen = Some(path);
+                            }
+                            Err(e) => self.error = Some(format!("{e:#}")),
                         }
-                        Err(e) => self.error = Some(format!("{e:#}")),
                     }
                 }
-            }
-            ui.add_space(theme::space::XL);
-            chosen = chosen.take().or_else(|| self.recent_section(ui, settings));
-            ui.add_space(theme::space::XL);
-            chosen = chosen.take().or_else(|| self.samples_section(ui, settings));
-        });
+                ui.add_space(theme::space::XL);
+                chosen = chosen.take().or_else(|| self.recent_section(ui, settings));
+                ui.add_space(theme::space::XL);
+                chosen = chosen.take().or_else(|| self.samples_section(ui, settings));
+            });
         self.connect_window(ui, settings);
         self.focused = true;
         chosen
@@ -797,6 +801,7 @@ fn row(ui: &mut egui::Ui, salt: &str, cards: impl FnOnce(&mut egui::Ui)) {
     egui::ScrollArea::horizontal()
         .id_salt(salt)
         .auto_shrink([false, true])
+        .pen_scroll(ui.ctx())
         .show(ui, |ui| {
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing = vec2(theme::space::MD, theme::space::SM);

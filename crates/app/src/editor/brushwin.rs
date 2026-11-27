@@ -2,6 +2,7 @@ use super::Editor;
 use super::options;
 use crate::messages::Tone;
 use crate::theme::{self, Hint};
+use crate::widgets::PenScroll;
 use anyhow::{Result, bail};
 use egui::{Color32, RichText, TextureHandle, TextureOptions};
 use klad_core::brushes::{AngleDef, BrushDef, ColorDef, Curve, DualDef, GrainDef, PaintDef, Paper, TIP_IMAGES, TipDef};
@@ -201,6 +202,7 @@ impl Editor {
             .id_salt("brush window")
             .max_height(room)
             .min_scrolled_height(room)
+            .pen_scroll(ui.ctx())
             .show(ui, |ui| self.brush_window_body(ui, room))
             .inner
     }
@@ -312,6 +314,7 @@ impl Editor {
         egui::ScrollArea::vertical()
             .max_height(list)
             .min_scrolled_height(list)
+            .pen_scroll(ui.ctx())
             .show(ui, |ui| {
                 ui.set_max_width(380.0);
                 ui.label(RichText::new("tip").strong());
