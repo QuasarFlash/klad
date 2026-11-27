@@ -450,7 +450,7 @@ impl Journey {
         match self.pane_of(r) {
             Some((body, floor)) => {
                 at.y < canvas.bottom()
-                    && ((at.y < body && at.y >= body - crate::layout::TITLE)
+                    && ((r.top() >= body - crate::layout::TITLE - 1.0 && r.bottom() <= body + 1.0)
                         || (r.top() >= body - 4.0 && r.bottom() <= floor + 1.0))
             }
             None => {
@@ -476,6 +476,7 @@ impl Journey {
                 break;
             };
             self.wheel_pane(r, body, floor);
+            self.until_still(label);
             turns += 1;
         }
         let seen = self.in_sight(label);
@@ -485,6 +486,19 @@ impl Journey {
             (false, _) => format!("looked for \"{label}\": it could not be brought in sight"),
         });
         seen
+    }
+
+    fn until_still(&mut self, label: &str) {
+        let at = |j: &Self| j.h.query_all_by_label(label).map(|n| n.rect()).collect::<Vec<_>>();
+        let mut steps = 0;
+        while steps < 30 {
+            let before = at(self);
+            self.h.run_steps(1);
+            if at(self) == before {
+                return;
+            }
+            steps += 1;
+        }
     }
 
     fn wheel_pane(&mut self, r: egui::Rect, body: f32, floor: f32) {

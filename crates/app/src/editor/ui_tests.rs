@@ -677,6 +677,24 @@ fn a_smudged_stroke_is_picked_through_its_smudges_and_smudge_is_a_tool_of_its_ow
         h.query_by_label("Inking pen").is_some(),
         "the brush pane shows the paint brushes"
     );
+    let menu = |h: &Harness<'static, Editor>, name: &str| {
+        h.query_all(By::new().predicate(|n| n.role() == Role::ComboBox && n.value().is_some_and(|v| v == name)))
+            .count()
+    };
+    assert_eq!(
+        menu(&h, "Inking pen"),
+        0,
+        "with the Brush pane in sight the bar has no brush menu"
+    );
+    if let Some(p) = h.state_mut().settings.layout.pane_mut(Pane::Brush) {
+        p.collapsed = true;
+    }
+    h.run_steps(3);
+    assert_eq!(menu(&h, "Inking pen"), 1, "with the pane folded the bar has it");
+    if let Some(p) = h.state_mut().settings.layout.pane_mut(Pane::Brush) {
+        p.collapsed = false;
+    }
+    h.run_steps(3);
     assert!(h.query_by_label("Blender").is_none(), "but not the blender");
     h.state_mut().invoke(Cmd::Smudge).unwrap();
     h.run_steps(2);
@@ -689,6 +707,12 @@ fn a_smudged_stroke_is_picked_through_its_smudges_and_smudge_is_a_tool_of_its_ow
     assert_eq!(h.state().is_on(Cmd::Brush), Some(false));
     assert!(h.query_by_label("Blender").is_some(), "its tiles show the blender");
     assert!(h.query_by_label("Inking pen").is_none(), "and no paint brushes");
+    let listed = |h: &Harness<'static, Editor>| -> Vec<String> {
+        h.state().brush_choices().into_iter().map(|(id, _)| id).collect()
+    };
+    let mut two = listed(&h);
+    two.sort_unstable();
+    assert_eq!(two, ["blender", "smudge"], "the bar's brush list holds the same two");
     h.get_by_label("Blender").click();
     h.run_steps(2);
     assert_eq!(h.state().brush, "blender");
@@ -701,6 +725,11 @@ fn a_smudged_stroke_is_picked_through_its_smudges_and_smudge_is_a_tool_of_its_ow
         "B goes back to the ink at its size"
     );
     assert!(h.query_by_label("Inking pen").is_some() && h.query_by_label("Blender").is_none());
+    assert!(
+        listed(&h).contains(&"ink".to_string()) && !listed(&h).iter().any(|id| id == "smudge" || id == "blender"),
+        "and the brush's list the paint brushes: {:?}",
+        listed(&h)
+    );
     h.state_mut().invoke(Cmd::Smudge).unwrap();
     h.run_steps(2);
     assert_eq!(

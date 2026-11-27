@@ -7,6 +7,10 @@
 - A smudge and blend tool on the tool strip, under the eraser and in the Tools menu: it paints with the smudge, the blender or your own brushes that smudge or blend, keeps its own brush and size, and its brush tiles show only those brushes. The brush tool's tiles no longer show them.
 - An eyedropper tool on the tool strip, on I: click or drag over a colour and let go to take it, with a ring at the pen showing the new colour against the one you had; shift takes it from the active layer only, and on a pixel layer it takes the palette colour. Alt with the brush or fill still picks a colour as before. I still inserts a frame while the timeline is in use.
 
+### Changed
+
+- The brush menu in the bar above the canvas shows only while the Brush pane is folded or the panels are hidden, and lists only the current tool's brushes: the paint brushes with the brush, the brushes that smudge or blend with the smudge and blend tool.
+
 ### Fixed
 
 - A stroke you smudged or blended over can be clicked again with V, S or A: the click goes through the smudges to the stroke under them and takes it with its smudges, as erasers do. Where a smudge dragged paint past its stroke, a click there takes that stroke; a smudge over nothing is still clicked itself, and Attached only still takes the smudges on their own.
