@@ -2,7 +2,7 @@ use crate::composite::{compose_items, dilate, effect_reach};
 use anyhow::{Result, anyhow, bail};
 use half::f16;
 use klad_brush::grain::GRAIN_SIZE;
-use klad_brush::tiles::{TILE, TILE_PX};
+use klad_brush::tiles::{Heights, TILE, TILE_PX, Tile};
 use klad_brush::{BrushSet, CelReplay, Raster};
 use klad_core::bundle::Bundle;
 use klad_core::doc::{Document, Kind, Layer, Node};
@@ -68,6 +68,7 @@ fn vector_nodes(doc: &klad_core::doc::Document, frame: u32) -> BTreeMap<String, 
 }
 
 const MANY: usize = 32;
+const BIG: usize = 1000;
 const SLOW: std::time::Duration = std::time::Duration::from_millis(12);
 
 fn liftable(mark: &Mark, brushes: &BrushSet) -> bool {
@@ -104,6 +105,57 @@ fn chosen_by_cel(ids: &[String]) -> Option<BTreeMap<String, BTreeSet<u32>>> {
             by.entry(cel.to_string()).or_default().insert(n);
             Some(by)
         })
+}
+
+fn big(snap: &Snapshot, ids: &[String]) -> bool {
+    ids.len() >= MANY
+        || chosen_by_cel(ids).is_some_and(|by| {
+            by.keys()
+                .any(|cel| snap.cels.get(cel).is_some_and(|replay| replay.marks().len() >= BIG))
+        })
+}
+
+fn cut(full: &Raster, rest: &Raster, wide: [u32; 2], offset: [usize; 2]) -> Raster {
+    let (dx, dy) = (offset[0] / TILE, offset[1] / TILE);
+    let empty = Heights::new(full.width, full.height);
+    let tiles: BTreeSet<usize> = full
+        .differs(rest)
+        .into_iter()
+        .chain(
+            full.heights()
+                .unwrap_or(&empty)
+                .differs(rest.heights().unwrap_or(&empty)),
+        )
+        .collect();
+    let pieces: Vec<(usize, Tile)> = tiles
+        .into_par_iter()
+        .filter_map(|i| {
+            let (colour, under) = (full.at(i), rest.at(i));
+            let (height, below) = (full.height_tile(i), rest.height_tile(i));
+            let mut picture = vec![f16::ZERO; TILE_PX * 4];
+            let mut body = height.map(|_| vec![f16::ZERO; TILE_PX]);
+            let at = |t: Option<&[f16]>, k: usize| t.map_or(f16::ZERO, |t| t[k]);
+            let mut any = false;
+            (0..TILE_PX).for_each(|p| {
+                let differs =
+                    (0..4).any(|c| at(colour, p * 4 + c) != at(under, p * 4 + c)) || at(height, p) != at(below, p);
+                if differs {
+                    (0..4).for_each(|c| picture[p * 4 + c] = at(colour, p * 4 + c));
+                    if let Some(body) = body.as_mut() {
+                        body[p] = at(height, p);
+                    }
+                    any = true;
+                }
+            });
+            any.then(|| (i, (Some(Arc::from(picture)), body.map(Arc::from))))
+        })
+        .collect();
+    let mut alone = Raster::new(wide[0], wide[1]);
+    pieces.iter().for_each(|(i, piece)| {
+        let to = alone.index(i % full.cols + dx, i / full.cols + dy);
+        alone.restore(to, piece);
+    });
+    alone
 }
 
 fn whole_cels(snap: &Snapshot, ids: &[String]) -> bool {
@@ -158,32 +210,35 @@ fn lift_cel(snap: &Snapshot, cel: &str, chosen: &BTreeSet<u32>) -> Option<Lift> 
     if staying.is_empty() {
         return lift_whole(snap, cel, [x0, y0, x1, y1], offset);
     }
-    if moving.is_empty() || !moving.iter().all(|m| liftable(m, &snap.brushes)) {
+    if moving.is_empty() {
         return None;
     }
-    let around: Vec<Mark> = moving
-        .into_iter()
-        .map(|mut m| {
-            transform_mark(&mut m, [1.0, 0.0, 0.0, 1.0, offset[0] as f32, offset[1] as f32]);
-            m
-        })
-        .collect();
-    let many = around.len() >= MANY;
+    let full = snap.rasters.get(cel).cloned().unwrap_or_else(|| Raster::new(w, h));
     let wide = [w + 2 * offset[0] as u32, h + 2 * offset[1] as u32];
-    let (alone, rest) = rayon::join(
-        || CelReplay::replay_tiled(wide[0], wide[1], around, &snap.brushes).map(|(_, raster, _)| raster),
-        || match many {
-            true => CelReplay::replay_tiled(w, h, staying, &snap.brushes).map(|(_, raster, _)| raster),
-            false => {
-                let mut rest = snap.rasters.get(cel).cloned().unwrap_or_else(|| Raster::new(w, h));
-                replay.clone().update(&mut rest, staying, &snap.brushes).map(|_| rest)
-            }
-        },
-    );
-    let (alone, rest) = (alone.ok()?, rest.ok()?);
-    if alone.has_height() {
-        return None;
-    }
+    let rested = || {
+        let mut rest = full.clone();
+        replay.clone().update(&mut rest, staying, &snap.brushes).map(|_| rest)
+    };
+    let (alone, rest) = match moving.iter().all(|m| liftable(m, &snap.brushes)) {
+        true => {
+            let around: Vec<Mark> = moving
+                .into_iter()
+                .map(|mut m| {
+                    transform_mark(&mut m, [1.0, 0.0, 0.0, 1.0, offset[0] as f32, offset[1] as f32]);
+                    m
+                })
+                .collect();
+            let (alone, rest) = rayon::join(
+                || CelReplay::replay_tiled(wide[0], wide[1], around, &snap.brushes).map(|(_, raster, _)| raster),
+                rested,
+            );
+            (alone.ok()?, rest.ok()?)
+        }
+        false => {
+            let rest = rested().ok()?;
+            (cut(&full, &rest, wide, offset), rest)
+        }
+    };
     let tiles: Vec<(usize, usize)> = alone
         .occupied()
         .map(|(i, _)| (i % alone.cols, i / alone.cols))
@@ -255,7 +310,7 @@ fn sample(raster: &Raster, x: f32, y: f32) -> [f32; 4] {
     std::array::from_fn(|c| corners.iter().map(|(t, w)| t[c] * w).sum())
 }
 
-fn laid(lift: &Lift, back: Affine, index: usize) -> Option<Box<[f16]>> {
+fn laid(lift: &Lift, back: Affine, index: usize) -> Option<Tile> {
     let (tx, ty) = (index % lift.rest.cols, index / lift.rest.cols);
     let corners = [(0, 0), (1, 0), (0, 1), (1, 1)]
         .map(|(i, j)| apply_affine(back, (((tx + i) * TILE) as f32, ((ty + j) * TILE) as f32)));
@@ -272,11 +327,16 @@ fn laid(lift: &Lift, back: Affine, index: usize) -> Option<Box<[f16]>> {
     }
     let under = lift.rest.at(index);
     let mut tile: Box<[f16]> = under.map_or_else(|| vec![f16::ZERO; TILE_PX * 4].into_boxed_slice(), Box::from);
-    let any = match whole_shift(back) {
-        Some(by) => shift_tile(lift, &mut tile, (tx, ty), by),
-        None => sample_tile(lift, &mut tile, (tx, ty), back),
+    let mut body: Option<Box<[f16]>> = match (lift.rest.height_tile(index), lift.alone.has_height()) {
+        (Some(below), _) => Some(Box::from(below)),
+        (None, true) => Some(vec![f16::ZERO; TILE_PX].into_boxed_slice()),
+        (None, false) => None,
     };
-    any.then_some(tile)
+    let any = match whole_shift(back) {
+        Some(by) => shift_tile(lift, &mut tile, body.as_deref_mut(), (tx, ty), by),
+        None => sample_tile(lift, &mut tile, body.as_deref_mut(), (tx, ty), back),
+    };
+    any.then(|| (Some(Arc::from(tile)), body.map(Arc::from)))
 }
 
 fn whole_shift(back: Affine) -> Option<(i64, i64)> {
@@ -290,7 +350,40 @@ fn over(tile: &mut [f16], p: usize, top: [f32; 4]) {
     (0..4).for_each(|c| tile[p + c] = f16::from_f32(top[c] + tile[p + c].to_f32() * keep));
 }
 
-fn shift_tile(lift: &Lift, tile: &mut [f16], (tx, ty): (usize, usize), (ox, oy): (i64, i64)) -> bool {
+fn raise(body: Option<&mut [f16]>, p: usize, top: f32, alpha: f32) {
+    if let Some(body) = body {
+        body[p] = f16::from_f32(top * alpha + body[p].to_f32() * (1.0 - alpha));
+    }
+}
+
+fn height_texel(raster: &Raster, x: i64, y: i64) -> f32 {
+    let (wide, tall) = ((raster.cols * TILE) as i64, (raster.rows * TILE) as i64);
+    if x < 0 || y < 0 || x >= wide || y >= tall {
+        return 0.0;
+    }
+    let (x, y) = (x as usize, y as usize);
+    raster
+        .height_tile(raster.index(x / TILE, y / TILE))
+        .map_or(0.0, |t| t[(y % TILE) * TILE + x % TILE].to_f32())
+}
+
+fn height_at(raster: &Raster, x: f32, y: f32) -> f32 {
+    let (fx, fy) = (x.floor(), y.floor());
+    let (u, v) = (x - fx, y - fy);
+    let (ix, iy) = (fx as i64, fy as i64);
+    height_texel(raster, ix, iy) * (1.0 - u) * (1.0 - v)
+        + height_texel(raster, ix + 1, iy) * u * (1.0 - v)
+        + height_texel(raster, ix, iy + 1) * (1.0 - u) * v
+        + height_texel(raster, ix + 1, iy + 1) * u * v
+}
+
+fn shift_tile(
+    lift: &Lift,
+    tile: &mut [f16],
+    mut body: Option<&mut [f16]>,
+    (tx, ty): (usize, usize),
+    (ox, oy): (i64, i64),
+) -> bool {
     let side = TILE as i64;
     let (cols, rows) = (lift.alone.cols as i64, lift.alone.rows as i64);
     let start = tx as i64 * side + ox;
@@ -304,8 +397,13 @@ fn shift_tile(lift: &Lift, tile: &mut [f16], (tx, ty): (usize, usize), (ox, oy):
         [first, first + 1]
             .into_iter()
             .filter(|stx| (0..cols).contains(stx))
-            .filter_map(|stx| lift.alone.get(stx as usize, (sy / side) as usize).map(|src| (stx, src)))
-            .for_each(|(stx, src)| {
+            .filter_map(|stx| {
+                let index = lift.alone.index(stx as usize, (sy / side) as usize);
+                lift.alone
+                    .at(index)
+                    .map(|src| (stx, src, lift.alone.height_tile(index)))
+            })
+            .for_each(|(stx, src, heights)| {
                 let lo = (stx * side - start).max(0) as usize;
                 let hi = ((stx + 1) * side - start).min(side) as usize;
                 let line = (sy % side) as usize * TILE;
@@ -315,6 +413,8 @@ fn shift_tile(lift: &Lift, tile: &mut [f16], (tx, ty): (usize, usize), (ox, oy):
                     if alpha > 0.0 {
                         let top = [src[k].to_f32(), src[k + 1].to_f32(), src[k + 2].to_f32(), alpha];
                         over(tile, (row * TILE + col) * 4, top);
+                        let raised = heights.map_or(0.0, |h| h[k / 4].to_f32());
+                        raise(body.as_deref_mut(), row * TILE + col, raised, alpha);
                         any = true;
                     }
                 });
@@ -323,7 +423,13 @@ fn shift_tile(lift: &Lift, tile: &mut [f16], (tx, ty): (usize, usize), (ox, oy):
     any
 }
 
-fn sample_tile(lift: &Lift, tile: &mut [f16], (tx, ty): (usize, usize), back: Affine) -> bool {
+fn sample_tile(
+    lift: &Lift,
+    tile: &mut [f16],
+    mut body: Option<&mut [f16]>,
+    (tx, ty): (usize, usize),
+    back: Affine,
+) -> bool {
     let [x0, y0, x1, y1] = lift.reach;
     let mut any = false;
     (0..TILE_PX).for_each(|p| {
@@ -335,6 +441,14 @@ fn sample_tile(lift: &Lift, tile: &mut [f16], (tx, ty): (usize, usize), back: Af
         let top = sample(&lift.alone, sx - 0.5, sy - 0.5);
         if top[3] > 0.0 {
             over(tile, p * 4, top);
+            if body.is_some() {
+                raise(
+                    body.as_deref_mut(),
+                    p,
+                    height_at(&lift.alone, sx - 0.5, sy - 0.5),
+                    top[3],
+                );
+            }
             any = true;
         }
     });
@@ -364,12 +478,12 @@ fn shifted(snap: &Snapshot, lifts: &Lifts, transform: &MarkTransform) -> Result<
             .fold((f32::MIN, f32::MIN), |m, p| (m.0.max(p.0), m.1.max(p.1)));
         let (cols, rows) = (lift.rest.cols, lift.rest.rows);
         let to = tiles_over([low.0 - 1.0, low.1 - 1.0, high.0 + 1.0, high.1 + 1.0], cols, rows);
-        let drawn: Vec<(usize, Option<Box<[f16]>>)> = to.par_iter().map(|&i| (i, laid(lift, into, i))).collect();
+        let drawn: Vec<(usize, Option<Tile>)> = to.par_iter().map(|&i| (i, laid(lift, into, i))).collect();
         let mut raster = lift.rest.clone();
         drawn
             .into_iter()
             .filter_map(|(i, tile)| tile.map(|t| (i, t)))
-            .for_each(|(i, tile)| raster.put(i, tile));
+            .for_each(|(i, tile)| raster.restore(i, &tile));
         changed.extend(to);
         changed.extend(tiles_over([x0, y0, x1, y1], cols, rows));
         rasters.insert(cel.clone(), raster);
@@ -391,7 +505,8 @@ impl Job {
             [Op::Transform { ids, transform }]
                 if self.snap.lifts.get().is_some()
                     || self.snap.slow.load(Ordering::Relaxed)
-                    || whole_cels(&self.snap, ids) =>
+                    || whole_cels(&self.snap, ids)
+                    || big(&self.snap, ids) =>
             {
                 self.snap
                     .lifts
@@ -693,6 +808,89 @@ mod tests {
     }
 
     #[test]
+    fn part_of_a_layer_of_alpha_locked_oil_moves_as_its_picture_close_to_where_it_lands() {
+        let dir = std::env::temp_dir().join(format!("klad-lift-part-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut doc = Document::new(600, 300);
+        doc.canvas.background = Some("#ffffff".into());
+        doc.layers = vec![Layer::paint("a", "a", "ca")];
+        let mut bundle = Bundle::create(&dir, doc).unwrap();
+        let strokes: Vec<String> = (0..80)
+            .map(|k| {
+                let y = 60 + k * 2;
+                format!(
+                    r##"{{"op":"stroke","layer":"a","path":"M{} {y} L{} {}","size":12,"brush":"oil","color":"#{:02x}5020"}}"##,
+                    80 + (k % 2) * 200,
+                    240 + (k % 2) * 200,
+                    y + 14,
+                    90 + k
+                )
+            })
+            .collect();
+        let ops = [
+            r##"{"op":"stroke","layer":"a","path":"M60 150 L540 150","size":220,"color":"#e6bf34"}"##.to_string(),
+            r##"{"op":"set","id":"a","lockAlpha":true}"##.to_string(),
+        ]
+        .into_iter()
+        .chain(strokes)
+        .collect::<Vec<_>>()
+        .join("\n");
+        bundle.apply(&klad_core::ops::parse_lines(&ops).unwrap()).unwrap();
+        let scene = crate::composite::Scene::open(&dir).unwrap();
+        let brushes = BrushSet::for_bundle(&scene.bundle).unwrap();
+        let cel = "ca".to_string();
+        let marks = scene.marks_of(&cel);
+        let ids: Vec<String> = marks.iter().skip(1).step_by(2).map(|m| address(&cel, m.id())).collect();
+        assert!(ids.len() >= MANY && ids.len() < marks.len() - 1);
+        let snap = Arc::new(scene.preview_snapshot(std::slice::from_ref(&cel), &brushes).unwrap());
+        let visible: BTreeSet<usize> = scene.all_tiles().into_iter().collect();
+        let job = || Job {
+            ops: vec![Op::Transform {
+                ids: ids.clone(),
+                transform: MarkTransform {
+                    x: 30.0,
+                    y: 12.0,
+                    ..MarkTransform::default()
+                },
+            }],
+            snap: snap.clone(),
+            shown: BTreeSet::new(),
+            visible: visible.clone(),
+            cancel: Arc::default(),
+        };
+        let lifted = job().run().unwrap();
+        assert!(
+            !lifted.exact,
+            "the first step already moves the picked strokes as a picture"
+        );
+        let exact = job();
+        let (doc, rasters, changed, _) = exact.replayed().unwrap();
+        let exact = exact.composed(&doc, rasters, changed, true).unwrap();
+        let gaps: Vec<f32> = exact
+            .tiles
+            .iter()
+            .flat_map(|(i, tile)| {
+                let shown = lifted
+                    .tiles
+                    .iter()
+                    .find(|(j, _)| j == i)
+                    .map(|(_, t)| t.clone())
+                    .expect("every tile the move changes is previewed");
+                tile.iter()
+                    .zip(shown)
+                    .map(|(a, b)| (a.to_f32() - b.to_f32()).abs())
+                    .collect::<Vec<f32>>()
+            })
+            .collect();
+        let mean = gaps.iter().sum::<f32>() / gaps.len() as f32;
+        assert!(
+            mean < 0.02,
+            "the moved picture is close to where the strokes land: {mean}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     #[ignore = "a timing to read: KLAD_DRAG_BENCH=<drawing> [KLAD_DRAG_LAYER=<layer>] [KLAD_DRAG_AT=<first mark>] [KLAD_DRAG_COUNT=<marks>] cargo test drag_steps -- --ignored --nocapture"]
     fn drag_steps_on_a_large_drawing() {
         let Ok(path) = std::env::var("KLAD_DRAG_BENCH") else {
@@ -706,8 +904,11 @@ mod tests {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(1);
+        let copy = std::env::temp_dir().join(format!("klad-drag-bench-{}.klad", std::process::id()));
+        let _ = std::fs::remove_dir_all(&copy);
+        copy_dir(std::path::Path::new(&path), &copy);
         let start = Instant::now();
-        let scene = crate::composite::Scene::open(std::path::Path::new(&path)).unwrap();
+        let mut scene = crate::composite::Scene::open(&copy).unwrap();
         let brushes = BrushSet::for_bundle(&scene.bundle).unwrap();
         eprintln!("opened in {:.0} ms", start.elapsed().as_secs_f64() * 1000.0);
         let layer = std::env::var("KLAD_DRAG_LAYER").ok();
@@ -757,5 +958,52 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
+        let ops = vec![Op::Transform {
+            ids,
+            transform: MarkTransform {
+                x: 56.0,
+                y: 24.0,
+                ..MarkTransform::default()
+            },
+        }];
+        let start = Instant::now();
+        let dirty = scene.apply(&ops, &brushes).unwrap();
+        eprintln!(
+            "letting go: {:.0} ms, {} tiles redrawn",
+            start.elapsed().as_secs_f64() * 1000.0,
+            dirty.len()
+        );
+        let last = scene.marks_of(&cel).last().map(|m| address(&cel, m.id())).unwrap();
+        let start = Instant::now();
+        scene
+            .apply(
+                &[Op::Transform {
+                    ids: vec![last],
+                    transform: MarkTransform {
+                        x: 5.0,
+                        ..MarkTransform::default()
+                    },
+                }],
+                &brushes,
+            )
+            .unwrap();
+        eprintln!(
+            "then moving the last stroke: {:.0} ms",
+            start.elapsed().as_secs_f64() * 1000.0
+        );
+        let _ = std::fs::remove_dir_all(&copy);
+    }
+
+    fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+        std::fs::create_dir_all(to).unwrap();
+        std::fs::read_dir(from).unwrap().flatten().for_each(|entry| {
+            let target = to.join(entry.file_name());
+            match entry.file_type().unwrap().is_dir() {
+                true => copy_dir(&entry.path(), &target),
+                false => {
+                    std::fs::copy(entry.path(), target).unwrap();
+                }
+            }
+        });
     }
 }

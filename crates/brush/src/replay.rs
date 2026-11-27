@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 pub const EVERY: usize = 128;
 const TILED_FROM: usize = 32;
+const RETILE_FROM: usize = 512;
 pub const BUDGET: usize = 128 << 20;
 
 #[derive(Clone)]
@@ -35,6 +36,7 @@ pub struct Updated {
     pub tiles: Vec<usize>,
     pub replayed: usize,
     pub full: bool,
+    pub tiled: bool,
 }
 
 fn painted(
@@ -93,23 +95,27 @@ fn guess(raster: &Raster, brushes: &BrushSet, mark: &Mark) -> Vec<usize> {
 type Tiled = (Raster, Vec<Vec<u32>>, usize);
 type TileJob = (usize, Tile, Vec<(usize, Vec<usize>, usize)>);
 
-fn tiled(width: u32, height: u32, marks: &[Mark], brushes: &BrushSet) -> Result<Option<Tiled>> {
-    let mut raster = Raster::new(width, height);
-    let tiles = raster.cols * raster.rows;
-    let reads = marks.iter().any(|m| match m {
+fn reads_any(marks: &[Mark], brushes: &BrushSet) -> bool {
+    marks.iter().any(|m| match m {
         Mark::Stroke(stroke) => brushes.def(&stroke.brush).is_none_or(|d| d.reads_pixels()),
         Mark::Fill(_) => false,
-    });
-    if reads || tiles < 2 || marks.len() < TILED_FROM {
+    })
+}
+
+fn tiled(width: u32, height: u32, marks: &[Mark], brushes: &BrushSet, only: Option<&[bool]>) -> Result<Option<Tiled>> {
+    let mut raster = Raster::new(width, height);
+    let tiles = raster.cols * raster.rows;
+    if reads_any(marks, brushes) || tiles < 2 || marks.len() < TILED_FROM {
         return Ok(None);
     }
     let guesses: Vec<Vec<usize>> = marks.iter().map(|m| guess(&raster, brushes, m)).collect();
     let scope = Scope::plan(width, height, marks, brushes);
     let mut jobs: Vec<Vec<usize>> = vec![Vec::new(); tiles];
-    guesses
-        .iter()
-        .enumerate()
-        .for_each(|(i, g)| g.iter().for_each(|&t| jobs[t].push(i)));
+    guesses.iter().enumerate().for_each(|(i, g)| {
+        g.iter()
+            .filter(|&&t| only.is_none_or(|o| o[t]))
+            .for_each(|&t| jobs[t].push(i))
+    });
     let done: Vec<TileJob> = jobs
         .par_iter()
         .enumerate()
@@ -219,7 +225,7 @@ impl CelReplay {
         marks: Vec<Mark>,
         brushes: &BrushSet,
     ) -> Result<(Self, Raster, usize)> {
-        match tiled(width, height, &marks, brushes)? {
+        match tiled(width, height, &marks, brushes, None)? {
             Some((raster, footprints, dabs)) => {
                 let mut cel = Self::new(width, height);
                 cel.keys = marks.iter().map(|m| (m.id(), fingerprint(m))).collect();
@@ -354,7 +360,96 @@ impl CelReplay {
             tiles: tiles.into_iter().collect(),
             replayed,
             full: true,
+            tiled,
         })
+    }
+
+    fn retile(
+        &mut self,
+        raster: &mut Raster,
+        next: &[Mark],
+        kept: &[Option<usize>],
+        dirty: &[bool],
+        start: usize,
+        brushes: &BrushSet,
+    ) -> Result<Option<Updated>> {
+        if next.len() < TILED_FROM || reads_any(next, brushes) {
+            return Ok(None);
+        }
+        let blank = Raster::new(self.width, self.height);
+        let guessed: Vec<Option<Vec<usize>>> = next
+            .iter()
+            .zip(kept)
+            .map(|(m, k)| k.is_none().then(|| guess(&blank, brushes, m)))
+            .collect();
+        let mut redo = dirty.to_vec();
+        guessed.iter().flatten().flatten().for_each(|&t| redo[t] = true);
+        let reach: Vec<Vec<usize>> = kept
+            .iter()
+            .zip(&guessed)
+            .map(|(k, g)| match (k, g) {
+                (Some(j), _) => self.footprints[*j]
+                    .iter()
+                    .map(|&t| t as usize)
+                    .filter(|&t| redo[t])
+                    .collect(),
+                (None, Some(g)) => g.iter().copied().filter(|&t| redo[t]).collect(),
+                (None, None) => Vec::new(),
+            })
+            .collect();
+        let serial = reach[start..].iter().filter(|r| !r.is_empty()).count();
+        let mut load = vec![0usize; redo.len()];
+        reach.iter().flatten().for_each(|&t| load[t] += 1);
+        let widest = load.iter().copied().max().unwrap_or(0);
+        let spread = load.iter().sum::<usize>().div_ceil(rayon::current_num_threads().max(1));
+        if serial < RETILE_FROM || widest.max(spread) >= serial {
+            return Ok(None);
+        }
+        let sent = next.iter().zip(kept).zip(&reach).all(|((mark, k), reach)| {
+            k.is_none() || reach.is_empty() || {
+                let to = guess(&blank, brushes, mark);
+                reach.iter().all(|t| to.contains(t))
+            }
+        });
+        if !sent {
+            return Ok(None);
+        }
+        let Some((fresh, seen, _)) = tiled(self.width, self.height, next, brushes, Some(&redo))? else {
+            return Ok(None);
+        };
+        let changed: Vec<usize> = (0..redo.len()).filter(|&t| redo[t]).collect();
+        changed.iter().for_each(|&t| put(raster, t, &fresh.tile(t)));
+        let footprints: Vec<Vec<u32>> = seen
+            .into_iter()
+            .zip(kept)
+            .zip(next)
+            .map(|((seen, k), mark)| match (k, mark) {
+                (None, _) => seen,
+                (Some(j), Mark::Stroke(_)) if seen.is_empty() => self.footprints[*j].clone(),
+                (Some(_), Mark::Stroke(_)) => seen,
+                (Some(j), Mark::Fill(_)) => {
+                    let mut all: Vec<u32> = self.footprints[*j]
+                        .iter()
+                        .copied()
+                        .filter(|&t| !redo[t as usize])
+                        .chain(seen)
+                        .collect();
+                    all.sort_unstable();
+                    all
+                }
+            })
+            .collect();
+        self.footprints = footprints;
+        self.keys = next.iter().map(|m| (m.id(), fingerprint(m))).collect();
+        self.marks = next.to_vec();
+        self.checkpoints.retain(|c| c.at <= start);
+        self.maybe_checkpoint(raster);
+        Ok(Some(Updated {
+            tiles: changed,
+            replayed: reach.iter().filter(|r| !r.is_empty()).count(),
+            full: false,
+            tiled: true,
+        }))
     }
 
     pub fn update(&mut self, raster: &mut Raster, next: Vec<Mark>, brushes: &BrushSet) -> Result<Updated> {
@@ -414,6 +509,9 @@ impl CelReplay {
                 base = self.checkpoints.iter().rposition(|c| c.at <= need).unwrap_or(0);
                 start = self.checkpoints[base].at;
             }
+        }
+        if let Some(done) = self.retile(raster, &next, &kept, &dirty, start, brushes)? {
+            return Ok(done);
         }
         let origin = self.checkpoints[base].tiles.clone();
         (0..tiles)
@@ -527,6 +625,7 @@ impl CelReplay {
             tiles: (0..tiles).filter(|&t| dirty[t]).collect(),
             replayed,
             full: false,
+            tiled: false,
         })
     }
 }
@@ -634,6 +733,55 @@ mod tests {
             id,
             props: props.as_object().unwrap().clone(),
         }
+    }
+
+    #[test]
+    fn a_large_move_redraws_its_tiles_side_by_side_to_the_same_pixels() {
+        let set = brushes();
+        let mut synth = Synth::canvas(W as f32, H as f32);
+        synth.brushes = vec!["ink".into(), "oil".into(), "pencil".into(), "chalk".into()];
+        let mut all = sample(40);
+        all.extend(marks(synth.strokes(1400, 13)));
+        all.iter_mut().enumerate().for_each(|(i, m)| {
+            m.set_id(i as u32 + 1);
+            if let Mark::Stroke(s) = m
+                && i > 60
+                && i % 3 == 0
+            {
+                s.lock = true;
+            }
+        });
+        let (mut cel, mut raster, _) = CelReplay::replay_tiled(W, H, all.clone(), &set).unwrap();
+        assert!(raster.has_height(), "oil leaves paint height");
+        let moved = edited(
+            &all,
+            vec![MarkChange::Transform {
+                ids: (300..900).collect(),
+                transform: MarkTransform {
+                    x: 40.0,
+                    y: -24.0,
+                    ..MarkTransform::default()
+                },
+            }],
+        );
+        let done = cel.update(&mut raster, moved.clone(), &set).unwrap();
+        assert!(done.tiled && !done.full, "{done:?}");
+        let full = replay(W, H, &moved, &set).unwrap().raster;
+        assert_eq!(
+            raster.hash(),
+            full.hash(),
+            "the same pixels and paint height as one replay"
+        );
+        let fresh = CelReplay::replay(W, H, moved.clone(), &set).unwrap().0;
+        assert_eq!(cel.footprints(), fresh.footprints());
+        assert_eq!(cel.keys(), fresh.keys());
+        let late = edited(&moved, vec![set_color(1400, "#204060")]);
+        cel.update(&mut raster, late.clone(), &set).unwrap();
+        check(&cel, &raster, &late);
+    }
+
+    fn set_color(id: u32, color: &str) -> MarkChange {
+        set(id, json!({ "color": color }))
     }
 
     #[test]
