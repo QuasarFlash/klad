@@ -617,12 +617,20 @@ fn node_hits(node: &Node, parent: &Matrix, point: (f32, f32)) -> Result<bool> {
     if filled && path.contains(local) {
         return Ok(true);
     }
-    let inside = |r: Rect| local.x >= r.left && local.x <= r.right && local.y >= r.top && local.y <= r.bottom;
-    Ok(node.stroke.as_ref().is_some_and(|s| {
-        let pad = s.width / 2.0 + 2.0;
-        let bounds = path.compute_tight_bounds();
-        inside(bounds.with_outset((pad, pad))) && !inside(bounds.with_inset((pad, pad)))
-    }))
+    let block = path.compute_tight_bounds();
+    let in_block = local.x >= block.left && local.x <= block.right && local.y >= block.top && local.y <= block.bottom;
+    if matches!(node.shape, klad_core::doc::Shape::Text(_)) && in_block {
+        return Ok(true);
+    }
+    Ok(node.stroke.as_ref().is_some_and(|s| on_outline(&path, s.width, local)))
+}
+
+fn on_outline(path: &skia_safe::Path, width: f32, at: skia_safe::Point) -> bool {
+    let mut paint = skia_safe::Paint::default();
+    paint.set_style(skia_safe::PaintStyle::Stroke);
+    paint.set_stroke_width(width + 4.0);
+    let mut band = skia_safe::PathBuilder::new();
+    skia_safe::path_utils::fill_path_with_paint(path, &paint, &mut band, None, None) && band.detach().contains(at)
 }
 
 fn layer_hits(layer: &Layer, frame: u32, point: (f32, f32), out: &mut Vec<(String, String)>) -> Result<()> {
@@ -848,6 +856,42 @@ mod tests {
         assert!((deep[1].rect[0] - 250.0).abs() < 0.01 && (deep[1].rect[1] - 120.0).abs() < 0.01);
         assert_eq!(scoped_marks(&d, "g1", 0, 1).unwrap()[0].label, "n2");
         assert_eq!(node_world_box(&d, "n2").unwrap().unwrap(), [250.0, 120.0, 50.0, 20.0]);
+    }
+
+    #[test]
+    fn an_outline_is_hit_along_it_and_not_on_its_box() {
+        let node = |v: serde_json::Value| -> Node { serde_json::from_value(v).unwrap() };
+        let mut d = Document::new(400, 300);
+        d.layers.push(Layer::vector(
+            "l1",
+            "shapes",
+            "c1",
+            vec![
+                node(serde_json::json!({"id":"ring","type":"ellipse","cx":100,"cy":100,"rx":60,"ry":40,"fill":"none","stroke":{"paint":"#000000","width":2}})),
+                node(serde_json::json!({"id":"line","type":"path","d":"M200 40 L380 260","stroke":{"paint":"#000000","width":3}})),
+            ],
+        ));
+        let at = |x: f32, y: f32| {
+            hits(&d, 0, (x, y))
+                .unwrap()
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect::<Vec<_>>()
+        };
+        let slant = (
+            100.0 + 60.0 * std::f32::consts::FRAC_1_SQRT_2,
+            100.0 + 40.0 * std::f32::consts::FRAC_1_SQRT_2,
+        );
+        assert_eq!(
+            at(slant.0, slant.1),
+            ["ring"],
+            "a no-fill ellipse is hit on its outline away from its box's edges"
+        );
+        assert_eq!(at(slant.0 + 2.5, slant.1), ["ring"], "with a little slack");
+        assert!(at(100.0, 100.0).is_empty(), "and not inside, where nothing is painted");
+        assert!(at(160.0, 140.0).is_empty(), "nor at its box's corner");
+        assert_eq!(at(290.0, 150.0), ["line"], "a diagonal line is hit in its middle");
+        assert!(at(300.0, 100.0).is_empty(), "and not beside it");
     }
 
     #[test]

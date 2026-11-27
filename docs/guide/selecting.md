@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 22:40_
+_Last updated: 2026-11-27 18:00_
 
 # Changing strokes
 
@@ -8,7 +8,7 @@ Pick up any stroke or fill, yours or an agent's, and move it, recolour it, bend 
 
 ## Move something
 
-Press **V**, press on what you want to move and drag. Hold **alt** to drag a copy.
+Press **V**, press on what you want to move and drag. Hold **alt** to drag a copy. A shape with no fill is taken by its outline and a text anywhere in its block; a click on a shape inside the one you have selected takes the shape you clicked.
 
 ## Select strokes
 

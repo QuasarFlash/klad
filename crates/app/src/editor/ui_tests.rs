@@ -472,6 +472,109 @@ fn a_click_picks_the_stroke_you_see_on_any_layer_or_only_on_this_one() {
 }
 
 #[test]
+fn v_selects_a_shape_by_its_outline_its_text_block_and_inside_a_selected_one() {
+    let path = sample("v-click");
+    let mut h = harness_stepping(editor(&path), vec2(1440.0, 1000.0), 1.0 / 60.0);
+    activate(&mut h, "shapes");
+    let shapes = h.state().scene.active_id().unwrap();
+    let rect = h.state().scene.bundle.doc.layer(&shapes).unwrap().cels()[0].nodes[0]
+        .id
+        .clone();
+    let add = |shape: &str| format!(r##"{{"op":"add","node":{shape},"in":"{shapes}","frame":0}}"##);
+    let ops = parse_lines(
+        &[
+            add(r##"{"id":"ring","type":"ellipse","cx":300,"cy":110,"rx":60,"ry":40,"fill":"none","stroke":{"paint":"#000000","width":2}}"##),
+            add(r##"{"id":"line","type":"path","d":"M300 220 L460 340","fill":"none","stroke":{"paint":"#000000","width":3}}"##),
+            add(r##"{"id":"dot","type":"ellipse","cx":110,"cy":40,"rx":8,"ry":8,"fill":"#20a040"}"##),
+        ]
+        .join("\n"),
+    )
+    .unwrap();
+    h.state_mut().apply(ops).unwrap();
+    h.key_press(Key::T);
+    h.run_steps(2);
+    let spot = canvas_at(&h, 40.0, 300.0);
+    click(&mut h, spot);
+    h.run_steps(2);
+    h.event(egui::Event::Text("Hi there".into()));
+    h.run_steps(1);
+    h.key_press(Key::Escape);
+    h.run_steps(3);
+    let word = h.state().scene.bundle.doc.layer(&shapes).unwrap().cels()[0]
+        .nodes
+        .iter()
+        .find(|n| matches!(n.shape, klad_core::doc::Shape::Text(_)))
+        .map(|n| n.id.clone())
+        .expect("the text tool made a text");
+    h.key_press(Key::V);
+    h.run_steps(2);
+    let tap = |h: &mut Harness<'static, Editor>, x: f32, y: f32| {
+        let at = on_screen(h, x, y);
+        click_with(h, at, Modifiers::NONE);
+        h.run_steps(3);
+        h.state().selection.clone()
+    };
+    let slant = (
+        300.0 + 60.0 * std::f32::consts::FRAC_1_SQRT_2,
+        110.0 + 40.0 * std::f32::consts::FRAC_1_SQRT_2,
+    );
+    assert_eq!(
+        tap(&mut h, slant.0, slant.1).as_deref(),
+        Some("ring"),
+        "a no-fill ellipse by its outline"
+    );
+    assert_eq!(tap(&mut h, 600.0, 10.0), None, "outside everything nothing is selected");
+    assert_ne!(
+        tap(&mut h, 300.0, 110.0).as_deref(),
+        Some("ring"),
+        "inside a no-fill ellipse is not on it"
+    );
+    assert_eq!(
+        tap(&mut h, 380.0, 280.0).as_deref(),
+        Some("line"),
+        "a diagonal line in its middle"
+    );
+    let [x, y, w, hh] = klad_render::overlay::node_world_box(&h.state().scene.bundle.doc, &word)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        tap(&mut h, x + w * 0.36, y + hh * 0.5).as_deref(),
+        Some(word.as_str()),
+        "text anywhere in its block"
+    );
+    assert_eq!(tap(&mut h, 40.0, 90.0).as_deref(), Some(rect.as_str()));
+    let at_dot = on_screen(&h, 110.0, 40.0);
+    h.hover_at(at_dot);
+    h.run_steps(1);
+    h.drag_at(at_dot);
+    h.run_steps(1);
+    h.hover_at(at_dot + vec2(6.0, 0.0));
+    h.run_steps(1);
+    h.drop_at(at_dot + vec2(6.0, 0.0));
+    h.run_steps(3);
+    assert_eq!(
+        h.state().selection.as_deref(),
+        Some("dot"),
+        "a tap that moves a little on a shape inside the selected one takes that shape"
+    );
+    let moved = match h.state().scene.bundle.doc.item(&rect) {
+        Some(klad_core::doc::Item::Node(_, _, n)) => (n.transform.x, n.transform.y),
+        _ => panic!("the rectangle is gone"),
+    };
+    assert_eq!(moved, (0.0, 0.0), "and the selected one stays where it was");
+    h.state_mut().settings.pick_all_layers = false;
+    activate(&mut h, "lines");
+    h.run_steps(2);
+    tap(&mut h, slant.0, slant.1);
+    assert!(
+        said(&h).contains("a shape on shapes is under the pointer"),
+        "with this layer on, a shape of another layer says why: {}",
+        said(&h)
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn a_selected_shape_takes_the_colour_as_its_fill_or_outline() {
     let path = sample("shape-colour");
     let mut h = harness(editor(&path), vec2(1440.0, 1000.0));

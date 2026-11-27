@@ -2504,6 +2504,27 @@ impl Editor {
         Ok(())
     }
 
+    fn another_shape_at(&self, c: Vec2) -> Result<bool> {
+        if self.on_marks() || self.selection.is_none() {
+            return Ok(false);
+        }
+        let doc = &self.scene.bundle.doc;
+        let top = |id: &String| match doc.locate(id) {
+            Some(Loc::Node(path, c, nodes)) => doc
+                .locate_path(&path)
+                .and_then(|l| l.cels().get(c))
+                .and_then(|cel| nodes.first().and_then(|&i| cel.nodes.get(i)))
+                .map(|n| n.id.clone()),
+            _ => None,
+        };
+        let held: Vec<String> = self
+            .shapes()
+            .iter()
+            .flat_map(|id| std::iter::once(id.clone()).chain(top(id)))
+            .collect();
+        Ok(self.shape_hits(c)?.first().is_some_and(|(id, _)| !held.contains(id)))
+    }
+
     fn grab_under(&mut self, c: Vec2, pos: Pos2) -> Result<()> {
         let zoom = self.view.map_or(1.0, |v| v.zoom);
         let slack = 5.0 / zoom;
@@ -2551,6 +2572,18 @@ impl Editor {
             }
         }
         self.selection = None;
+        if stroke.is_none()
+            && !self.settings.pick_all_layers
+            && let Some(name) = overlay::hits(&self.scene.bundle.doc, self.scene.frame, (c.x, c.y))?
+                .first()
+                .and_then(|(_, layer)| self.scene.bundle.doc.layer(layer))
+                .map(|l| l.name.clone())
+        {
+            self.say(
+                Tone::Info,
+                format!("a shape on {name} is under the pointer: pick {name}, or all layers in the bar, to take it"),
+            );
+        }
         let Some((path, id)) = stroke else {
             self.lasso = Some(Lasso {
                 points: vec![c],
@@ -3823,6 +3856,9 @@ impl Editor {
             }
             (Tool::Brush, Phase::Up) => self.finish()?,
             (Tool::Select, Phase::Down) => match self.grab_at(view, rect, e.pos) {
+                Some((_, Grab::Move, _)) if !self.modifiers.shift && self.another_shape_at(c)? => {
+                    self.grab_under(c, e.pos)?
+                }
                 Some((id, Grab::Move, corners))
                     if self.modifiers.shift && self.selection.is_some() && !self.on_marks() =>
                 {
