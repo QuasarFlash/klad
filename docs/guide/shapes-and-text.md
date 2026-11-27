@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 23:20_
+_Last updated: 2026-11-27 15:40_
 
 # Shapes, paths and text
 
@@ -29,6 +29,8 @@ The two buttons with arrows space three or more shapes evenly. With one shape se
 ## Change the outline
 
 Select shapes with **V**. In the bar under them, drag **outline** or type a width; 0 takes the outline off. **ends** sets flat, round or square ends and sharp, round or cut corners.
+
+To take the fill or the outline off, click the shape's fill or outline button in the bar and pick **no fill** or **no outline**, or use **Edit > Shape > No fill** and **No outline** for every selected shape. In layer settings, **none** next to the outline's width does the same. From the command line: `klad set art.klad n4 fill=none stroke=none`.
 
 ## Give shapes the look of another
 

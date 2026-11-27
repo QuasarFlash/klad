@@ -2,8 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- An eyedropper tool on the tool strip, on I: click or drag over a colour and let go to take it, with a ring at the pen showing the new colour against the one you had; shift takes it from the active layer only, and on a pixel layer it takes the palette colour. Alt with the brush or fill still picks a colour as before. I still inserts a frame while the timeline is in use.
+
 ### Fixed
 
+- With V, a shape with no fill is taken by a click on its outline anywhere along it (it was taken only near the edges of its box, so ellipses, pen lines and turned shapes were hard to click), a text by a click anywhere in its block (it was taken only on its letters), and a click on a shape inside the selected one takes that shape even when the pen moves a little (it moved the selected one). With this layer on, a click on a shape of another layer says how to take it.
+- Pixel art squashes, stretches, grows and shrinks by any amount when you drag a selection's edges or corners; it grew only by 2, 3 or 4 times and never got smaller. The pixels stay hard and on the grid, the status line shows the new size, and near a whole size (the size it had, or twice or three times it) the drag lands on it exactly unless you hold cmd.
+- A shape can have no fill or no outline from where you pick its colours: **no fill** and **no outline** in the fill and outline buttons' pickers, in Edit > Shape for every selected shape, and **none** next to the outline's width in layer settings. `klad set` and `klad add` take `stroke=none`, as they took `stroke=null`.
 - With a tablet pen, the panes, the brush tiles, the tool strip on a short window, the settings and long menus scroll when you drag them, as they would on a touch screen; with a mouse or a trackpad nothing changes. A drag on a slider, a swatch or a layer row still moves it, and with the pen a drag on text scrolls instead of selecting it.
 - Dragging part of a layer with many strokes, such as one lemon in a painting merged into one layer, now follows the pointer after the first moment, also for strokes with lock alpha or oil paint: klad moves a picture of them while you drag and paints them exactly where they land when you let go. On such a layer, letting go and other large edits redraw the parts they touch side by side on the processor's cores.
 

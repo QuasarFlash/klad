@@ -4026,10 +4026,18 @@ fn set(doc: &mut Document, id: &str, props: &Map<String, Value>) -> Result<()> {
         Loc::Node(path, c, mut nodes) => {
             let index = nodes.pop().unwrap_or_default();
             let list = node_list(doc, &path, c, &nodes)?;
-            list[index] = patched(&list[index], props, check_node_keys)?;
+            let props: Map<String, Value> = props.iter().map(|(k, v)| (k.clone(), outline_none(k, v))).collect();
+            list[index] = patched(&list[index], &props, check_node_keys)?;
         }
     }
     Ok(())
+}
+
+fn outline_none(key: &str, value: &Value) -> Value {
+    match (key, value.as_str()) {
+        ("stroke", Some("none")) => Value::Null,
+        _ => value.clone(),
+    }
 }
 
 fn paint_cels_of(layer: &Layer) -> Vec<(String, String)> {
@@ -4145,6 +4153,11 @@ pub fn apply(doc: &mut Document, op: &Op, out: &mut Applied) -> Result<()> {
         }
         Op::AddNode { node, place } => {
             let mut value = node.clone();
+            if let Some(map) = value.as_object_mut()
+                && map.get("stroke").is_some_and(|s| outline_none("stroke", s).is_null())
+            {
+                map.remove("stroke");
+            }
             check_node_keys(&value)?;
             let id = assign_node_ids(doc, &mut doc.ids(), &mut value)?;
             let node: Node = serde_json::from_value(value)?;
@@ -5214,6 +5227,25 @@ mod tests {
             panic!()
         };
         assert!(sun.stroke.is_none());
+        let (none, _) = apply_all(
+            &doc,
+            &ops(&[json!({"op":"set","id":"sun","stroke":"none","fill":"none"})]),
+        )
+        .unwrap();
+        let Some(Item::Node(_, _, sun)) = none.item("sun") else {
+            panic!()
+        };
+        assert!(sun.stroke.is_none(), "stroke none takes the outline off, as null does");
+        assert_eq!(sun.fill, Some(Paint::Solid("none".into())));
+        let (added, applied) = apply_all(
+            &doc,
+            &ops(&[json!({"op":"add","node":{"type":"rect","x":0,"y":0,"w":10,"h":10,"stroke":"none"},"in":"l1"})]),
+        )
+        .unwrap();
+        let Some(Item::Node(_, _, rect)) = added.item(&applied.added[0]) else {
+            panic!()
+        };
+        assert!(rect.stroke.is_none(), "a shape added with stroke none has no outline");
     }
 
     #[test]

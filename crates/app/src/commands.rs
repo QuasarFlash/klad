@@ -281,6 +281,9 @@ pub enum Cmd {
     PickAllLayers,
     FillShape,
     OutlineShape,
+    NoFill,
+    NoOutline,
+    EyedropperTool,
     SoloLayer,
     Save,
     SaveCopy,
@@ -626,7 +629,7 @@ use Repeat as R;
 use Trigger as T;
 
 impl Cmd {
-    pub const ALL: [Cmd; 275] = [
+    pub const ALL: [Cmd; 278] = [
         Cmd::Brush,
         Cmd::Eraser,
         Cmd::Fill,
@@ -861,6 +864,9 @@ impl Cmd {
         Cmd::PickAllLayers,
         Cmd::FillShape,
         Cmd::OutlineShape,
+        Cmd::NoFill,
+        Cmd::NoOutline,
+        Cmd::EyedropperTool,
         Cmd::SoloLayer,
         Cmd::OpenDocument,
         Cmd::OpenRecent,
@@ -2290,9 +2296,9 @@ impl Cmd {
                 "insert a frame in this layer",
                 icon::INSERT,
                 G::Frames,
-                T::Press(const { &[plain(Key::I)] }),
+                T::None,
                 R::No,
-                "what shows here also shows one frame more (the key works while the timeline is in use)",
+                "what shows here also shows one frame more (I does it while the timeline is in use)",
             ),
             Cmd::InsertFrameAll => spec(
                 "frames.insert-all",
@@ -2968,6 +2974,33 @@ impl Cmd {
                 T::None,
                 R::No,
                 "the selected shape's outline becomes the current colour (an outline is added at the pen's width when it has none)",
+            ),
+            Cmd::EyedropperTool => spec(
+                "tool.eyedropper",
+                "eyedropper",
+                icon::EYEDROPPER,
+                G::Tools,
+                T::Press(const { &[plain(Key::I)] }),
+                R::No,
+                "take a colour from the canvas: click or drag over what you see, and let go; shift takes it from this layer only (alt does the same with the brush or fill)",
+            ),
+            Cmd::NoFill => spec(
+                "shape.no-fill",
+                "no fill",
+                icon::CLOSE,
+                G::Edit,
+                T::None,
+                R::No,
+                "the selected shapes get no fill: only their outline shows",
+            ),
+            Cmd::NoOutline => spec(
+                "shape.no-outline",
+                "no outline",
+                icon::CLOSE,
+                G::Edit,
+                T::None,
+                R::No,
+                "the selected shapes lose their outline",
             ),
             Cmd::Save => spec(
                 "file.save",
@@ -3653,6 +3686,9 @@ impl Cmd {
             Cmd::PickAllLayers => "Pick from all layers",
             Cmd::FillShape => "Fill with colour",
             Cmd::OutlineShape => "Outline with colour",
+            Cmd::EyedropperTool => "Eyedropper",
+            Cmd::NoFill => "No fill",
+            Cmd::NoOutline => "No outline",
             Cmd::SoloLayer => "Show only this",
             Cmd::Save => "Save",
             Cmd::SaveCopy => "Save a copy…",
@@ -3846,6 +3882,8 @@ pub const MENUS: [Menu; 9] = [
                 &[
                     Run(Cmd::FillShape),
                     Run(Cmd::OutlineShape),
+                    Run(Cmd::NoFill),
+                    Run(Cmd::NoOutline),
                     Line,
                     Run(Cmd::CopyLook),
                     Run(Cmd::PasteLook),
@@ -3875,6 +3913,7 @@ pub const MENUS: [Menu; 9] = [
             Run(Cmd::Brush),
             Run(Cmd::Eraser),
             Run(Cmd::Fill),
+            Run(Cmd::EyedropperTool),
             Run(Cmd::Shapes),
             Run(Cmd::Strokes),
             Run(Cmd::Points),
@@ -4196,7 +4235,16 @@ pub fn other_names(cmd: Cmd) -> &'static [&'static str] {
         Cmd::Welcome => &["onboarding", "introduction", "start again"],
         Cmd::Guides => &["help", "manual", "documentation"],
         Cmd::InspectorPane => &["opacity", "transparency", "blend mode", "layer properties"],
-        Cmd::Eyedropper => &["eyedropper", "colour picker", "sample colour"],
+        Cmd::Eyedropper => &["alt click", "sample colour"],
+        Cmd::EyedropperTool => &[
+            "colour picker",
+            "color picker",
+            "pipette",
+            "picker tool",
+            "sample colour",
+        ],
+        Cmd::NoFill => &["transparent fill", "remove the fill", "fill none"],
+        Cmd::NoOutline => &["no stroke", "remove the outline", "remove the stroke", "stroke none"],
         Cmd::Fill => &["bucket", "paint bucket", "flood fill"],
         Cmd::Strokes => &["lasso"],
         Cmd::TextTool => &["type"],
@@ -4595,8 +4643,9 @@ mod tests {
         assert_eq!(first("deselect"), Some(Cmd::Deselect));
         assert_eq!(first("preferences"), Some(Cmd::Settings));
         assert_eq!(first("shortcuts"), Some(Cmd::Keys));
-        assert_eq!(first("eyedropper"), Some(Cmd::Eyedropper));
-        assert_eq!(first("color picker"), Some(Cmd::Eyedropper));
+        assert_eq!(first("eyedropper"), Some(Cmd::EyedropperTool));
+        assert_eq!(first("color picker"), Some(Cmd::EyedropperTool));
+        assert_eq!(first("pipette"), Some(Cmd::EyedropperTool));
         assert_eq!(first("new layer"), Some(Cmd::NewPaintLayer));
         assert_eq!(first("hide layer"), Some(Cmd::ToggleVisible));
         assert_eq!(first("save as"), Some(Cmd::Save));

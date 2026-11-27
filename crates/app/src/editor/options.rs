@@ -415,6 +415,7 @@ impl Editor {
                 Tool::Brush if self.is_on(Cmd::Eraser) == Some(true) => (Cmd::Eraser, "eraser"),
                 Tool::Brush => (Cmd::Brush, "brush"),
                 Tool::Fill => (Cmd::Fill, "fill"),
+                Tool::Eyedropper => (Cmd::EyedropperTool, "eyedropper"),
                 Tool::Strokes => (Cmd::Strokes, "select strokes"),
                 Tool::Select => (Cmd::Shapes, "select and move"),
                 Tool::Direct => (Cmd::Points, "edit points"),
@@ -607,6 +608,12 @@ impl Editor {
                             true => "click for corners, drag for curves, click the first point to close, Return finishes, Esc drops it",
                             false => "the path goes on a new vector layer above this one: click for corners, drag for curves, click the first point to close, Return finishes, Esc drops it",
                         })
+                        .color(theme::WEAK));
+                }
+                Tool::Eyedropper => {
+                    note(ui, RichText::new(
+                            "click or drag on the canvas and let go to take the colour you see; shift takes it from this layer only; on a pixel layer it takes the palette colour",
+                        )
                         .color(theme::WEAK));
                 }
                 Tool::Note => {

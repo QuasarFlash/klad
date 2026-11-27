@@ -1,4 +1,4 @@
-_Last updated: 2026-11-19 14:00_
+_Last updated: 2026-11-27 16:10_
 
 # Drawing pixel art
 
@@ -34,6 +34,7 @@ Press **T** on a pixel layer, click and type, and press **Esc**. The text become
 
 1. Press **S** and drag a box around the pixels. The box takes the pixels inside it, also from marks that reach past its edge.
 2. Drag them to move them, or use the bar under them to flip, turn, recolour, copy or delete them.
+3. Drag a corner to make them bigger or smaller, or an edge to squash or stretch them, by any amount: the pixels stay hard and on the grid, and the status line shows the new size. Near twice or three times the size, or the size they had, the drag lands on it exactly; hold **cmd** to let go of that. Moves go by whole pixels and turns by quarter turns.
 
 ## Shade along a ramp
 

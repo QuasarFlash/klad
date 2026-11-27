@@ -216,6 +216,7 @@ const ALPHA: color::Channel = color::Channel {
 enum Tool {
     Brush,
     Fill,
+    Eyedropper,
     Select,
     Strokes,
     Direct,
@@ -224,6 +225,13 @@ enum Tool {
     Text,
     Note,
     Bone,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Dropping {
+    before: [f32; 4],
+    now: Option<[f32; 4]>,
+    layer_only: bool,
 }
 
 struct PenPath {
@@ -455,19 +463,23 @@ struct Drag {
     outside: bool,
     shift: bool,
     alt: bool,
+    loose: bool,
     free: bool,
     toggle: bool,
 }
 
-fn factor(k: f32, whole: bool) -> f32 {
+fn factor(k: f32, stick: Option<f32>) -> f32 {
     let k = if k.abs() < 0.02 {
         0.02f32.copysign(k)
     } else {
         k.clamp(-50.0, 50.0)
     };
-    match whole {
-        true if k.round() == 0.0 => 1.0f32.copysign(k),
-        true => k.round(),
+    let Some(extent) = stick else {
+        return k;
+    };
+    let whole = k.abs().round().max(1.0);
+    match (k.abs() - whole).abs() * extent.max(1.0) < 1.0 {
+        true => whole.copysign(k),
         false => k,
     }
 }
@@ -489,15 +501,54 @@ impl Drag {
     fn keys(&mut self, m: egui::Modifiers) {
         self.shift = m.shift;
         self.alt = m.alt && self.grab != Grab::Move;
+        self.loose = m.command;
+    }
+
+    fn extent(&self, axis: usize) -> f32 {
+        let [a, b, _, d] = self.corners;
+        match axis {
+            0 => (b - a).length(),
+            _ => (d - a).length(),
+        }
+    }
+
+    fn stick(&self, axis: Option<usize>) -> Option<f32> {
+        (self.whole && !self.loose).then(|| match axis {
+            Some(axis) => self.extent(axis),
+            None => self.extent(0).max(self.extent(1)),
+        })
+    }
+
+    fn readout(&self) -> Option<String> {
+        let (kx, ky) = match (self.grab, self.stretch()) {
+            (_, Some((0, _, k))) => (k, 1.0),
+            (_, Some((_, _, k))) => (1.0, k),
+            (Grab::Scale, None) => self.factors(),
+            _ => return None,
+        };
+        let percent = format!("{:.0}% by {:.0}%", kx.abs() * 100.0, ky.abs() * 100.0);
+        Some(match self.whole {
+            true => format!(
+                "{percent}, {:.0} by {:.0} px",
+                (self.extent(0) * kx.abs()).round(),
+                (self.extent(1) * ky.abs()).round()
+            ),
+            false => percent,
+        })
     }
 
     fn hint(&self) -> &'static str {
         match self.grab {
             Grab::Move if self.copy => "shift keeps the copy level or upright",
             Grab::Move => "shift keeps it level or upright; alt as you start a drag moves a copy",
+            Grab::Scale if self.whole && self.free => {
+                "shift frees the proportions; alt scales from the middle; cmd lets go of whole sizes"
+            }
+            Grab::Scale if self.whole => "alt scales from the middle; cmd lets go of whole sizes",
             Grab::Scale if self.free => "shift frees the proportions; alt scales from the middle",
             Grab::Scale => "alt scales from the middle",
             Grab::Rotate => "shift turns in steps of 15 degrees",
+            Grab::Stretch(_) if self.whole => "alt stretches both sides from the middle; cmd lets go of whole sizes",
             Grab::Stretch(_) => "alt stretches both sides from the middle",
         }
     }
@@ -523,15 +574,12 @@ impl Drag {
         let p = self.pivot();
         if self.shift && self.free && upright(&self.corners) {
             return (
-                factor(ratio(self.now.x, self.start.x, p.x), self.whole),
-                factor(ratio(self.now.y, self.start.y, p.y), self.whole),
+                factor(ratio(self.now.x, self.start.x, p.x), self.stick(Some(0))),
+                factor(ratio(self.now.y, self.start.y, p.y), self.stick(Some(1))),
             );
         }
         let free = ((self.now - p).length() / (self.start - p).length().max(1.0)).clamp(0.02, 50.0);
-        let k = match self.whole {
-            true => free.round().max(1.0),
-            false => free,
-        };
+        let k = factor(free, self.stick(None));
         (k, k)
     }
 
@@ -579,7 +627,10 @@ impl Drag {
             false => edge(&self.corners, (side + 2) % 4),
         };
         let axis = if side % 2 == 0 { 1 } else { 0 };
-        let k = factor(ratio(self.now[axis], self.start[axis], pivot[axis]), self.whole);
+        let k = factor(
+            ratio(self.now[axis], self.start[axis], pivot[axis]),
+            self.stick(Some(axis)),
+        );
         Some((axis, pivot, k))
     }
 
@@ -1020,6 +1071,7 @@ pub(crate) struct Editor {
     shaped: Option<Shaped>,
     point_drag: Option<PointDrag>,
     pick_later: bool,
+    dropping: Option<Dropping>,
     also_shaped: Vec<Shaped>,
     path_commit: Option<PathCommit>,
     simplify_px: f32,
@@ -1269,6 +1321,7 @@ impl Editor {
             shaped: None,
             point_drag: None,
             pick_later: false,
+            dropping: None,
             also_shaped: Vec::new(),
             path_commit: None,
             simplify_px: 1.5,
@@ -2262,8 +2315,11 @@ impl Editor {
             .collect()
     }
 
-    fn drag_keys(&self) -> Option<&'static str> {
-        self.drag.as_ref().filter(|d| d.moved()).map(Drag::hint)
+    fn drag_keys(&self) -> Option<String> {
+        self.drag.as_ref().filter(|d| d.moved()).map(|d| match d.readout() {
+            Some(size) => format!("{size}; {}", d.hint()),
+            None => d.hint().to_string(),
+        })
     }
 
     fn edges(&self) -> bool {
@@ -2316,6 +2372,7 @@ impl Editor {
             outside: false,
             shift: self.modifiers.shift,
             alt: self.modifiers.alt && grab != Grab::Move,
+            loose: self.modifiers.command,
             free: self.edges() && self.shifting.is_none(),
             toggle: false,
         });
@@ -2447,6 +2504,27 @@ impl Editor {
         Ok(())
     }
 
+    fn another_shape_at(&self, c: Vec2) -> Result<bool> {
+        if self.on_marks() || self.selection.is_none() {
+            return Ok(false);
+        }
+        let doc = &self.scene.bundle.doc;
+        let top = |id: &String| match doc.locate(id) {
+            Some(Loc::Node(path, c, nodes)) => doc
+                .locate_path(&path)
+                .and_then(|l| l.cels().get(c))
+                .and_then(|cel| nodes.first().and_then(|&i| cel.nodes.get(i)))
+                .map(|n| n.id.clone()),
+            _ => None,
+        };
+        let held: Vec<String> = self
+            .shapes()
+            .iter()
+            .flat_map(|id| std::iter::once(id.clone()).chain(top(id)))
+            .collect();
+        Ok(self.shape_hits(c)?.first().is_some_and(|(id, _)| !held.contains(id)))
+    }
+
     fn grab_under(&mut self, c: Vec2, pos: Pos2) -> Result<()> {
         let zoom = self.view.map_or(1.0, |v| v.zoom);
         let slack = 5.0 / zoom;
@@ -2494,6 +2572,18 @@ impl Editor {
             }
         }
         self.selection = None;
+        if stroke.is_none()
+            && !self.settings.pick_all_layers
+            && let Some(name) = overlay::hits(&self.scene.bundle.doc, self.scene.frame, (c.x, c.y))?
+                .first()
+                .and_then(|(_, layer)| self.scene.bundle.doc.layer(layer))
+                .map(|l| l.name.clone())
+        {
+            self.say(
+                Tone::Info,
+                format!("a shape on {name} is under the pointer: pick {name}, or all layers in the bar, to take it"),
+            );
+        }
         let Some((path, id)) = stroke else {
             self.lasso = Some(Lasso {
                 points: vec![c],
@@ -3639,7 +3729,10 @@ impl Editor {
             self.say(Tone::Refused, why);
             return Ok(());
         }
-        let needs_canvas = matches!(self.tool, Tool::Brush | Tool::Fill | Tool::Strokes | Tool::Select);
+        let needs_canvas = matches!(
+            self.tool,
+            Tool::Brush | Tool::Fill | Tool::Strokes | Tool::Select | Tool::Eyedropper
+        );
         if pressing && !needs_canvas {
             self.hold_still();
         }
@@ -3653,6 +3746,9 @@ impl Editor {
         match (self.tool, e.phase) {
             (_, Phase::Down) if !was_focused || !on_canvas || self.navigating => {}
             (_, Phase::Down) if picking => self.pick_colour(c, self.modifiers.shift)?,
+            (Tool::Eyedropper, Phase::Down) => self.drop_at(c, None)?,
+            (Tool::Eyedropper, Phase::Move) if self.dropping.is_some() => self.drop_at(c, self.dropping)?,
+            (Tool::Eyedropper, Phase::Up) => self.drop_end(),
             (Tool::Fill, Phase::Down) if self.scene.on_grid() => {
                 if self.scene.can_paint() {
                     self.fill_pixels(klad_core::pixel::cell_at(c.x, c.y))?;
@@ -3760,6 +3856,9 @@ impl Editor {
             }
             (Tool::Brush, Phase::Up) => self.finish()?,
             (Tool::Select, Phase::Down) => match self.grab_at(view, rect, e.pos) {
+                Some((_, Grab::Move, _)) if !self.modifiers.shift && self.another_shape_at(c)? => {
+                    self.grab_under(c, e.pos)?
+                }
                 Some((id, Grab::Move, corners))
                     if self.modifiers.shift && self.selection.is_some() && !self.on_marks() =>
                 {
@@ -4109,6 +4208,30 @@ impl Editor {
             None => self.say(Tone::Refused, format!("nothing to pick from {where_from} there")),
         }
         Ok(())
+    }
+
+    fn drop_at(&mut self, at: Vec2, was: Option<Dropping>) -> Result<()> {
+        let layer_only = was.map_or(self.modifiers.shift, |d| d.layer_only);
+        self.dropping = Some(Dropping {
+            before: was.map_or(self.color, |d| d.before),
+            now: self.scene.sample((at.x, at.y), layer_only)?,
+            layer_only,
+        });
+        Ok(())
+    }
+
+    fn drop_end(&mut self) {
+        let Some(drop) = self.dropping.take() else {
+            return;
+        };
+        let where_from = if drop.layer_only { "this layer" } else { "the image" };
+        match drop.now {
+            Some(rgba) => {
+                self.pick_new_colour(rgba);
+                self.say(Tone::Done, format!("picked {} from {where_from}", color::hex(rgba)));
+            }
+            None => self.say(Tone::Refused, format!("nothing to pick from {where_from} there")),
+        }
     }
 
     fn fill_reference(&self) -> FillRef {
@@ -4806,7 +4929,28 @@ impl Editor {
             painter.add(egui::Shape::closed_line(line, egui::Stroke::new(1.5, tint)));
         }
         let hover = ui.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p));
-        let dropper = self.modifiers.alt && !self.modifiers.command && matches!(self.tool, Tool::Brush | Tool::Fill);
+        let dropper = (self.modifiers.alt && !self.modifiers.command && matches!(self.tool, Tool::Brush | Tool::Fill))
+            || self.tool == Tool::Eyedropper;
+        if let (Some(hover), Some(drop)) = (hover, self.dropping.filter(|_| self.tool == Tool::Eyedropper)) {
+            let half = |from: f32, colour: Option<[f32; 4]>| {
+                let points: Vec<Pos2> = (0..=24)
+                    .map(|i| {
+                        let a = from + std::f32::consts::PI * i as f32 / 24.0;
+                        hover + vec2(a.cos(), a.sin()) * DROPPER * 1.4
+                    })
+                    .collect();
+                let fill = colour.map_or(Color32::from_gray(128), |rgba| {
+                    color::color32([rgba[0], rgba[1], rgba[2], 1.0])
+                });
+                painter.add(egui::Shape::line(
+                    points.clone(),
+                    egui::Stroke::new(DROPPER * 0.7, Color32::from_black_alpha(120)),
+                ));
+                painter.add(egui::Shape::line(points, egui::Stroke::new(DROPPER * 0.55, fill)));
+            };
+            half(std::f32::consts::PI, drop.now);
+            half(0.0, Some(drop.before));
+        }
         if let Some(hover) = hover.filter(|_| dropper) {
             let font = egui::FontId::proportional(DROPPER);
             let tip = hover + vec2(-DROPPER * 0.12, DROPPER * 0.2);
@@ -5146,6 +5290,44 @@ impl Editor {
         }
     }
 
+    pub(super) fn undyeable(&self, outline: bool) -> Vec<String> {
+        let picked = match self.shapes() {
+            ids if !ids.is_empty() => ids,
+            _ => self.direct.as_ref().map(|d| d.node.clone()).into_iter().collect(),
+        };
+        picked
+            .into_iter()
+            .filter(|id| match self.scene.bundle.doc.item(id) {
+                Some(Item::Node(_, _, node)) => {
+                    matches!(
+                        node.shape,
+                        Shape::Rect { .. } | Shape::Ellipse { .. } | Shape::Path { .. } | Shape::Text(_)
+                    ) && match outline {
+                        true => node.stroke.is_some(),
+                        false => !matches!(&node.fill, Some(Paint::Solid(c)) if c == "none"),
+                    }
+                }
+                _ => false,
+            })
+            .collect()
+    }
+
+    pub(super) fn undye(&mut self, outline: bool) -> Result<()> {
+        let (key, value) = match outline {
+            true => ("stroke", Value::Null),
+            false => ("fill", json!("none")),
+        };
+        let ops = self
+            .undyeable(outline)
+            .into_iter()
+            .map(|id| Op::Set {
+                id,
+                props: Map::from_iter([(key.to_string(), value.clone())]),
+            })
+            .collect();
+        self.apply(ops)
+    }
+
     fn dye(&mut self, dye: Dye, rgba: [f32; 4]) -> Result<()> {
         if self.dyed(dye).is_some_and(|now| color::hex(now) == color::hex(rgba)) {
             return Ok(());
@@ -5208,14 +5390,29 @@ impl Editor {
             .iter()
             .filter_map(|hex| color::rgba_of(hex).map(|rgba| (rgba, format!("{hex}, used lately"))))
             .collect();
-        let picked = color::Square::new(ui, ("dye", dye.what()), now.unwrap_or(self.color), dye.what())
+        let none = match dye {
+            Dye::Fill => Some((Cmd::NoFill, "no fill", "the shape gets no fill: only its outline shows")),
+            Dye::Outline => Some((Cmd::NoOutline, "no outline", "the shape's outline comes off")),
+            Dye::Strokes => None,
+        }
+        .filter(|(cmd, _, _)| self.can_run(*cmd).is_none());
+        let square = color::Square::new(ui, ("dye", dye.what()), now.unwrap_or(self.color), dye.what())
             .current(self.color)
             .upward(self.bar_above)
             .colours("palette", palette)
-            .colours("recent", recent)
-            .under(ui, &response);
-        if let Some(rgba) = picked.and_then(color::Pick::chosen) {
-            self.check(|e| e.dye(dye, rgba));
+            .colours("recent", recent);
+        let square = match none {
+            Some((_, label, hint)) => square.removable_as(label, hint),
+            None => square,
+        };
+        match square.under(ui, &response) {
+            Some(color::Pick::Chosen(rgba)) => self.check(|e| e.dye(dye, rgba)),
+            Some(color::Pick::Remove) => {
+                if let Some((cmd, _, _)) = none {
+                    self.queued.push(cmd);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -6625,6 +6822,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pixel_scales_are_free_but_land_on_whole_sizes_within_a_pixel() {
+        assert_eq!(factor(2.04, Some(10.0)), 2.0, "0.4 px from twice the size lands on it");
+        assert_eq!(factor(2.2, Some(10.0)), 2.2, "2 px away stays where it is");
+        assert_eq!(factor(0.75, Some(24.0)), 0.75, "a squash stays");
+        assert_eq!(factor(0.98, Some(24.0)), 1.0, "half a pixel from the size it had");
+        assert_eq!(factor(0.98, Some(100.0)), 0.98, "two pixels on a big one");
+        assert_eq!(factor(-1.03, Some(20.0)), -1.0, "a flip lands on a whole flip");
+        assert_eq!(factor(2.04, None), 2.04, "cmd held, or not on the grid: free");
+    }
+
+    #[test]
     fn grab_finds_every_handle_where_the_press_lands() {
         use egui::pos2;
         let screen = [
@@ -6684,6 +6892,7 @@ mod tests {
                 outside: false,
                 shift,
                 alt,
+                loose: false,
                 free: true,
                 toggle: false,
             };
@@ -6722,6 +6931,7 @@ mod tests {
             outside: false,
             shift: false,
             alt: false,
+            loose: false,
             free: true,
             toggle: false,
         };

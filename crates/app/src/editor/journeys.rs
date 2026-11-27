@@ -929,9 +929,9 @@ fn what_a_cold_first_session_tripped_on() {
     j.key(Key::I);
     j.look("i-on-the-canvas");
     j.expect(
-        "frame-keys-wait-for-the-timeline",
-        (cels(&j), frames(&j)) == (was_cels, was_frames) && j.heard().contains("timeline key"),
-        "I changes no timing while the canvas is in use, and says where it works",
+        "i-on-the-canvas-is-the-eyedropper",
+        (cels(&j), frames(&j)) == (was_cels, was_frames) && j.ed().is_some_and(|ed| ed.tool == super::Tool::Eyedropper),
+        "I takes the eyedropper while the canvas is in use and changes no timing",
     );
 
     j.act("make three drawings, select every frame in the timeline and press cmd D");

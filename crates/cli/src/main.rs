@@ -857,7 +857,7 @@ enum Command {
     },
     #[command(
         about = "Change properties: klad set art.klad n4 fill=#ff0000 transform.rotate=15 (null removes)",
-        long_about = "Change properties of a layer, cel, shape, stroke or fill. Values are JSON when they parse as JSON, otherwise strings; null removes a key. Dotted keys nest.\n\n  klad set art.klad n4 fill=#ff0000 transform.rotate=15\n  klad set art.klad l2 opacity=0.5 blend=multiply\n  klad set art.klad c4:s12 color=#c84a3a size=6 brush=pencil\n  klad set art.klad c4:s7 color=skin opacity=0.8\n\nStrokes take color, size, opacity, flow, brush and taper ([in,out] or null); fills take color and opacity. Colours may be palette names."
+        long_about = "Change properties of a layer, cel, shape, stroke or fill. Values are JSON when they parse as JSON, otherwise strings; null removes a key. Dotted keys nest.\n\n  klad set art.klad n4 fill=#ff0000 transform.rotate=15\n  klad set art.klad l2 opacity=0.5 blend=multiply\n  klad set art.klad c4:s12 color=#c84a3a size=6 brush=pencil\n  klad set art.klad c4:s7 color=skin opacity=0.8\n\nShapes take fill=none for no fill and stroke=none (or stroke=null) for no outline. Strokes take color, size, opacity, flow, brush and taper ([in,out] or null); fills take color and opacity. Colours may be palette names."
     )]
     Set {
         bundle: PathBuf,

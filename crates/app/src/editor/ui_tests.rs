@@ -472,6 +472,109 @@ fn a_click_picks_the_stroke_you_see_on_any_layer_or_only_on_this_one() {
 }
 
 #[test]
+fn v_selects_a_shape_by_its_outline_its_text_block_and_inside_a_selected_one() {
+    let path = sample("v-click");
+    let mut h = harness_stepping(editor(&path), vec2(1440.0, 1000.0), 1.0 / 60.0);
+    activate(&mut h, "shapes");
+    let shapes = h.state().scene.active_id().unwrap();
+    let rect = h.state().scene.bundle.doc.layer(&shapes).unwrap().cels()[0].nodes[0]
+        .id
+        .clone();
+    let add = |shape: &str| format!(r##"{{"op":"add","node":{shape},"in":"{shapes}","frame":0}}"##);
+    let ops = parse_lines(
+        &[
+            add(r##"{"id":"ring","type":"ellipse","cx":300,"cy":110,"rx":60,"ry":40,"fill":"none","stroke":{"paint":"#000000","width":2}}"##),
+            add(r##"{"id":"line","type":"path","d":"M300 220 L460 340","fill":"none","stroke":{"paint":"#000000","width":3}}"##),
+            add(r##"{"id":"dot","type":"ellipse","cx":110,"cy":40,"rx":8,"ry":8,"fill":"#20a040"}"##),
+        ]
+        .join("\n"),
+    )
+    .unwrap();
+    h.state_mut().apply(ops).unwrap();
+    h.key_press(Key::T);
+    h.run_steps(2);
+    let spot = canvas_at(&h, 40.0, 300.0);
+    click(&mut h, spot);
+    h.run_steps(2);
+    h.event(egui::Event::Text("Hi there".into()));
+    h.run_steps(1);
+    h.key_press(Key::Escape);
+    h.run_steps(3);
+    let word = h.state().scene.bundle.doc.layer(&shapes).unwrap().cels()[0]
+        .nodes
+        .iter()
+        .find(|n| matches!(n.shape, klad_core::doc::Shape::Text(_)))
+        .map(|n| n.id.clone())
+        .expect("the text tool made a text");
+    h.key_press(Key::V);
+    h.run_steps(2);
+    let tap = |h: &mut Harness<'static, Editor>, x: f32, y: f32| {
+        let at = on_screen(h, x, y);
+        click_with(h, at, Modifiers::NONE);
+        h.run_steps(3);
+        h.state().selection.clone()
+    };
+    let slant = (
+        300.0 + 60.0 * std::f32::consts::FRAC_1_SQRT_2,
+        110.0 + 40.0 * std::f32::consts::FRAC_1_SQRT_2,
+    );
+    assert_eq!(
+        tap(&mut h, slant.0, slant.1).as_deref(),
+        Some("ring"),
+        "a no-fill ellipse by its outline"
+    );
+    assert_eq!(tap(&mut h, 600.0, 10.0), None, "outside everything nothing is selected");
+    assert_ne!(
+        tap(&mut h, 300.0, 110.0).as_deref(),
+        Some("ring"),
+        "inside a no-fill ellipse is not on it"
+    );
+    assert_eq!(
+        tap(&mut h, 380.0, 280.0).as_deref(),
+        Some("line"),
+        "a diagonal line in its middle"
+    );
+    let [x, y, w, hh] = klad_render::overlay::node_world_box(&h.state().scene.bundle.doc, &word)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        tap(&mut h, x + w * 0.36, y + hh * 0.5).as_deref(),
+        Some(word.as_str()),
+        "text anywhere in its block"
+    );
+    assert_eq!(tap(&mut h, 40.0, 90.0).as_deref(), Some(rect.as_str()));
+    let at_dot = on_screen(&h, 110.0, 40.0);
+    h.hover_at(at_dot);
+    h.run_steps(1);
+    h.drag_at(at_dot);
+    h.run_steps(1);
+    h.hover_at(at_dot + vec2(6.0, 0.0));
+    h.run_steps(1);
+    h.drop_at(at_dot + vec2(6.0, 0.0));
+    h.run_steps(3);
+    assert_eq!(
+        h.state().selection.as_deref(),
+        Some("dot"),
+        "a tap that moves a little on a shape inside the selected one takes that shape"
+    );
+    let moved = match h.state().scene.bundle.doc.item(&rect) {
+        Some(klad_core::doc::Item::Node(_, _, n)) => (n.transform.x, n.transform.y),
+        _ => panic!("the rectangle is gone"),
+    };
+    assert_eq!(moved, (0.0, 0.0), "and the selected one stays where it was");
+    h.state_mut().settings.pick_all_layers = false;
+    activate(&mut h, "lines");
+    h.run_steps(2);
+    tap(&mut h, slant.0, slant.1);
+    assert!(
+        said(&h).contains("a shape on shapes is under the pointer"),
+        "with this layer on, a shape of another layer says why: {}",
+        said(&h)
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn a_selected_shape_takes_the_colour_as_its_fill_or_outline() {
     let path = sample("shape-colour");
     let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
@@ -506,6 +609,90 @@ fn a_selected_shape_takes_the_colour_as_its_fill_or_outline() {
     assert_eq!(
         serde_json::to_value(&node(&h).fill).unwrap(),
         serde_json::json!("#0080ff")
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn a_selected_shape_can_have_no_fill_and_no_outline_from_its_bar_the_menu_and_layer_settings() {
+    let path = sample("shape-none");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "shapes");
+    let shapes = h.state().scene.active_id().unwrap();
+    let first = h.state().scene.bundle.doc.layer(&shapes).unwrap().cels()[0].nodes[0]
+        .id
+        .clone();
+    let ops = klad_core::ops::parse_lines(&format!(
+        "{}\n{}",
+        format_args!(r##"{{"op":"set","id":"{first}","stroke":{{"paint":"#101010","width":3}}}}"##),
+        format_args!(
+            r##"{{"op":"add","node":{{"type":"ellipse","cx":300,"cy":60,"rx":40,"ry":30,"fill":"#2040a0","stroke":{{"paint":"#000000","width":4}}}},"in":"{shapes}","frame":0}}"##
+        ),
+    ))
+    .unwrap();
+    h.state_mut().apply(ops).unwrap();
+    let second = h.state().scene.bundle.doc.layer(&shapes).unwrap().cels()[0].nodes[1]
+        .id
+        .clone();
+    let node = |h: &Harness<'static, Editor>, id: &str| match h.state().scene.bundle.doc.item(id) {
+        Some(klad_core::doc::Item::Node(_, _, n)) => n.clone(),
+        _ => panic!("the shape is gone"),
+    };
+    let unfilled = |h: &Harness<'static, Editor>, id: &str| serde_json::to_value(&node(h, id).fill).unwrap() == "none";
+    h.state_mut().tool = Tool::Select;
+    assert_eq!(
+        h.state().can_run(Cmd::NoFill).as_deref(),
+        Some("select a rectangle, ellipse, path or text with V first")
+    );
+    h.state_mut().select_shapes(vec![first.clone()]);
+    h.run_steps(3);
+    h.get_by_label("the shape's fill").click();
+    h.run_steps(3);
+    h.get_by_label("no fill").click();
+    h.run_steps(3);
+    assert!(unfilled(&h, &first), "no fill in the fill button's picker");
+    assert!(node(&h, &first).stroke.is_some(), "the outline stays");
+    assert_eq!(
+        h.state().can_run(Cmd::NoFill).as_deref(),
+        Some("the selected shape has no fill already")
+    );
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.run_steps(2);
+    assert!(!unfilled(&h, &first), "undo brings the fill back");
+    h.get_by_label("the shape's outline").click();
+    h.run_steps(3);
+    h.get_by_label("no outline").click();
+    h.run_steps(3);
+    assert!(
+        node(&h, &first).stroke.is_none(),
+        "no outline in the outline button's picker"
+    );
+    assert!(!unfilled(&h, &first));
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.state_mut().select_shapes(vec![first.clone(), second.clone()]);
+    h.run_steps(2);
+    h.state_mut().invoke(Cmd::NoOutline).unwrap();
+    h.run_steps(2);
+    assert!(
+        node(&h, &first).stroke.is_none() && node(&h, &second).stroke.is_none(),
+        "Edit > Shape > No outline takes it off every selected shape"
+    );
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.run_steps(2);
+    assert!(
+        node(&h, &first).stroke.is_some() && node(&h, &second).stroke.is_some(),
+        "in one step"
+    );
+    h.state_mut().select_shapes(vec![second.clone()]);
+    if let Some(p) = h.state_mut().settings.layout.pane_mut(Pane::Inspector) {
+        p.collapsed = false;
+    }
+    h.run_steps(3);
+    h.get_by_label("none").click();
+    h.run_steps(3);
+    assert!(
+        node(&h, &second).stroke.is_none(),
+        "none beside the outline's width in layer settings"
     );
     let _ = std::fs::remove_dir_all(&path);
 }
@@ -2344,6 +2531,84 @@ fn the_fill_and_shape_tools_draw_whole_pixels_on_a_pixel_layer() {
 }
 
 #[test]
+fn pixel_art_squashes_and_stretches_by_any_amount_and_stays_on_the_grid() {
+    let path = pixel_sample("pixel-squash");
+    let mut h = harness(editor(&path), vec2(1440.0, 900.0));
+    let layer = h.state().scene.active_id().unwrap();
+    let ops = parse_lines(&format!(
+        r##"{{"op":"pixel","layer":"{layer}","color":"#2b2d42","rect":[14,4,8,8],"filled":true}}"##
+    ))
+    .unwrap();
+    h.state_mut().apply(ops).unwrap();
+    h.run_steps(2);
+    ready(&mut h);
+    let cel = h.state().scene.active_cel().unwrap();
+    let block = h.state().scene.active_marks().last().unwrap().id();
+    let pick = |h: &mut Harness<'static, Editor>| {
+        h.state_mut().tool = Tool::Strokes;
+        h.state_mut().picked = Some(Picked::whole(cel.clone(), vec![block]));
+        h.run_steps(3);
+    };
+    let bounds = |h: &Harness<'static, Editor>| {
+        let marks = h.state().scene.active_marks();
+        let fill = marks
+            .iter()
+            .find(|m| m.id() == block)
+            .and_then(|m| m.as_fill())
+            .unwrap();
+        assert!(fill.coverage.alpha.iter().all(|a| *a == 0 || *a == 255), "hard pixels");
+        let c = &fill.coverage;
+        (c.x, c.y, c.width, c.height)
+    };
+    let moved = |h: &mut Harness<'static, Editor>, from: (f32, f32), to: (f32, f32)| {
+        let (a, b) = (on_screen(h, from.0, from.1), on_screen(h, to.0, to.1));
+        drag(h, a, b);
+        settle(h, |ed| ed.drag.is_none() && ed.preview.is_none());
+        h.run_steps(3);
+        ready(h);
+    };
+    pick(&mut h);
+    assert_eq!(bounds(&h), (14, 4, 8, 8));
+    let (top, lower) = (on_screen(&h, 18.0, 4.0), on_screen(&h, 18.0, 6.0));
+    h.hover_at(top);
+    h.run_steps(1);
+    h.drag_at(top);
+    h.run_steps(1);
+    (1..=5).for_each(|i| {
+        h.hover_at(top + (lower - top) * (i as f32 / 5.0));
+        h.run_steps(1);
+    });
+    let said = h.state().drag_keys().unwrap_or_default();
+    assert!(
+        said.starts_with("100% by 75%, 8 by 6 px"),
+        "the bar says the size: {said}"
+    );
+    assert!(said.contains("cmd lets go of whole sizes"), "{said}");
+    h.drop_at(lower);
+    settle(&mut h, |ed| ed.drag.is_none() && ed.preview.is_none());
+    h.run_steps(3);
+    ready(&mut h);
+    assert_eq!(bounds(&h), (14, 6, 8, 6), "the top edge pushed down squashes it to 75%");
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.run_steps(2);
+    ready(&mut h);
+    pick(&mut h);
+    moved(&mut h, (22.0, 12.0), (26.0, 16.0));
+    assert_eq!(
+        bounds(&h),
+        (14, 4, 12, 12),
+        "a corner dragged out makes it 1.5 times as big"
+    );
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.run_steps(2);
+    ready(&mut h);
+    pick(&mut h);
+    moved(&mut h, (22.0, 12.0), (20.0, 10.0));
+    assert_eq!(bounds(&h), (14, 4, 6, 6), "and dragged in makes it smaller");
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn pixels_are_selected_by_box_or_colour_and_move_flip_turn_and_recolour_on_the_grid() {
     let path = pixel_sample("pixel-edit");
     let mut h = harness(editor(&path), vec2(1440.0, 900.0));
@@ -3230,6 +3495,76 @@ fn right_click(h: &mut Harness<'static, Editor>, at: egui::Pos2) {
 }
 
 #[test]
+fn the_eyedropper_tool_on_i_takes_the_colour_and_i_on_the_timeline_still_inserts_a_frame() {
+    use super::Focus;
+    let path = sample("eyedropper-tool");
+    let mut h = harness(editor(&path), vec2(1440.0, 1000.0));
+    activate(&mut h, "lines");
+    h.state_mut().color = [0.0, 0.0, 1.0, 1.0];
+    h.run_steps(2);
+    assert_eq!(h.state().focus, Focus::Canvas);
+    h.key_press(Key::I);
+    h.run_steps(2);
+    assert_eq!(h.state().tool, Tool::Eyedropper);
+    assert_eq!(h.state().is_on(Cmd::EyedropperTool), Some(true), "lit on the strip");
+    let rect = on_screen(&h, 130.0, 30.0);
+    h.hover_at(rect);
+    h.run_steps(1);
+    h.drag_at(rect);
+    h.run_steps(2);
+    let drop = h.state().dropping.expect("pressing shows what it would take");
+    assert_eq!(
+        drop.now.map(crate::color::hex).as_deref(),
+        Some("#a04030"),
+        "the shape's fill under the pen"
+    );
+    assert_eq!(crate::color::hex(drop.before), "#0000ff", "against the colour you had");
+    assert_eq!(
+        crate::color::hex(h.state().color),
+        "#0000ff",
+        "nothing is taken until you let go"
+    );
+    h.drop_at(rect);
+    h.run_steps(3);
+    assert_eq!(crate::color::hex(h.state().color), "#a04030", "letting go takes it");
+    assert!(h.state().dropping.is_none());
+    assert!(said(&h).contains("picked #a04030 from the image"), "{}", said(&h));
+    click_with(&mut h, rect, Modifiers::SHIFT);
+    h.run_steps(3);
+    assert_eq!(
+        crate::color::hex(h.state().color),
+        "#a04030",
+        "shift reads only the lines layer, empty there"
+    );
+    assert!(said(&h).contains("nothing to pick from this layer"), "{}", said(&h));
+    let timing = |h: &Harness<'static, Editor>| -> Vec<Vec<(u32, Option<u32>)>> {
+        h.state()
+            .scene
+            .bundle
+            .doc
+            .all_layers()
+            .iter()
+            .map(|l| l.cels().iter().map(|c| (c.frame, c.hold)).collect())
+            .collect()
+    };
+    let geom = h.state().timeline.geom.unwrap();
+    click_with(&mut h, geom.cell_centre(0, 0), Modifiers::NONE);
+    assert_eq!(h.state().focus, Focus::Timeline);
+    let before = timing(&h);
+    h.key_press(Key::I);
+    h.run_steps(2);
+    assert_eq!(
+        h.state().scene.bundle.doc.timeline.frames,
+        25,
+        "I on the timeline inserts a frame, as before: {}",
+        said(&h)
+    );
+    assert_eq!(timing(&h), before, "the one drawing of each layer shows a frame longer");
+    assert!(!said(&h).contains("timeline key"), "{}", said(&h));
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn frame_keys_wait_for_the_timeline_and_cmd_d_repeats_the_selected_frames() {
     use super::Focus;
     let path = sample("frame-keys");
@@ -3251,7 +3586,7 @@ fn frame_keys_wait_for_the_timeline_and_cmd_d_repeats_the_selected_frames() {
     h.key_press(Key::I);
     h.run_steps(2);
     assert_eq!(shown(&h, "lines"), [(0, None)]);
-    assert!(said(&h).contains("Frame > Insert frame"), "{}", said(&h));
+    assert_eq!(h.state().tool, Tool::Eyedropper, "I on the canvas is the eyedropper");
     h.state_mut().invoke(Cmd::HoldLonger).unwrap();
     h.run_steps(2);
     assert_eq!(frames(&h), 25, "the menu still runs it from anywhere");

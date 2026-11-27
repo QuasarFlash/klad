@@ -69,6 +69,14 @@ impl Editor {
             }
             props = Some(map);
         }
+        if first.stroke.is_some()
+            && ui
+                .button("none")
+                .hint("take the outline off every selected shape")
+                .clicked()
+        {
+            props = Some(Map::from_iter([("stroke".to_string(), Value::Null)]));
+        }
         let (cap, join) = first
             .stroke
             .as_ref()
