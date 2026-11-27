@@ -4622,3 +4622,57 @@ fn a_shape_loses_its_fill_and_its_outline_with_none() {
     assert_eq!(after["fill"], "none");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_pixel_mark_squashes_and_grows_by_any_amount() {
+    let dir = std::env::temp_dir().join(format!("klad-binary-squash-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let bundle = dir.join("a.klad");
+    let klad = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_klad")).args(args).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let path = bundle.to_str().unwrap();
+    klad(&["new", path, "--pixel", "32x32"]);
+    klad(&["pixel", path, "l1", "--color", "#2b2d42", "--cells", "4-11,4-11"]);
+    let bounds = || {
+        let listed = klad(&["strokes", path, "l1"]);
+        listed
+            .lines()
+            .find(|l| l.starts_with("s1 "))
+            .and_then(|l| l.split_whitespace().nth(4).zip(l.split_whitespace().nth(5)))
+            .map(|(cells, at)| format!("{cells} {at}"))
+            .unwrap_or_else(|| panic!("no s1 in {listed}"))
+    };
+    let cel = klad(&["strokes", path, "l1"])
+        .lines()
+        .find_map(|l| {
+            l.strip_prefix("cel ")
+                .and_then(|r| r.split(':').next())
+                .map(str::to_string)
+        })
+        .unwrap();
+    assert_eq!(bounds(), "64 4,4");
+    klad(&[
+        "transform",
+        path,
+        &format!("{cel}:s1"),
+        "--sy",
+        "0.75",
+        "--pivot",
+        "8,12",
+    ]);
+    assert_eq!(bounds(), "48 4,6", "8 by 8 squashed to 8 by 6, its bottom kept");
+    klad(&[
+        "transform",
+        path,
+        &format!("{cel}:s1"),
+        "--sx",
+        "1.5",
+        "--pivot",
+        "4,12",
+    ]);
+    assert_eq!(bounds(), "72 4,6", "then 12 by 6");
+    let _ = std::fs::remove_dir_all(&dir);
+}

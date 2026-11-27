@@ -2428,6 +2428,84 @@ fn the_fill_and_shape_tools_draw_whole_pixels_on_a_pixel_layer() {
 }
 
 #[test]
+fn pixel_art_squashes_and_stretches_by_any_amount_and_stays_on_the_grid() {
+    let path = pixel_sample("pixel-squash");
+    let mut h = harness(editor(&path), vec2(1440.0, 900.0));
+    let layer = h.state().scene.active_id().unwrap();
+    let ops = parse_lines(&format!(
+        r##"{{"op":"pixel","layer":"{layer}","color":"#2b2d42","rect":[14,4,8,8],"filled":true}}"##
+    ))
+    .unwrap();
+    h.state_mut().apply(ops).unwrap();
+    h.run_steps(2);
+    ready(&mut h);
+    let cel = h.state().scene.active_cel().unwrap();
+    let block = h.state().scene.active_marks().last().unwrap().id();
+    let pick = |h: &mut Harness<'static, Editor>| {
+        h.state_mut().tool = Tool::Strokes;
+        h.state_mut().picked = Some(Picked::whole(cel.clone(), vec![block]));
+        h.run_steps(3);
+    };
+    let bounds = |h: &Harness<'static, Editor>| {
+        let marks = h.state().scene.active_marks();
+        let fill = marks
+            .iter()
+            .find(|m| m.id() == block)
+            .and_then(|m| m.as_fill())
+            .unwrap();
+        assert!(fill.coverage.alpha.iter().all(|a| *a == 0 || *a == 255), "hard pixels");
+        let c = &fill.coverage;
+        (c.x, c.y, c.width, c.height)
+    };
+    let moved = |h: &mut Harness<'static, Editor>, from: (f32, f32), to: (f32, f32)| {
+        let (a, b) = (on_screen(h, from.0, from.1), on_screen(h, to.0, to.1));
+        drag(h, a, b);
+        settle(h, |ed| ed.drag.is_none() && ed.preview.is_none());
+        h.run_steps(3);
+        ready(h);
+    };
+    pick(&mut h);
+    assert_eq!(bounds(&h), (14, 4, 8, 8));
+    let (top, lower) = (on_screen(&h, 18.0, 4.0), on_screen(&h, 18.0, 6.0));
+    h.hover_at(top);
+    h.run_steps(1);
+    h.drag_at(top);
+    h.run_steps(1);
+    (1..=5).for_each(|i| {
+        h.hover_at(top + (lower - top) * (i as f32 / 5.0));
+        h.run_steps(1);
+    });
+    let said = h.state().drag_keys().unwrap_or_default();
+    assert!(
+        said.starts_with("100% by 75%, 8 by 6 px"),
+        "the bar says the size: {said}"
+    );
+    assert!(said.contains("cmd lets go of whole sizes"), "{said}");
+    h.drop_at(lower);
+    settle(&mut h, |ed| ed.drag.is_none() && ed.preview.is_none());
+    h.run_steps(3);
+    ready(&mut h);
+    assert_eq!(bounds(&h), (14, 6, 8, 6), "the top edge pushed down squashes it to 75%");
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.run_steps(2);
+    ready(&mut h);
+    pick(&mut h);
+    moved(&mut h, (22.0, 12.0), (26.0, 16.0));
+    assert_eq!(
+        bounds(&h),
+        (14, 4, 12, 12),
+        "a corner dragged out makes it 1.5 times as big"
+    );
+    h.state_mut().invoke(Cmd::Undo).unwrap();
+    h.run_steps(2);
+    ready(&mut h);
+    pick(&mut h);
+    moved(&mut h, (22.0, 12.0), (20.0, 10.0));
+    assert_eq!(bounds(&h), (14, 4, 6, 6), "and dragged in makes it smaller");
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn pixels_are_selected_by_box_or_colour_and_move_flip_turn_and_recolour_on_the_grid() {
     let path = pixel_sample("pixel-edit");
     let mut h = harness(editor(&path), vec2(1440.0, 900.0));

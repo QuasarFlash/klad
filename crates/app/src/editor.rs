@@ -455,19 +455,23 @@ struct Drag {
     outside: bool,
     shift: bool,
     alt: bool,
+    loose: bool,
     free: bool,
     toggle: bool,
 }
 
-fn factor(k: f32, whole: bool) -> f32 {
+fn factor(k: f32, stick: Option<f32>) -> f32 {
     let k = if k.abs() < 0.02 {
         0.02f32.copysign(k)
     } else {
         k.clamp(-50.0, 50.0)
     };
-    match whole {
-        true if k.round() == 0.0 => 1.0f32.copysign(k),
-        true => k.round(),
+    let Some(extent) = stick else {
+        return k;
+    };
+    let whole = k.abs().round().max(1.0);
+    match (k.abs() - whole).abs() * extent.max(1.0) < 1.0 {
+        true => whole.copysign(k),
         false => k,
     }
 }
@@ -489,15 +493,54 @@ impl Drag {
     fn keys(&mut self, m: egui::Modifiers) {
         self.shift = m.shift;
         self.alt = m.alt && self.grab != Grab::Move;
+        self.loose = m.command;
+    }
+
+    fn extent(&self, axis: usize) -> f32 {
+        let [a, b, _, d] = self.corners;
+        match axis {
+            0 => (b - a).length(),
+            _ => (d - a).length(),
+        }
+    }
+
+    fn stick(&self, axis: Option<usize>) -> Option<f32> {
+        (self.whole && !self.loose).then(|| match axis {
+            Some(axis) => self.extent(axis),
+            None => self.extent(0).max(self.extent(1)),
+        })
+    }
+
+    fn readout(&self) -> Option<String> {
+        let (kx, ky) = match (self.grab, self.stretch()) {
+            (_, Some((0, _, k))) => (k, 1.0),
+            (_, Some((_, _, k))) => (1.0, k),
+            (Grab::Scale, None) => self.factors(),
+            _ => return None,
+        };
+        let percent = format!("{:.0}% by {:.0}%", kx.abs() * 100.0, ky.abs() * 100.0);
+        Some(match self.whole {
+            true => format!(
+                "{percent}, {:.0} by {:.0} px",
+                (self.extent(0) * kx.abs()).round(),
+                (self.extent(1) * ky.abs()).round()
+            ),
+            false => percent,
+        })
     }
 
     fn hint(&self) -> &'static str {
         match self.grab {
             Grab::Move if self.copy => "shift keeps the copy level or upright",
             Grab::Move => "shift keeps it level or upright; alt as you start a drag moves a copy",
+            Grab::Scale if self.whole && self.free => {
+                "shift frees the proportions; alt scales from the middle; cmd lets go of whole sizes"
+            }
+            Grab::Scale if self.whole => "alt scales from the middle; cmd lets go of whole sizes",
             Grab::Scale if self.free => "shift frees the proportions; alt scales from the middle",
             Grab::Scale => "alt scales from the middle",
             Grab::Rotate => "shift turns in steps of 15 degrees",
+            Grab::Stretch(_) if self.whole => "alt stretches both sides from the middle; cmd lets go of whole sizes",
             Grab::Stretch(_) => "alt stretches both sides from the middle",
         }
     }
@@ -523,15 +566,12 @@ impl Drag {
         let p = self.pivot();
         if self.shift && self.free && upright(&self.corners) {
             return (
-                factor(ratio(self.now.x, self.start.x, p.x), self.whole),
-                factor(ratio(self.now.y, self.start.y, p.y), self.whole),
+                factor(ratio(self.now.x, self.start.x, p.x), self.stick(Some(0))),
+                factor(ratio(self.now.y, self.start.y, p.y), self.stick(Some(1))),
             );
         }
         let free = ((self.now - p).length() / (self.start - p).length().max(1.0)).clamp(0.02, 50.0);
-        let k = match self.whole {
-            true => free.round().max(1.0),
-            false => free,
-        };
+        let k = factor(free, self.stick(None));
         (k, k)
     }
 
@@ -579,7 +619,10 @@ impl Drag {
             false => edge(&self.corners, (side + 2) % 4),
         };
         let axis = if side % 2 == 0 { 1 } else { 0 };
-        let k = factor(ratio(self.now[axis], self.start[axis], pivot[axis]), self.whole);
+        let k = factor(
+            ratio(self.now[axis], self.start[axis], pivot[axis]),
+            self.stick(Some(axis)),
+        );
         Some((axis, pivot, k))
     }
 
@@ -2262,8 +2305,11 @@ impl Editor {
             .collect()
     }
 
-    fn drag_keys(&self) -> Option<&'static str> {
-        self.drag.as_ref().filter(|d| d.moved()).map(Drag::hint)
+    fn drag_keys(&self) -> Option<String> {
+        self.drag.as_ref().filter(|d| d.moved()).map(|d| match d.readout() {
+            Some(size) => format!("{size}; {}", d.hint()),
+            None => d.hint().to_string(),
+        })
     }
 
     fn edges(&self) -> bool {
@@ -2316,6 +2362,7 @@ impl Editor {
             outside: false,
             shift: self.modifiers.shift,
             alt: self.modifiers.alt && grab != Grab::Move,
+            loose: self.modifiers.command,
             free: self.edges() && self.shifting.is_none(),
             toggle: false,
         });
@@ -6678,6 +6725,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pixel_scales_are_free_but_land_on_whole_sizes_within_a_pixel() {
+        assert_eq!(factor(2.04, Some(10.0)), 2.0, "0.4 px from twice the size lands on it");
+        assert_eq!(factor(2.2, Some(10.0)), 2.2, "2 px away stays where it is");
+        assert_eq!(factor(0.75, Some(24.0)), 0.75, "a squash stays");
+        assert_eq!(factor(0.98, Some(24.0)), 1.0, "half a pixel from the size it had");
+        assert_eq!(factor(0.98, Some(100.0)), 0.98, "two pixels on a big one");
+        assert_eq!(factor(-1.03, Some(20.0)), -1.0, "a flip lands on a whole flip");
+        assert_eq!(factor(2.04, None), 2.04, "cmd held, or not on the grid: free");
+    }
+
+    #[test]
     fn grab_finds_every_handle_where_the_press_lands() {
         use egui::pos2;
         let screen = [
@@ -6737,6 +6795,7 @@ mod tests {
                 outside: false,
                 shift,
                 alt,
+                loose: false,
                 free: true,
                 toggle: false,
             };
@@ -6775,6 +6834,7 @@ mod tests {
             outside: false,
             shift: false,
             alt: false,
+            loose: false,
             free: true,
             toggle: false,
         };
